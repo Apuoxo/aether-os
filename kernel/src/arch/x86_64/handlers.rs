@@ -77,6 +77,13 @@ pub extern "C" fn syscall_handler(frame: *mut u64) -> u64 {
             1 => sys_write(a2 as usize, a3 as usize),
             2 => sys_read(a1 as usize, a2 as usize, a3 as usize),
             3 => sys_list(a1 as usize, a2 as usize),
+            10 => sys_poll_key(a1 as usize),
+            11 => sys_draw_text(a1 as usize, a2 as usize, a3 as usize, *frame.offset(12) as u32),
+            12 => sys_fill_rect(
+                a1 as usize, a2 as usize, a3 as usize,
+                *frame.offset(12) as usize, *frame.offset(13) as u32
+            ),
+            13 => sys_yield(),
             60 => {
                 serial::write_str("  [SYSCALL] exit FROM CPL=3\n");
                 0xDEAD
@@ -85,6 +92,7 @@ pub extern "C" fn syscall_handler(frame: *mut u64) -> u64 {
                 serial::write_str("  [SYSCALL] unknown\n");
                 u64::MAX
             }
+        }
         }
     }
 }
@@ -185,6 +193,50 @@ unsafe fn sys_list(buf_ptr: usize, buflen: usize) -> u64 {
     serial::write_str("\n");
     off as u64
 }
+
+unsafe fn sys_poll_key(out_ptr: usize) -> u64 {
+    if !user_ok(out_ptr, 4) { return u64::MAX; }
+    match crate::input::poll() {
+        Some(ev) => {
+            *((out_ptr) as *mut u8) = ev.key;
+            *((out_ptr + 1) as *mut u8) = if ev.pressed { 1 } else { 0 };
+            *((out_ptr + 2) as *mut u8) = ev.hid_code;
+            *((out_ptr + 3) as *mut u8) = ev.modifiers;
+            1
+        }
+        None => 0,
+    }
+}
+
+unsafe fn sys_draw_text(x: usize, y: usize, ptr: usize, color: u32) -> u64 {
+    if !user_ok(ptr, 128) || !crate::graphics::ready() { return u64::MAX; }
+    let mut n = 0usize;
+    while n < 127 {
+        if *((ptr + n) as *const u8) == 0 { break; }
+        n += 1;
+    }
+    let mut buf = [0u8; 128];
+    let mut i = 0usize;
+    while i < n { buf[i] = *((ptr + i) as *const u8); i += 1; }
+    match core::str::from_utf8(&buf[..n]) {
+        Ok(text) => { crate::graphics::draw_str(x, y, text, color); n as u64 }
+        Err(_) => u64::MAX,
+    }
+}
+
+unsafe fn sys_fill_rect(x: usize, y: usize, w: usize, h: usize, color: u32) -> u64 {
+    if w == 0 || h == 0 || w > 1024 || h > 768 || !crate::graphics::ready() {
+        return u64::MAX;
+    }
+    crate::graphics::fill_rect(x, y, w, h, color);
+    0
+}
+
+fn sys_yield() -> u64 {
+    unsafe { core::arch::asm!("pause", options(nostack, preserves_flags)); }
+    0
+}
+
 
 /// Exit path from Ring 3: destroy process, then resume kernel boot/desktop
 #[no_mangle]
