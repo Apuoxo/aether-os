@@ -365,6 +365,7 @@ const GMBUS_BYTE_COUNT_SHIFT: u32 = 16;
 const GMBUS_SLAVE_ADDR_SHIFT: u32 = 1;
 const GMBUS_SLAVE_READ: u32 = 1;
 const GMBUS_SLAVE_EDID: u32 = 0x50;
+const GMBUS_TIMEOUT: u32 = 100_000;
 
 unsafe fn wait_gmbus(mask: u32, want_set: bool, limit: u32) -> bool {
     let mut n = 0u32;
@@ -392,7 +393,7 @@ pub fn read_edid(port: u32, out: &mut [u8; 128]) -> bool {
             serial::write_str("[VIDEO/EDID] invalid GMBUS port\n");
             return false;
         }
-        if !wait_gmbus(GMBUS_ACTIVE, false, 100_000) {
+        if !wait_gmbus(GMBUS_ACTIVE, false, GMBUS_TIMEOUT) {
             serial::write_str("[VIDEO/EDID] controller busy\n");
             return false;
         }
@@ -404,11 +405,14 @@ pub fn read_edid(port: u32, out: &mut [u8; 128]) -> bool {
             | (GMBUS_SLAVE_EDID << GMBUS_SLAVE_ADDR_SHIFT)
             | GMBUS_SLAVE_READ
             | GMBUS_SW_RDY;
+        // INDEX cycles take the register/offset from GMBUS3 before START.
+        // EDID block zero begins at offset 0.
+        mmio_write32(GMBUS3, 0);
         mmio_write32(GMBUS1, command);
 
         let mut pos = 0usize;
         while pos < 128 {
-            if !wait_gmbus(GMBUS_HW_RDY, true, 200_000) {
+            if !wait_gmbus(GMBUS_HW_RDY, true, GMBUS_TIMEOUT) {
                 serial::write_str("[VIDEO/EDID] HW_RDY timeout\n");
                 break;
             }
