@@ -107,7 +107,7 @@ unsafe fn user_ok(ptr: usize, len: usize) -> bool {
 
 fn current_has_cap(slot: usize, required: u32) -> bool {
     match unsafe { crate::process::get(crate::process::current_pid()) } {
-        Some(p) => p.caps.check(slot, required),
+        Some(p) => p.caps.check_slot(slot, required),
         None => false,
     }
 }
