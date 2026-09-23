@@ -587,3 +587,57 @@ This document should not be treated as literally containing every Internet page 
 8. no unsafe hardware experiment inferred from documentation alone.
 
 The remaining high-value work is therefore no longer broad web searching alone. It is obtaining the missing primary artifacts where accessible (especially the actual schematic/boardview contents) and collecting machine-specific runtime evidence: PCI configuration space, ACPI tables, controller BARs, exact revisions/subsystem IDs, EDID and panel identity, and EC/firmware identity.
+
+
+## 26. Third-pass audit: board identity and firmware evidence
+
+The third-pass search found stronger evidence for the physical-board research target, while also clarifying what remains unverified.
+
+### DA0FH6MB6E0 Rev.E is repeatedly associated with AH532/G52
+RepairLap identifies Fujitsu LIFEBOOK AH532 with Quanta FH6 and motherboard DA0FH6MB6E0 Rev.E, and lists separate U35, U7 and U24 firmware images. The same source also lists a schematic named Fujitsu_FH6C_FH6_hm70_r0c_mb_0522.pdf.
+
+Sources:
+- https://www.repairlap.com/threads/fujitsu-lifebook-ah532-schematic-da0fh6mb6e0-rev-e-bios.5293/post-8615
+- https://www.repairlap.com/threads/fujitsu-lifebook-ah532-schematic-da0fh6mb6e0-rev-e-bios.5293/post-8614
+
+A separate repair database reports a working AH532/G52 firmware read from a DA0FH6MB6E0 Rev.E board, naming three SPI devices: U35, U7 and U24. It reports an Intel i3-3110M for that particular dumped machine. This is strong board-level corroboration but still not proof that our physical AH532 has the same CPU or firmware revision.
+
+Source:
+- https://remont-aud.net/dump/kompjutery_noutbuki_netbuki/fujitsu/fujitsu_lifebook_ah532_g52_shassi_main_board_da0fh6mb6e0_rev_e/433-1-0-57624
+
+### Board schematic contents are still the key missing primary artifact
+Search results consistently expose the schematic as a downloadable 1.4–1.5 MB PDF, but the accessible web index does not expose its page contents. Therefore we should not invent register/pin information from its filename or block-diagram summary. The exact PDF contents should be obtained and inspected if legally and technically accessible.
+
+### BoardView availability strengthened
+A public schematic/boardview archive explicitly lists `DA0FH6MB6E0 rev E PDF` under both `#SCHEMATIC` and `#BOARDVIEW`. This establishes that boardview data has circulated for the exact board marking, but the archive page does not expose the actual boardview contents in searchable text.
+
+Source:
+- https://t.me/s/schematicslaptop?before=10583
+
+### Fujitsu support inventory: platform-specific devices
+The official Fujitsu catalogue gives concrete version/date evidence for the platform-device drivers. For example, FUJ02B1 driver 1.23 and FUJ02E3 driver 1.30.3 are listed with 2016 publication dates, and earlier 2013 versions are also present. This strengthens the case for enumerating Fujitsu-specific ACPI device IDs on the physical machine rather than assuming generic ACPI behavior.
+
+Source:
+- https://support.ts.fujitsu.com/IndexQuickSearchResult.asp?lng=COM&q=fujitsu+ah532
+
+### Realtek card-reader evidence
+The official Fujitsu catalogue explicitly lists Realtek RTS5170 Memory Card Driver 6.2.9200.39048. This gives us a concrete candidate for the memory-card controller. It remains a candidate until the physical machine's PCI/USB enumeration identifies the actual device.
+
+Source:
+- https://support.ts.fujitsu.com/IndexQuickSearchResult.asp?OpenTab=&Q=LIFEBOOK+AH532&lng=
+
+### New physical diagnostic priority
+The strongest remaining information gap is no longer generic documentation. It is exact machine identity. The next Aether hardware pass should collect, read-only:
+1. complete PCI configuration for bus 0 functions D20-D31;
+2. PCH ID/revision and all relevant subsystem IDs;
+3. BAR addresses without mapping their MMIO contents;
+4. xHCI capability registers only after identifying its BAR safely;
+5. AHCI CAP/PI;
+6. HDA controller identity and codec enumeration;
+7. Realtek LAN revision/subsystem and PHY identity;
+8. SMBus controller identity and base address, with no SMBus transactions initially;
+9. ACPI RSDP/XSDT/RSDT plus DSDT/SSDT table identities;
+10. EDID/panel identity through the already-working display path;
+11. USB topology including camera/card-reader candidates.
+
+This diagnostic list is deliberately read-only and does not authorize MMIO mapping, DMA activation, firmware writes, or access to the known-unsafe GTT physical address 0xDF800000.
