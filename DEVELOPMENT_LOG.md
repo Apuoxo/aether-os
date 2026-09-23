@@ -99,3 +99,12 @@ Every significant change should be followed by:
 - Source inspection shows kernel/Makefile generates a minimal GRUB config containing only the Multiboot2 entry and no explicit gfxmode/video mode.
 - No code or graphics-driver changes were made in response to this report yet.
 - Next controlled step: inspect the GRUB/Multiboot boot path and make the smallest change that allows AH532 to enter the kernel without assuming a firmware-supported graphics mode; then rebuild and retest QEMU before another AH532 run.
+
+
+### 2026-09-24 — Controlled GRUB text-mode fix for AH532 boot failure
+- Root symptom under real AH532: GRUB reported "Error: no suitable video mode found" before kernel startup.
+- Source inspection found the ISO Makefile generated a minimal GRUB configuration without explicit text-mode/gfxpayload settings.
+- Applied the smallest bootloader-side change: GRUB now requests `gfxmode=text`, `gfxpayload=text`, and `terminal_output console` before the Aether Multiboot2 entry.
+- No kernel, Intel driver, framebuffer ownership, GGTT/GSM, Ring3, storage, or Wi-Fi code was changed.
+- Commit: 3c60f7ca5cabd61346b5077542a6123a288b6455.
+- Runtime result: not yet verified. Required next step is GitHub CI build + QEMU smoke test, then a fresh ISO must be tested on AH532.
