@@ -523,7 +523,7 @@ fn win_title(kind: WinKind) -> &'static str {
         WinKind::Network => "Network",
         WinKind::Sound => "Sound",
         WinKind::Video => "Video",
-        WinKind::Files => "Files",
+        WinKind::Files => "Windows Explorer",
         WinKind::DateTime => "Date/Time",
         WinKind::MyComputer => "My Computer",
         WinKind::SysProps => "System Properties",
