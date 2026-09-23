@@ -34,6 +34,20 @@ fn cluster_to_lba(lcn: u64) -> u32 {
     unsafe { PART_LBA.wrapping_add((lcn as u32).wrapping_mul(SPC as u32)) }
 }
 
+/// Mount a specific NTFS partition by partition-table index (READ-ONLY).
+pub fn mount_partition(pi: usize) -> bool {
+    unsafe {
+        MOUNTED = false;
+        NENT = 0;
+    }
+    if let Some(p) = part::get(pi) {
+        if p.ptype == 0x07 {
+            return try_mount(p.disk, p.lba_start);
+        }
+    }
+    false
+}
+
 /// Mount first NTFS partition found
 pub fn mount_first() -> bool {
     unsafe {
