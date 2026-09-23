@@ -28,6 +28,8 @@ pub struct Process {
     pub page_count: usize,
     pub name: [u8; 16],
     pub name_len: usize,
+    /// Per-process capability handles.
+    pub caps: CapTable,
 }
 
 impl Process {
