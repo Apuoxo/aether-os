@@ -287,7 +287,7 @@ pub extern "C" fn process_exit_dispatch() {
         if APP_STAGE == 0 {
             APP_STAGE = 1;
             serial::write_str("\n======== USERSACE CALCULATOR STAGE ========\n");
-            let mut buf = [0u8; 8192];
+            let mut buf = [0u8; 32768];
             if let Some(n) = crate::fs::read_large("/bin/calculator", &mut buf) {
                 serial::write_str("[CALC] loaded ELF bytes=");
                 serial::write_usize(n);
