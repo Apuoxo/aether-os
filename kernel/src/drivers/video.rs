@@ -342,3 +342,131 @@ pub fn snapshot() {
         }
     }
 }
+
+
+unsafe fn mmio_write32(off: usize, value: u32) {
+    core::ptr::write_volatile((GPU.mmio + off) as *mut u32, value);
+}
+
+const GMBUS_PIN_DISABLED: u32 = 0;
+const GMBUS_PIN_VGADDC: u32 = 2;
+const GMBUS_PIN_PANEL: u32 = 3;
+const GMBUS_PIN_DPC: u32 = 4;
+const GMBUS_PIN_DPB: u32 = 5;
+const GMBUS_PIN_DPD: u32 = 6;
+const GMBUS_RATE_100KHZ: u32 = 0 << 8;
+const GMBUS_SW_RDY: u32 = 1 << 30;
+const GMBUS_CYCLE_STOP: u32 = 4 << 25;
+const GMBUS_CYCLE_INDEX: u32 = 2 << 25;
+const GMBUS_HW_RDY: u32 = 1 << 11;
+const GMBUS_SATOER: u32 = 1 << 10;
+const GMBUS_ACTIVE: u32 = 1 << 9;
+const GMBUS_BYTE_COUNT_SHIFT: u32 = 16;
+const GMBUS_SLAVE_ADDR_SHIFT: u32 = 1;
+const GMBUS_SLAVE_READ: u32 = 1;
+const GMBUS_SLAVE_EDID: u32 = 0x50;
+
+unsafe fn wait_gmbus(mask: u32, want_set: bool, limit: u32) -> bool {
+    let mut n = 0u32;
+    while n < limit {
+        let v = mmio_read32(GMBUS2);
+        if want_set {
+            if v & mask != 0 { return true; }
+        } else if v & mask == 0 {
+            return true;
+        }
+        core::hint::spin_loop();
+        n += 1;
+    }
+    false
+}
+
+/// Explicit EDID read. Normal boot does not invoke this transaction.
+pub fn read_edid(port: u32, out: &mut [u8; 128]) -> bool {
+    unsafe {
+        if !GPU_READY || !TARGET_FOUND {
+            serial::write_str("[VIDEO/EDID] unavailable — MMIO not ready\n");
+            return false;
+        }
+        if port > GMBUS_PIN_DPD || port == GMBUS_PIN_DISABLED {
+            serial::write_str("[VIDEO/EDID] invalid GMBUS port\n");
+            return false;
+        }
+        if !wait_gmbus(GMBUS_ACTIVE, false, 100_000) {
+            serial::write_str("[VIDEO/EDID] controller busy\n");
+            return false;
+        }
+
+        let mut ok = false;
+        mmio_write32(GMBUS0, port | GMBUS_RATE_100KHZ);
+        let command = GMBUS_CYCLE_INDEX
+            | (128u32 << GMBUS_BYTE_COUNT_SHIFT)
+            | (GMBUS_SLAVE_EDID << GMBUS_SLAVE_ADDR_SHIFT)
+            | GMBUS_SLAVE_READ
+            | GMBUS_SW_RDY;
+        mmio_write32(GMBUS1, command);
+
+        let mut pos = 0usize;
+        while pos < 128 {
+            if !wait_gmbus(GMBUS_HW_RDY, true, 200_000) {
+                serial::write_str("[VIDEO/EDID] HW_RDY timeout\n");
+                break;
+            }
+            let word = mmio_read32(GMBUS3);
+            let mut b = 0usize;
+            while b < 4 && pos < 128 {
+                out[pos] = (word >> (b * 8)) as u8;
+                pos += 1;
+                b += 1;
+            }
+        }
+
+        if pos == 128 {
+            let status = mmio_read32(GMBUS2);
+            if status & GMBUS_SATOER == 0 {
+                let header_ok =
+                    out[0] == 0x00 && out[1] == 0xFF && out[2] == 0xFF &&
+                    out[3] == 0xFF && out[4] == 0xFF && out[5] == 0xFF &&
+                    out[6] == 0xFF && out[7] == 0x00;
+                let mut sum = 0u8;
+                let mut i = 0usize;
+                while i < 128 {
+                    sum = sum.wrapping_add(out[i]);
+                    i += 1;
+                }
+                ok = header_ok && sum == 0;
+                serial::write_str(if ok {
+                    "[VIDEO/EDID] block0 checksum PASS\n"
+                } else {
+                    "[VIDEO/EDID] block0 validation FAIL\n"
+                });
+            }
+        }
+
+        mmio_write32(GMBUS1, GMBUS_CYCLE_STOP | GMBUS_SW_RDY);
+        let _ = wait_gmbus(GMBUS_ACTIVE, false, 100_000);
+        mmio_write32(GMBUS0, GMBUS_PIN_DISABLED);
+        ok
+    }
+}
+
+/// Try the Sandy Bridge DDC pins until one returns a valid EDID block.
+pub fn probe_edid(out: &mut [u8; 128]) -> u32 {
+    let ports = [
+        GMBUS_PIN_VGADDC, GMBUS_PIN_PANEL, GMBUS_PIN_DPC,
+        GMBUS_PIN_DPB, GMBUS_PIN_DPD,
+    ];
+    let mut found = 0u32;
+    let mut i = 0usize;
+    while i < ports.len() {
+        serial::write_str("[VIDEO/EDID] probing pin=");
+        serial::write_usize(ports[i] as usize);
+        serial::write_str("\n");
+        if read_edid(ports[i], out) {
+            found += 1;
+            return found;
+        }
+        i += 1;
+    }
+    found
+}
