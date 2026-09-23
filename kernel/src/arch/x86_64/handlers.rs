@@ -100,7 +100,18 @@ unsafe fn user_ok(ptr: usize, len: usize) -> bool {
     true
 }
 
-unsafe fn sys_write(buf: usize, len: usize) -> u64 {
+unsafe fn current_has_cap(slot: usize, required: u32) -> bool {
+    match crate::process::get(crate::process::current_pid()) {
+        Some(p) => p.caps.check(slot, required),
+        None => false,
+    }
+}
+
+fn sys_write(buf: usize, len: usize) -> u64 {
+    if !current_has_cap(1, crate::capability::CAP_WRITE) {
+        serial::write_str("  [SYSCALL] write denied: capability\n");
+        return u64::MAX;
+    }
     if !user_ok(buf, len) {
         serial::write_str("  [SYSCALL] write bad ptr\n");
         return u64::MAX;
@@ -117,6 +128,10 @@ unsafe fn sys_write(buf: usize, len: usize) -> u64 {
 }
 
 unsafe fn sys_read(path_ptr: usize, buf_ptr: usize, buflen: usize) -> u64 {
+    if !current_has_cap(0, crate::capability::CAP_READ) {
+        serial::write_str("  [SYSCALL] read denied: capability\n");
+        return u64::MAX;
+    }
     if !user_ok(path_ptr, 1) || !user_ok(buf_ptr, buflen) {
         serial::write_str("  [SYSCALL] read bad ptr\n");
         return u64::MAX;
@@ -148,6 +163,9 @@ unsafe fn sys_read(path_ptr: usize, buf_ptr: usize, buflen: usize) -> u64 {
 }
 
 unsafe fn sys_list(buf_ptr: usize, buflen: usize) -> u64 {
+    if !current_has_cap(0, crate::capability::CAP_READ) {
+        return u64::MAX;
+    }
     if !user_ok(buf_ptr, buflen) { return u64::MAX; }
     let mut names = [[0u8; 24]; 16];
     let mut lens = [0usize; 16];
@@ -171,6 +189,9 @@ unsafe fn sys_list(buf_ptr: usize, buflen: usize) -> u64 {
 }
 
 unsafe fn sys_poll_key(out_ptr: usize) -> u64 {
+    if !current_has_cap(0, crate::capability::CAP_READ) {
+        return u64::MAX;
+    }
     if !user_ok(out_ptr, 4) { return u64::MAX; }
     if let Some(ev) = crate::input::poll() {
         *((out_ptr) as *mut u8) = ev.key;
@@ -194,6 +215,9 @@ unsafe fn sys_poll_key(out_ptr: usize) -> u64 {
 }
 
 unsafe fn sys_draw_text(x: usize, y: usize, ptr: usize, color: u32) -> u64 {
+    if !current_has_cap(2, crate::capability::CAP_MAP) {
+        return u64::MAX;
+    }
     if !user_ok(ptr, 128) || !crate::graphics::ready() { return u64::MAX; }
     let mut n = 0usize;
     while n < 127 {
@@ -210,6 +234,9 @@ unsafe fn sys_draw_text(x: usize, y: usize, ptr: usize, color: u32) -> u64 {
 }
 
 unsafe fn sys_fill_rect(x: usize, y: usize, w: usize, h: usize, color: u32) -> u64 {
+    if !current_has_cap(2, crate::capability::CAP_MAP) {
+        return u64::MAX;
+    }
     if w == 0 || h == 0 || w > 1024 || h > 768 || !crate::graphics::ready() {
         return u64::MAX;
     }
