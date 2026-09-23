@@ -791,3 +791,78 @@ We now have enough evidence to separate three layers cleanly:
 3. machine-specific truth, which Aether must obtain from PCI/ACPI/EDID/USB/runtime diagnostics.
 
 This prevents the common mistake of taking a G21/G52 specification or a repair dump and treating it as the exact configuration of the user's AH532.
+
+## 31. Sixth-pass board-package and physical-board cross-check
+
+### Exact schematic family has a second independently indexed representation
+
+A separate schematic catalogue identifies the A532/AH532 board as **Quanta FH6 / FH6C** and lists the PCB markings **DA0FH6MB6E0, DAFH6CMB6D0 and similar**. It states that the schematic is a 45-page PDF. This is useful because it connects the two board-name variants that repeatedly appear in repair archives instead of treating them as unrelated boards.
+
+Source:
+- https://realschematic.com/shop/9971/desc/fujitsu-lifebook-ah532-a532
+
+A separate Fujitsu schematic index names the A532 board as **DAFH6CMB6D0 / Quanta FH6C** and describes the document as a schematic for that platform. This independently confirms that the DAFH6CMB6D0 spelling is a real board-family alias rather than a search typo.
+
+Sources:
+- https://www.gadget-manual.com/fujitsu/
+- https://www.alifixit.com/fujitsu-lifebook-a532-dafh6cmb6d0-quanta-fh6c-schematic/
+
+### DAFH6CMB6D0 has its own indexed schematic fingerprint
+
+Vinafix's technical-documentation archive contains a separate **Fujitsu LifeBook A532 DAFH6CMB6D0 hm70 Quanta FH6C rB** document. It reports:
+- board/platform: DAFH6CMB6D0 / A532;
+- ODM: Quanta;
+- DDR3;
+- key controllers: Realtek ALC269 and RTL8111F;
+- PDF size: 904.4 KB;
+- SHA-256: `9e657015ab91c53a49dada2d245fc2e5ae85f28caabfc9c5676d03d269d01d72`.
+
+This is important because it demonstrates that the FH6C family has multiple documented board/revision representations. The existence of the file does not prove that every DA0FH6MB6E0 Rev.E AH532 uses the exact same component population.
+
+Source:
+- https://vinafix.com/forums/technical-documentation.15/page-902?direction=asc&order=view_count
+
+### Physical-board sales listings provide an additional HM76 ↔ DA0FH6MB6E0 correlation
+
+Current Ukrainian parts listings independently identify working Fujitsu A532/AH532 UMA boards as:
+- DA0FH6MB6E0;
+- Rev.E on some listings;
+- HM76;
+- CP581562-01;
+- suitable for third-generation Intel processors.
+
+These are commercial listings rather than engineering documentation, so they are not treated as authoritative electrical evidence. They are nevertheless useful as an independent cross-check against the long-standing filename conflict where some community schematics are labelled "HM70".
+
+Sources:
+- https://prom.ua/ua/m-2484169030447441882-materinskaya-plata-fujitsu.html
+- https://prom.ua/ua/m-604877864161845838-materinskaya-plata-fujitsu.html
+- https://notebook-store.com.ua/ru/materynska-plata-fujitsu-lifebook-ah532-da0fh6mb6e0-hm76-harantiia/
+
+### BoardView / maintenance-guide evidence has strengthened, but payload inspection is still pending
+
+A recent repair-forum thread explicitly describes a **Fujitsu LifeBook A532 DAFH6CMB6D0 hm70 maintenance guide** containing a PDF and FZ boardview files. The forum text says the FZ files list components on the motherboard PCB. This is evidence that a boardview/maintenance package is circulating in usable form, but the forum's searchable page does not expose the actual archive bytes to us.
+
+Source:
+- https://www.diy-laptoprepair.com/forum/fix-FUJITSU-LifeBook-A532-DAFH6CMB6D0-hm70-repair-guide-schematics.html
+
+The current Telegram archive also independently lists:
+- `Fujitsu LifeBook A532 DAFH6CMB6D0 PDF .rar` — 872.8 KB;
+- `Fujitsu LifeBook A532 DAFH6CMB6D0 hm70 Quanta FH6C rB PDF .rar` — 973.9 KB;
+both explicitly tagged **#SCHEMATIC** and **#BOARDVIEW**.
+
+Sources:
+- https://t.me/s/schematicslaptop?before=11966
+- https://t.me/s/schematicslaptop?before=11969
+
+These findings materially improve the source map: we now have distinct archive trails for both DA0FH6MB6E0 Rev.E and DAFH6CMB6D0/RB variants.
+
+### Exact-hardware matching rule remains unchanged
+
+The new evidence increases confidence that the AH532/A532 platform uses the FH6/FH6C board family, but it does **not** replace machine-specific verification. Before using any schematic net name, EC address, GPIO, power rail, or boardview coordinate in Aether, require matching physical-board evidence:
+1. board marking/revision;
+2. PCH PCI ID/revision;
+3. DMI/SMBIOS identity where available;
+4. matching controller/subsystem IDs.
+
+Until the actual schematic/boardview payload is inspected, all net-level information remains unverified.
+
