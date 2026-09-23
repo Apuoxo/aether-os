@@ -688,3 +688,45 @@ We now have independent confirmation of:
 - independent Linux hardware/driver cross-checks.
 
 The remaining documentary gap is therefore specifically the **actual contents** of the board schematic and BoardView, plus machine-specific firmware/ACPI identity. Searching further for duplicate index pages is unlikely to add much unless it exposes the actual files or new primary evidence.
+
+
+## 28. Fourth-pass result: exact-file availability and board-family cross-reference
+
+A further search confirms that the exact schematic is indexed by multiple independent repair repositories, but the actual file remains gated behind forum credits/membership rather than exposed as a public direct download.
+
+### Exact schematic independently indexed
+RepairLap lists the exact attachment `Fujitsu_FH6C_FH6_hm70_r0c_mb_0522.pdf` together with 2 MB and 4 MB firmware images under Fujitsu LIFEBOOK AH532 / Quanta FH6 / DA0FH6MB6E0 Rev.E. It also separately lists U35, U7 and U24 firmware files. This independently corroborates the Vinafix package inventory.
+
+Source:
+- https://www.repairlap.com/threads/fujitsu-lifebook-ah532-schematic-da0fh6mb6e0-rev-e-bios.5293/post-8615
+
+Vinafix exposes the exact PDF filename, board identity, controller summary and SHA-256, but marks download access as paid membership. The same site reports 1.4 MB size and 1,396+ views, indicating that the file is not merely a search-engine filename artifact.
+
+Source:
+- https://vinafix.com/threads/fujitsu-ah532-fh6-fh6c-hm70-r0c_mb_0522.15516/
+
+### BoardView request trail
+A dedicated DR-BIOS request exists specifically for `DA0FH6MB6E0 rev E`, and the administrator points to the FH6C/HM70 schematic/boardview package. This is independent evidence that technicians were looking for the boardview for the same exact revision.
+
+Source:
+- https://dr-bios.com/threads/da0fh6mb6e0.54744/
+
+The Vinafix discussion is particularly useful because in 2018 a user explicitly requested the DA0FH6MB6E0 Rev.E boardview and the thread response was **"Unavailable bv"**. This explains why the boardview is repeatedly indexed today but rarely exposed as a directly downloadable public file.
+
+Source:
+- https://vinafix.com/threads/fujitsu-ah532-fh6-fh6c-hm70-r0c_mb_0522.15516/page-2
+
+### AH530-Q / AH532 board-family clue
+An independent electronics-repair forum has a schematic request explicitly naming `Fujitsu-Siemens LIFEBOOK AH530-Q — DA0FH6MB6E0 Rev.E`. This is important because it shows the same board marking was used/associated with another closely related Fujitsu model. Therefore the board marking is stronger evidence than a model-name search alone, but it also means we must not assume every AH532 and AH530-Q has identical component population.
+
+Source:
+- https://eletronicabr.com/en/topic/202177-fujitsu-ah530_q-da0fh6mb6e0-rev-e/
+
+### Additional forum index
+Another repair forum independently indexes `Fujitsu Lifebook AH532 Quanta FH6 DA0FH6MB6E0 DAFH6CMB6D0 REV:E schematic` and separately `Quanta FH6C DAFH6CMB6D0 schematic`. This suggests that DA0FH6MB6E0 and DAFH6CMB6D0 naming variants occur in the repair ecosystem and should be preserved as aliases during future searches.
+
+Source:
+- https://forum.diacom.az/viewforum.php?f=125
+
+### Important outcome
+The documentary search has now reached a practical boundary: the same primary/near-primary artifacts are independently indexed, but the actual schematic/boardview bytes are access-controlled or not exposed through searchable pages. The next useful move is therefore **not another generic web search**. It is either obtaining the actual archive through an accessible legitimate source or proceeding with machine-specific read-only hardware/ACPI evidence and later matching it against the board package.
