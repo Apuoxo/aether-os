@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install build tools
-        run: sudo apt-get update && sudo apt-get install -y nasm grub-pc-bin grub-common xorriso mtools jq unzip curl
+        run: sudo apt-get update && sudo apt-get install -y nasm grub-pc-bin grub-common xorriso mtools jq unzip curl qemu-system-x86
       - name: Clean kernel build directory
         working-directory: kernel
         run: make clean
@@ -32,6 +32,19 @@ jobs:
       - name: Build ISO
         working-directory: kernel
         run: make iso
+      - name: QEMU native-app smoke test
+        run: |
+          set +e
+          timeout 20s qemu-system-x86_64 -cdrom kernel/build/aether.iso -serial file:/tmp/aether-qemu.log -display none -m 128M -no-reboot
+          rc=$?
+          cat /tmp/aether-qemu.log
+          test "$rc" -eq 124
+          grep -q "\[INIT\] Calculator ELF installed" /tmp/aether-qemu.log
+          grep -q "\[CALC\] loaded ELF bytes=" /tmp/aether-qemu.log
+          grep -q "\[SYSCALL\] nr=12" /tmp/aether-qemu.log
+          ! grep -q "PANIC" /tmp/aether-qemu.log
+          ! grep -q "\[PF\] killing process" /tmp/aether-qemu.log
+
       - name: Publish ISO
         uses: actions/upload-artifact@v4
         with:
