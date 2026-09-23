@@ -112,11 +112,11 @@ fn draw_drive(wx:usize,y:usize,name:&str,sub:&str,sel:bool){
 fn draw_computer(wx:usize,y:usize,ww:usize,h:usize){
     graphics::draw_str(wx,y+8,"Computer",TEXT);
     graphics::draw_str(wx,y+28,"Hard Disk Drives",DIM);
-    draw_drive(wx,y+42,"Local Disk (C:)","Physical ATA device",false);
-    draw_drive(wx,y+98,"AetherFS (A:)","Aether RAM volume",false);
+    draw_drive(wx,y+42,"Local Disk (C:)","NTFS system volume — read-only",false);
+    draw_drive(wx,y+98,"AetherFS (A:)","Aether RAM volume — read/write",false);
     graphics::draw_str(wx,y+166,"Devices with Removable Storage",DIM);
     graphics::draw_str(wx+8,y+188,"No removable volumes mounted.",DIM);
-    graphics::draw_str(wx,y+h.saturating_sub(20),"Double-click AetherFS (A:) to browse files.",DIM);
+    graphics::draw_str(wx,y+h.saturating_sub(20),"Double-click a volume to browse its contents.",DIM);
     let _=ww;
 }
 
@@ -285,10 +285,14 @@ pub fn on_click(wx:i32,wy:i32,ww:i32,wh:i32,title_h:i32,mx:i32,my:i32,right:bool
             let cx=mx-(wx+side+8);let _=cx;
             if VIEW==VIEW_COMPUTER{
                 if my>=list_top+42&&my<list_top+98{
-                    log(b"physical drive opened: C:");
-                    SEL=-1;
-                    VIEW=VIEW_DISK;
-                    status(b"Local Disk (C:) opened - read-only partitions");
+                    log(b"Local Disk (C:) open requested");
+                    if fs_ntfs::mount_first(){
+                        SEL=-1;
+                        VIEW=VIEW_NTFS;
+                        status(b"Local Disk (C:) opened - NTFS read-only");
+                    }else{
+                        status(b"Local Disk (C:) mount failed");
+                    }
                     return true;
                 }
                 if my>=list_top+98&&my<list_top+154{
@@ -351,13 +355,18 @@ pub fn on_click(wx:i32,wy:i32,ww:i32,wh:i32,title_h:i32,mx:i32,my:i32,right:bool
             return true;
         }
         if my>=list_top&&my<list_top+330&&mx<wx+side{
-            // sidebar entries
-            if my>list_top+200{push_hist();set_root();status(b"AetherFS (A:)");}
-            return true;
+            // Sidebar: only implemented destinations change state.
+            if my>=list_top+220&&my<list_top+260{
+                push_hist();
+                set_root();
+                status(b"AetherFS (A:) opened");
+                return true;
+            }
+            return false;
         }
         if VIEW==VIEW_TEXT||VIEW==VIEW_PROPS{VIEW=VIEW_ROOT;return true;}
     }
-    true
+    false
 }
 fn go_back(){unsafe{if HIST_I>0{HIST_I-=1;let mut i=0;while i<32{CWD[i]=HIST[HIST_I][i];i+=1;}CWD_LEN=HIST_LEN[HIST_I];VIEW=VIEW_ROOT;SEL=-1;status(b"Back");}else{VIEW=VIEW_COMPUTER;SEL=-1;status(b"Computer");}}}
 fn go_forward(){unsafe{if HIST_I+1<HIST_N{HIST_I+=1;VIEW=VIEW_ROOT;SEL=-1;status(b"Forward");}}}
