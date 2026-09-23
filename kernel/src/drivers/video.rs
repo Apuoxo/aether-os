@@ -321,17 +321,13 @@ fn discover() -> bool {
 
                 if vendor == INTEL_VENDOR && device == HD3000_DID {
                     TARGET_FOUND = true;
-                    // Intel graphics normally exposes its device registers through
-                    // a memory BAR. Do not assume which BAR is valid; select the
-                    // first non-zero memory BAR and map only a guarded register window.
-                    let mut selected = Bar::empty();
-                    let mut bi = 0usize;
-                    while bi < 6 {
-                        if bars[bi].base != 0 && !bars[bi].is_io {
-                            selected = bars[bi];
-                            break;
-                        }
-                        bi += 1;
+                    // Sandy Bridge IGD exposes the CPU-visible display/MMIO
+                    // register aperture in BAR0. BAR2 is the large prefetchable
+                    // graphics aperture, not the register block. Do not probe BAR2.
+                    let selected = bars[0];
+                    if selected.base != 0 && (selected.is_io || selected.prefetch) {
+                        serial::write_str("[VIDEO/MMIO] BAR0 has unexpected type/flags — refusing access\\n");
+                        continue;
                     }
 
                     if selected.base != 0 && selected.base <= usize::MAX as u64 {
