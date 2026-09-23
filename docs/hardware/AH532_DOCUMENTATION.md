@@ -747,3 +747,47 @@ Important new evidence:
 The exact board package is real and repeatedly independently indexed. The public search layer has now reached the point where it returns archive/index metadata rather than the underlying file bytes. We should not claim to have inspected the schematic or boardview until the actual files are obtained through an accessible legitimate route.
 
 For Aether engineering, the next highest-value action is now machine-specific read-only acquisition: identify the physical PCH by PCI ID, enumerate D20-D31, dump BARs/subsystem IDs/revisions, enumerate ACPI table identities, and collect EDID/USB topology. Those results can then be mapped against the known board-package fingerprints without unsafe MMIO or firmware operations.
+
+
+## 30. Fifth-pass findings: G21/G52 and firmware lineage
+
+A further search found useful evidence about AH532 product variants and firmware lineage.
+
+### Fujitsu officially distinguishes G21 and G52
+A Fujitsu service-package index lists separate BIOS update identifiers for LIFEBOOK AH532/G21 and AH532/G52, including FPC03500BK for G21 and FPC03465BK for G52. It also lists multiple AH532 generic BIOS package identifiers. This confirms that G21/G52 should not be treated as merely cosmetic labels when matching firmware or board evidence.
+
+Source:
+- https://www.fmworld.net/globalpc/batteryctrl/doc/FTS_april.pdf
+
+### Fujitsu product data confirms HM76 and multiple graphics populations
+A Fujitsu AH532/GFX data sheet explicitly identifies the chipset as Intel HM76 and lists G21/G52 base units with Intel HD Graphics 3000 or 4000 depending on CPU, plus discrete NVIDIA options. It also confirms Intel Centrino Wireless-N 2230 and the 4-in-1 card reader. This supports our rule that the exact CPU/graphics population must be taken from the physical machine rather than inferred from the model name.
+
+Source:
+- https://community.intel.com/cipcp26785/attachments/cipcp26785/wireless/16104/1/ds-LIFEBOOK-AH532GFX.pdf
+
+### Independent G21/G52 firmware evidence
+A BIOS-modification archive states that the same BIOS v2.09 family was used for AH532/G21 and AH532/G52, while a separate user report describes a G52 for which G21 BIOS files did not work. These are community reports, not authoritative Fujitsu compatibility documentation, but together they show that firmware matching deserves caution and that board/revision identity is more reliable than model suffix alone.
+
+Sources:
+- https://www.bios-mods.com/forum/Thread-FUJITSU-LIFEBOOK-AH532-G21
+- https://forums.tomsguide.com/threads/fujitsu-laptop-motherboards-bios-problem.431705/post-1842700
+
+### Exact board dump independently reported as read from a working AH532/G52
+A firmware archive explicitly labels a dump as **Fujitsu LIFEBOOK AH532/G52**, main board `DA0FH6MB6E0 Rev.E`, and says it was read from a working machine. This is strong independent confirmation of the board/model relationship.
+
+Source:
+- https://remont-aud.net/dump/kompjutery_noutbuki_netbuki/fujitsu/433-4
+
+### 4PDA evidence: exact files were circulated to AH532 owners
+A long-running AH532 discussion independently references the exact schematic filename, a Google Drive copy, and separate EC/Main firmware archives for `DA0FH6MB6E0 REV-E`. This provides another trail to the same primary artifacts, although the forum post itself does not prove the contents of those archives.
+
+Source:
+- https://4pda.to/forum/index.php?showtopic=422156&st=220
+
+### New engineering implication
+We now have enough evidence to separate three layers cleanly:
+1. Fujitsu product-family documentation (HM76, G21/G52, supported CPU/GPU/card-reader/WLAN populations);
+2. exact board-family evidence (FH6/FH6C, DA0FH6MB6E0 Rev.E, schematic/firmware/boardview archives);
+3. machine-specific truth, which Aether must obtain from PCI/ACPI/EDID/USB/runtime diagnostics.
+
+This prevents the common mistake of taking a G21/G52 specification or a repair dump and treating it as the exact configuration of the user's AH532.
