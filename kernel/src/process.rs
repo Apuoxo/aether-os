@@ -194,7 +194,7 @@ pub fn get(pid: usize) -> Option<Process> {
     }
 }
 
-pub fn set_state(pid: usize, st: State) {
+pub fn update_caps(pid: usize, caps: CapTable) {\n    unsafe {\n        let mut i = 0usize;\n        while i < MAX_PROCESSES {\n            if TABLE[i].pid == pid && TABLE[i].state != State::Empty {\n                TABLE[i].caps = caps;\n                return;\n            }\n            i += 1;\n        }\n    }\n}\n\npub fn set_state(pid: usize, st: State) {
     unsafe {
         let mut i = 0usize;
         while i < MAX_PROCESSES {
