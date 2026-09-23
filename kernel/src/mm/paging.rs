@@ -88,7 +88,7 @@ pub unsafe fn split_huge_page(pml4_phys: usize, virt: usize) -> bool {
     let pt = &mut *(pt_phys as *mut PageTable);
     pt.clear();
     let base = old & !0x1F_FFFF;
-    let flags = old & 0xFFF;
+    let flags = old & (PAGE_PRESENT | PAGE_WRITE | PAGE_USER | PAGE_ACCESSED | PAGE_PWT | PAGE_PCD);
     let mut i = 0usize;
     while i < 512 {
         pt.set(i, base + ((i as u64) << 12), flags);
