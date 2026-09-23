@@ -147,7 +147,7 @@ fn draw_text(wx:usize,y:usize,ww:usize,h:usize){
 
 fn draw_props(wx:usize,y:usize,ww:usize,h:usize){
     graphics::fill_rect(wx,y,ww,h,WHITE);graphics::draw_str(wx+14,y+14,"Properties",BLUE);
-    unsafe{if SEL<0{graphics::draw_str(wx+14,y+40,"No item selected.",DIM);return;}let mut a=[fs::ListItem{name:[0;24],name_len:0,size:0,is_dir:false};16];let n=fs::list_ex(&mut a);let s=SEL as usize;if s>=n{return;}graphics::draw_str(wx+14,y+46,"Name:",DIM);let mut k=0;while k<a[s].name_len{graphics::draw_char(wx+66+k*8,y+46,a[s].name[k],TEXT);k+=1;}graphics::draw_str(wx+14,y+66,if a[s].is_dir{"Type: Folder"}else{"Type: File"},TEXT);if !a[s].is_dir{graphics::draw_str(wx+14,y+86,"Size:",DIM);draw_num(wx+56,y+86,a[s].size);}graphics::draw_str(wx+14,y+106,"Location: AetherFS (A:)",DIM);}
+    unsafe{if SEL<0{graphics::draw_str(wx+14,y+40,"No item selected.",DIM);return;}let mut a=[fs::ListItem{name:[0;24],name_len:0,size:0,is_dir:false};16];let n=fs::list_ex_path(core::str::from_utf8_unchecked(&CWD[..CWD_LEN]),&mut a);let s=SEL as usize;if s>=n{return;}graphics::draw_str(wx+14,y+46,"Name:",DIM);let mut k=0;while k<a[s].name_len{graphics::draw_char(wx+66+k*8,y+46,a[s].name[k],TEXT);k+=1;}graphics::draw_str(wx+14,y+66,if a[s].is_dir{"Type: Folder"}else{"Type: File"},TEXT);if !a[s].is_dir{graphics::draw_str(wx+14,y+86,"Size:",DIM);draw_num(wx+56,y+86,a[s].size);}graphics::draw_str(wx+14,y+106,"Location: AetherFS (A:)",DIM);}
 }
 
 fn draw_context(){
@@ -190,7 +190,13 @@ pub fn on_click(wx:i32,wy:i32,ww:i32,wh:i32,title_h:i32,mx:i32,my:i32,right:bool
     unsafe{
         if CONFIRM_DEL{let cx=ww/2;let cy=wh/2;if my>wy+cy+20&&my<wy+cy+60{if mx<wx+cx{delete_selected();}CONFIRM_DEL=false;}return true;}
         if CTX{if mx>=CTX_X&&mx<CTX_X+150&&my>=CTX_Y&&my<CTX_Y+112{let r=(my-CTX_Y)/20;match r{0=>open_selected(),1=>new_folder(),2=>new_file(),3=>rename_selected(),4=>{CONFIRM_DEL=true;},_=>{}}CTX=false;return true;}CTX=false;return true;}
-        if right{CTX=true;CTX_X=mx;CTX_Y=my;return true;}
+        if right{
+            CTX=true;
+            CTX_X=mx;
+            CTX_Y=my;
+            log(b"context menu opened");
+            return true;
+        }
         if rely>=5&&rely<35{
             if relx<44{go_back();}else if relx<80{go_forward();}else if relx<116{go_up();}else if relx<182{status(b"Organize");}else if relx<244{status(b"Views: Details");}else if relx<310{status(b"Share");}
             return true;
@@ -198,8 +204,39 @@ pub fn on_click(wx:i32,wy:i32,ww:i32,wh:i32,title_h:i32,mx:i32,my:i32,right:bool
         let side=150i32.min(ww/3);let list_top=by+40;
         if mx>=wx+side+8&&my>=list_top{
             let cx=mx-(wx+side+8);let _=cx;
-            if VIEW==VIEW_COMPUTER{if my>=list_top+42&&my<list_top+150{push_hist();set_root();status(b"AetherFS (A:) opened");}}
-            else if VIEW==VIEW_ROOT{let row=((my-list_top-24)/20)as i32;if row>=0&&row<16{if SEL==row{log(b"open selected");open_selected();}else{SEL=row;log(b"selection changed");status(b"Selected");}}}
+            if VIEW==VIEW_COMPUTER{
+                if my>=list_top+42&&my<list_top+98{
+                    log(b"physical drive selected: C:");
+                    status(b"Local Disk (C:) unavailable: no read-only disk filesystem backend");
+                    return true;
+                }
+                if my>=list_top+98&&my<list_top+154{
+                    push_hist();
+                    set_root();
+                    log(b"AetherFS (A:) opened");
+                    status(b"AetherFS (A:) opened");
+                    return true;
+                }
+            }
+            else if VIEW==VIEW_ROOT{
+                let mut a=[fs::ListItem{name:[0;24],name_len:0,size:0,is_dir:false};16];
+                let n=fs::list_ex_path(core::str::from_utf8_unchecked(&CWD[..CWD_LEN]),&mut a);
+                if my<list_top+24{return false;}
+                let row=((my-list_top-24)/20)as i32;
+                if row>=0&&row<n as i32{
+                    if SEL==row{
+                        log(b"open selected");
+                        open_selected();
+                    }else{
+                        SEL=row;
+                        log(b"selection changed");
+                        status(b"Selected");
+                    }
+                    return true;
+                }
+                // Empty list area: no redraw.
+                return false;
+            }
             return true;
         }
         if my>=list_top&&my<list_top+330&&mx<wx+side{
@@ -213,4 +250,37 @@ pub fn on_click(wx:i32,wy:i32,ww:i32,wh:i32,title_h:i32,mx:i32,my:i32,right:bool
 }
 fn go_back(){unsafe{if HIST_I>0{HIST_I-=1;let mut i=0;while i<32{CWD[i]=HIST[HIST_I][i];i+=1;}CWD_LEN=HIST_LEN[HIST_I];VIEW=VIEW_ROOT;SEL=-1;status(b"Back");}else{VIEW=VIEW_COMPUTER;SEL=-1;status(b"Computer");}}}
 fn go_forward(){unsafe{if HIST_I+1<HIST_N{HIST_I+=1;VIEW=VIEW_ROOT;SEL=-1;status(b"Forward");}}}
-fn go_up(){unsafe{VIEW=VIEW_COMPUTER;SEL=-1;CWD[0]=b'/';CWD_LEN=1;status(b"Computer");}}
+fn go_up(){
+    unsafe{
+        if VIEW!=VIEW_ROOT{
+            VIEW=VIEW_COMPUTER;
+            SEL=-1;
+            CWD[0]=b'/';
+            CWD_LEN=1;
+            status(b"Computer");
+            return;
+        }
+        if CWD_LEN<=1{
+            VIEW=VIEW_COMPUTER;
+            SEL=-1;
+            status(b"Computer");
+            return;
+        }
+        let mut i=CWD_LEN;
+        while i>1{
+            i-=1;
+            if CWD[i]==b'/'{
+                CWD_LEN=if i==0{1}else{i};
+                if CWD_LEN==0{CWD_LEN=1;}
+                SEL=-1;
+                VIEW=VIEW_ROOT;
+                status(b"Up");
+                return;
+            }
+        }
+        CWD[0]=b'/';
+        CWD_LEN=1;
+        SEL=-1;
+        status(b"Up");
+    }
+}
