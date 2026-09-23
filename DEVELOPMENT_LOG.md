@@ -118,3 +118,12 @@ Every significant change should be followed by:
 - Commit: 45a59d24f4b695f29f43d2849f3ac4a27f5c427d.
 - No kernel, graphics-driver, GGTT/GSM, Ring3, storage, or Wi-Fi code was changed.
 - Next step: verify CI/QEMU build, then test the resulting ISO on AH532. If the same GRUB error persists, inspect the GRUB image/modules and boot path rather than making further blind kernel changes.
+
+
+### 2026-09-24 — AH532 retry #2: GRUB console-only config still fails
+- Real AH532 retest of build #144 still reports the same "Error: no suitable video mode found" before Aether startup.
+- Build #144 was independently inspected: the published artifact contains a 12,953,600-byte ISO, and its embedded grub.cfg contains only `set timeout=0`, `set default=0`, `terminal_output console`, and the Multiboot2 entry. This confirms the failure is not caused by the previously removed gfxmode/gfxpayload directives.
+- GNU GRUB documentation confirms `terminal_output console` is a valid native console output and that `grub-mkrescue --install-modules=...` can restrict installed modules and their dependencies. citeturn1search0turn1search1
+- Applied the next controlled bootloader experiment: restrict the ISO to the minimum GRUB modules needed for legacy BIOS ISO9660 + Multiboot2 + normal/terminal boot, and remove installed themes/fonts/locales. The kernel and runtime code are unchanged.
+- Commit: 0c79ad9da5e698b5f70412dd6339f36384b6bcac.
+- No claim of AH532 success yet. Required next step: CI build/QEMU smoke test, then fresh ISO on AH532. If the same error persists, the next investigation is the GRUB platform image/core path rather than further kernel changes.
