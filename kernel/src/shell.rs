@@ -148,8 +148,24 @@ fn eq(line: &[u8], s: usize, clen: usize, b: &[u8]) -> bool {
 }
 
 fn cmd_help() {
-    write_str("Commands: help ls cat mem uname vdiag vedid echo halt\n");
+    write_str("Commands: help ls cat mem dsk uname vdiag vedid echo halt\n");
 }
+
+fn write_u64_decimal(mut n: u64) {
+    let mut digs = [0u8; 20];
+    let mut len = 0usize;
+    if n == 0 { putc(b'0'); return; }
+    while n > 0 && len < digs.len() {
+        digs[len] = b'0' + (n % 10) as u8;
+        n /= 10;
+        len += 1;
+    }
+    while len > 0 {
+        len -= 1;
+        putc(digs[len]);
+    }
+}
+
 
 fn cmd_dsk() {
     write_str("======== DSK: real storage probe (READ-ONLY) ========\n");
@@ -292,9 +308,29 @@ fn cmd_dsk() {
     write_str(if crate::fs_ntfs::is_mounted() { "YES" } else { "NO" });
     write_str("\n");
     if crate::fs_ntfs::is_mounted() {
+        let n = crate::fs_ntfs::entry_count();
         write_str("NTFS root entries: ");
-        serial::write_usize(crate::fs_ntfs::entry_count());
+        serial::write_usize(n);
         write_str("\n");
+        if n > 0 {
+            write_str("NTFS root:\n");
+            let mut ei = 0usize;
+            while ei < n {
+                if let Some(e) = crate::fs_ntfs::entry(ei) {
+                    write_str("  [");
+                    write_str(if e.is_dir { "DIR " } else { "FILE" });
+                    write_str("] ");
+                    let mut j = 0usize;
+                    while j < e.name_len && j < e.name.len() { putc(e.name[j]); j += 1; }
+                    write_str("  size=");
+                    write_u64_decimal(e.size);
+                    write_str("  MFT=");
+                    serial::write_usize(e.mft_ref as usize);
+                    write_str("\n");
+                }
+                ei += 1;
+            }
+        }
     }
     write_str("======== END DSK ========\n");
 }
