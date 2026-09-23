@@ -19,13 +19,21 @@ jobs:
       - name: Fetch latest Calculator ELF from Aether Apps
         run: |
           set -e
-          url="$(curl -fsSL 'https://api.github.com/repos/Apuoxo/aether-apps/actions/artifacts?name=aether-calculator-elf&per_page=100' | jq -r '[.artifacts[] | select(.expired == false and .workflow_run.head_branch == "main")] | sort_by(.created_at) | last | .archive_download_url')"
-          test "$url" != "null"
           mkdir -p kernel/build
-          curl -fsSL "$url" -o /tmp/aether-calculator.zip
-          unzip -o /tmp/aether-calculator.zip -d /tmp/aether-calculator
-          test -s /tmp/aether-calculator/calculator
-          cp /tmp/aether-calculator/calculator kernel/build/calculator.elf
+          for attempt in $(seq 1 20); do
+            url="$(curl -fsSL 'https://api.github.com/repos/Apuoxo/aether-apps/actions/artifacts?name=aether-calculator-elf&per_page=100' | jq -r '[.artifacts[] | select(.expired == false and .workflow_run.head_branch == "main")] | sort_by(.created_at) | last | .archive_download_url')"
+            if [ "$url" != "null" ]; then
+              rm -rf /tmp/aether-calculator
+              mkdir -p /tmp/aether-calculator
+              if curl -fsSL "$url" -o /tmp/aether-calculator.zip && unzip -o /tmp/aether-calculator.zip -d /tmp/aether-calculator >/dev/null && test -s /tmp/aether-calculator/calculator; then
+                cp /tmp/aether-calculator/calculator kernel/build/calculator.elf
+                break
+              fi
+            fi
+            echo "Calculator artifact not ready; retry $attempt/20"
+            sleep 15
+          done
+          test -s kernel/build/calculator.elf
 
       - name: Build kernel
         working-directory: kernel
