@@ -19,7 +19,7 @@ $(BUILD_DIR)/kernel.o: $(RUST_SRCS) | $(BUILD_DIR)
 		-C opt-level=s -C panic=abort \
 		-C overflow-checks=off -C debug-assertions=off \
 		-C force-frame-pointers=no \
-		--target x86_64-unknown-none \
+		--target x86_64-unknown-linux-gnu \
 		-C relocation-model=static \
 		--emit=obj -o $@ src/main.rs
 
