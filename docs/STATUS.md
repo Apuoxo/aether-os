@@ -19,6 +19,15 @@ Aether currently has a working x86_64 native kernel/userspace foundation with:
 - a staged Intel Sandy Bridge Gen6 video-driver layer;
 - QEMU CI/smoke-test infrastructure.
 
+## Kernel correctness repair progress
+
+The first P0 source-repair pass is applied:
+
+- Syscall ABI is canonicalized to `RAX=nr, RDI=a1, RSI=a2, RDX=a3, R10=a4, R8=a5`; syscall return is restored through saved RAX.
+- The x86_64 TSS descriptor is encoded as a true 16-byte descriptor across GDT slots 5–6.
+
+These are **not yet complete**: deterministic QEMU evidence must still prove syscall arguments/return values and CPL3→CPL0 TSS/RSP0 entry. Next P0 work is Process↔Personality ownership, then real capability enforcement.
+
 ## Graphics status
 
 Target hardware: Fujitsu LIFEBOOK AH532 with Intel HD Graphics 3000, PCI 8086:0116, Gen6.
