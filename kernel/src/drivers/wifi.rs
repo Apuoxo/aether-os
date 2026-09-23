@@ -15,6 +15,12 @@ const INTEL_VID: u16 = 0x8086;
 const CENTRINO_2230_DID: u16 = 0x0887;
 const SUBSYS_BGN: u16 = 0x4062;
 
+// Intel 2230 uses the 2030 firmware family. Keep the firmware contract
+// explicit; Aether does not embed or claim to load an arbitrary blob.
+const IWL2030_FW_API_MIN: u32 = 5;
+const IWL2030_FW_API_MAX: u32 = 6;
+const IWL2030_FW_PREFIX: &str = "iwlwifi-2030-";
+
 static mut FOUND: bool = false;
 static mut READY: bool = false; // phase1 ready = found + mapped
 static mut NEEDS_FW: bool = true;
@@ -25,6 +31,7 @@ static mut BAR0: u64 = 0;
 static mut MMIO: usize = 0;
 static mut REV: u8 = 0;
 static mut SUBSYS: u16 = 0;
+static mut MMIO_MAPPED: bool = false;
 
 unsafe fn pci_r32(bus: u8, dev: u8, func: u8, off: u8) -> u32 {
     let a = 0x8000_0000u32
@@ -52,7 +59,7 @@ unsafe fn pci_w16(bus: u8, dev: u8, func: u8, off: u8, val: u16) {
 }
 
 fn map_mmio(phys: u64, size: usize) -> bool {
-    if phys == 0 {
+    if phys == 0 || size == 0 || (phys & 0xFFF) != 0 {
         return false;
     }
     let cr3 = unsafe { paging::read_cr3() };
@@ -61,9 +68,10 @@ fn map_mmio(phys: u64, size: usize) -> bool {
     let mut va = start;
     while va < end {
         if va >= 0x4000_0000 {
-            let _ = unsafe {
+            let ok = unsafe {
                 paging::map_page(cr3, va, va, paging::PAGE_PRESENT | paging::PAGE_WRITE)
             };
+            if !ok { return false; }
         }
         va += 0x1000;
     }
@@ -80,6 +88,21 @@ pub fn ready() -> bool {
 pub fn needs_firmware() -> bool {
     unsafe { NEEDS_FW }
 }
+
+pub fn mmio_ready() -> bool {
+    unsafe { MMIO_MAPPED }
+}
+
+/// Firmware filename contract for the supported Intel 2230 API range.
+/// This does not load firmware; the native loader is a separate stage.
+pub fn firmware_name(api: u32) -> Option<&'static str> {
+    if api < IWL2030_FW_API_MIN || api > IWL2030_FW_API_MAX { return None; }
+    if api == 5 { Some("iwlwifi-2030-5.ucode") } else { Some("iwlwifi-2030-6.ucode") }
+}
+
+pub fn firmware_prefix() -> &'static str {
+    IWL2030_FW_PREFIX
+}
 pub fn bar0() -> u64 {
     unsafe { BAR0 }
 }
@@ -94,6 +117,7 @@ pub fn init() {
         FOUND = false;
         READY = false;
         NEEDS_FW = true;
+        MMIO_MAPPED = false;
         // BUGFIX: WiFi sits behind PCIe root port → secondary bus (often 8 or 9)
         for bus in 0u8..=31 {
             for dev in 0u8..32 {
@@ -159,6 +183,7 @@ pub fn init() {
 
                     if bar0 != 0 && map_mmio(bar0, 0x2000) {
                         MMIO = bar0 as usize;
+                        MMIO_MAPPED = true;
                         READY = true;
                         serial::write_str("[WIFI] MMIO mapped 8K phase1 OK\n");
                         // Touch first dword (alive check) — may be 0 without FW
@@ -169,7 +194,8 @@ pub fn init() {
                     } else {
                         serial::write_str("[WIFI] MMIO map FAIL or BAR0=0\n");
                     }
-                    serial::write_str("[WIFI] assoc/TX requires iwlwifi firmware — NEEDS_FW\n");
+                    serial::write_str("[WIFI] firmware contract: iwlwifi-2030-5/6.ucode\n");
+                    serial::write_str("[WIFI] assoc/TX requires firmware loader — NEEDS_FW\n");
                     return;
                 }
             }
