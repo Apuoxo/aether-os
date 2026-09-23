@@ -93,7 +93,6 @@ pub extern "C" fn syscall_handler(frame: *mut u64) -> u64 {
                 u64::MAX
             }
         }
-        }
     }
 }
 
@@ -196,16 +195,28 @@ unsafe fn sys_list(buf_ptr: usize, buflen: usize) -> u64 {
 
 unsafe fn sys_poll_key(out_ptr: usize) -> u64 {
     if !user_ok(out_ptr, 4) { return u64::MAX; }
-    match crate::input::poll() {
-        Some(ev) => {
-            *((out_ptr) as *mut u8) = ev.key;
-            *((out_ptr + 1) as *mut u8) = if ev.pressed { 1 } else { 0 };
-            *((out_ptr + 2) as *mut u8) = ev.hid_code;
-            *((out_ptr + 3) as *mut u8) = ev.modifiers;
-            1
-        }
-        None => 0,
+
+    // USB HID already feeds the userspace queue. On AH532 the known-good
+    // PS/2 path is polled here so Ring3 apps receive the same keyboard input.
+    if let Some(ev) = crate::input::poll() {
+        *((out_ptr) as *mut u8) = ev.key;
+        *((out_ptr + 1) as *mut u8) = if ev.pressed { 1 } else { 0 };
+        *((out_ptr + 2) as *mut u8) = ev.hid_code;
+        *((out_ptr + 3) as *mut u8) = ev.modifiers;
+        return 1;
     }
+
+    crate::drivers::ps2::poll();
+    if let Some(sc) = crate::drivers::ps2::last_scancode() {
+        if let Some(key) = crate::drivers::ps2::scancode_to_ascii(sc) {
+            *((out_ptr) as *mut u8) = key;
+            *((out_ptr + 1) as *mut u8) = 1;
+            *((out_ptr + 2) as *mut u8) = sc;
+            *((out_ptr + 3) as *mut u8) = 0;
+            return 1;
+        }
+    }
+    0
 }
 
 unsafe fn sys_draw_text(x: usize, y: usize, ptr: usize, color: u32) -> u64 {
