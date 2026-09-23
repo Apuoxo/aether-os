@@ -59,3 +59,12 @@ Every significant change should be followed by:
 - Do not treat KMS=READY as proof that the full Intel graphics driver is complete.
 - Do not treat a successful QEMU build/boot as proof of AH532 graphics correctness.
 - Do not proceed to broad driver expansion while the CI build is broken.
+
+
+## Calculator native app pipeline (2026-09-23)
+- Added experimental Ring3 syscall surface for keyboard polling, kernel-mediated text/rectangle drawing, yield, and process exit.
+- Added PS/2 polling bridge so the known-good AH532 keyboard path reaches native apps; USB HID events continue through the existing input queue.
+- Prepared the existing Multiboot framebuffer before Ring3 without adding any GGTT/GSM mapping or display-register writes.
+- Added separate `Apuoxo/aether-apps` Calculator ELF build pipeline and Aether OS CI packaging path.
+- Calculator is launched as an independent ELF process after `/bin/init`; shell remains the fallback/next stage.
+- Runtime status: NOT YET VERIFIED on QEMU or AH532. CI success alone is insufficient.
