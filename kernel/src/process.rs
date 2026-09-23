@@ -98,12 +98,15 @@ pub fn create_from_image_with_personality(
         p.pid = pid;
         p.personality = personality;
         p.state = State::Ready;
-        // Initial bootstrap capabilities. Later domains must receive these explicitly.
-        // Capability ids must be non-zero so insert() preserves deterministic slots.
-        // Slot 0=READ, slot 1=WRITE, slot 2=MAP are part of the bootstrap ABI.
-        let _ = p.caps.insert(Cap::new(1, CAP_READ));
-        let _ = p.caps.insert(Cap::new(2, CAP_WRITE));
-        let _ = p.caps.insert(Cap::new(3, CAP_MAP));
+
+        // Bootstrap capability ABI is explicit: handles 0/1/2 are
+        // READ/WRITE/MAP respectively. Do not depend on insert() ordering
+        // for process creation; the capability self-test covers insert().
+        p.caps.entries[0] = Cap::new(1, CAP_READ);
+        p.caps.entries[1] = Cap::new(2, CAP_WRITE);
+        p.caps.entries[2] = Cap::new(3, CAP_MAP);
+        p.caps.used = 3;
+
         p.entry = img.entry;
         p.stack = img.stack_top;
         p.cr3 = img.cr3;
@@ -131,6 +134,7 @@ pub fn create_from_image_with_personality(
         serial::write_hex(img.cr3);
         serial::write_str(" pages=");
         serial::write_usize(img.page_count);
+        serial::write_str(" caps=RWM");
         serial::write_str("\n");
         Some(pid)
     }
