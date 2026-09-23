@@ -9,9 +9,10 @@ extern rust_kernel_after_user
 extern process_exit_dispatch
 extern rust_ring3_done
 
-; Syscall frame layout after pushes:
-; 0=RAX,1=RBX,2=RCX,3=RDX,4=RSI,5=RDI,6=RBP,
-; 7=R8,8=R9,9=R10,10=R11,11=R12,12=R13,13=R14,14=R15.
+; Syscall frame layout after pushes (stack top is index 0):
+; 0=R15,1=R14,2=R13,3=R12,4=R11,5=R10,6=R9,
+; 7=R8,8=RBP,9=RDI,10=RSI,11=RDX,12=RCX,13=RBX,14=RAX.
+; The iret frame starts at index 15: RIP,CS,RFLAGS,RSP,SS.
 isr_page_fault:
     push rax
     push rdi
@@ -52,8 +53,8 @@ isr_syscall:
     je .do_exit
 
     ; syscall_handler returns the value for userspace in RAX.
-    ; RAX is frame slot 0, so restore it from there after all pops.
-    mov [rsp], rax
+    ; RAX is frame slot 14, so restore it there before all pops.
+    mov [rsp+14*8], rax
     pop r15
     pop r14
     pop r13
