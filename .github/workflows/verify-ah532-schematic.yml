@@ -84,4 +84,3 @@ jobs:
             technical-identifiers.txt
           if-no-files-found: error
 
-# verification workflow active
