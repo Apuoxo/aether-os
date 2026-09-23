@@ -6,12 +6,29 @@ Purpose: prevent repeated rediscovery of already-audited architectural/code defe
 
 This document is the persistent audit baseline. Future development must use it as the starting point and update findings when they are fixed or disproven.
 
+## Repair progress — 2026-09-23
+
+### P0 syscall ABI
+**Source repair applied, runtime closure pending.**
+- Canonical ABI: RAX=nr, RDI=a1, RSI=a2, RDX=a3, R10=a4, R8=a5.
+- handlers.rs now reads the actual saved-register slots from isr.s.
+- isr.s now restores the syscall return value into saved RAX (frame slot 0).
+- A deterministic QEMU Ring3 regression test still needs to prove argument values and returned RAX.
+
+### P0 64-bit TSS
+**Source repair applied, CPL3→CPL0 runtime closure pending.**
+- gdt.rs now represents the GDT as 8-byte descriptors and encodes the 64-bit TSS as the required 16-byte descriptor occupying GDT slots 5–6.
+- The high half contains Base[63:32].
+- A deterministic CPL3 transition/interrupt/syscall test still needs to prove that the TSS/RSP0 path is usable.
+
+These two items remain unchecked below until runtime evidence exists.
+
 ## P0 — must fix before architectural expansion
 
-- [ ] Syscall ABI mismatch: isr.s, handlers.rs, and Ring3 programs disagree on argument registers/frame offsets. Define one ABI and add a regression smoke test.
-- [ ] 64-bit TSS descriptor: replace the current incorrect two-entry construction with an explicit 16-byte x86_64 TSS descriptor and verify CPL3 to CPL0 entry.
+- [ ] Syscall ABI mismatch: source mismatch repaired; regression evidence pending.
+- [ ] 64-bit TSS descriptor: descriptor repaired; runtime evidence pending.
 - [ ] Process to Personality ownership: Process currently has no real Personality association; count_by_personality() does not actually filter ownership.
-- [ ] Capability enforcement: capability structures exist, but resource/syscall access is not actually capability-gated. Implement object handles, rights checks and stale-handle protection before claiming capability security is implemented.
+- [ ] Capability enforcement: capability structures exist, but resource/syscall access is not actually capability-gated.
 
 ## P1 — kernel correctness / safety
 
