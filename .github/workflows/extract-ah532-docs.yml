@@ -97,6 +97,45 @@ jobs:
             fi
           } > "$report"
 
+
+      - name: Build schematic technical index
+        shell: bash
+        run: |
+          set -e
+          dir='docs/AH532-SERVICE-MANUAL'
+          pdf="$dir/DA0FH6MB6E0 rev E PDF .pdf"
+          out="$dir/schematic-technical-index.md"
+          pages="$dir/schematic-pages.txt"
+          pdftotext -layout -nopgbrk "$pdf" "$pages" || true
+
+          {
+            echo "# DA0FH6MB6E0 Rev E — technical schematic index"
+            echo
+            echo "This is an extracted keyword/page index from the 34-page motherboard schematic."
+            echo "It is a navigation aid, not proof that every matched signal belongs to the AH532 without checking the schematic page itself."
+            echo
+            echo "| Topic | Keywords | Pages with matches |"
+            echo "|---|---|---|"
+            for spec in               "Display|LVDS eDP HDMI CRT DDI GMBUS EDID LCD PANEL BLON PWM BACKLIGHT"               "Graphics/Intel|Intel GPU GMCH PCH SNB IVB Sandy Bridge Ivy Bridge HD Graphics"               "USB|USB xHCI EHCI UHCI USB2 USB3 XHCI"               "Storage|SATA AHCI HDD SSD SATA0 SATA1 SATA2 SATA3"               "PCI/PCIe|PCI PCIe PCIE CLKREQ PERST PME"               "SMBus/I2C|SMBus SMBUS I2C GMBUS SCL SDA"               "EC/LPC|EC LPC KBC KB8042 SUPERIO SIO GPIO"               "Network|LAN RTL8168 RTL8111 WLAN 2230 0887 MINI PCIe"               "Audio|HDA HDAUDIO AZALIA codec audio"               "Power/Reset|VR_ON SLP_S3 SLP_S4 SLP_S5 RSMRST PLTRST PWRBTN RESET"               "ACPI|ACPI _S3 _S4 _S5 GPE SCI"               "Memory|DDR3 SO-DIMM DIMM SPD SMBUS"               "Firmware|BIOS SPI ROM EC FLASH ME"               "Thermal|THERMAL TEMP FAN CPU_FAN"               "Camera|CAMERA CCD USB_CAM"               "Card reader|CARD READER SD MMC"               "Touchpad|TOUCHPAD PS2 TPAD"               "Display power|LCDVDD VDD_LCD VCC_LCD VDDP BL_EN BLON INV PWM"               "Board identity|DA0FH6MB6E0 FH6 FH6C CP581562 HM76" ; do
+                topic="${spec%%|*}"
+                words="${spec#*|}"
+                pages_found=""
+                for w in $words; do
+                  p=$(grep -in -m 200 -C 0 -F "$w" "$pages" | sed -n 's/.*\f//p' | head -1 || true)
+                  if [ -n "$p" ]; then pages_found="${pages_found}${pages_found:+, }$w"; fi
+                done
+                echo "| $topic | $words | $pages_found |"
+              done
+
+            echo
+            echo "## Targeted excerpts"
+            for term in LVDS GMBUS EDID HDMI USB xHCI SATA AHCI PCIe LPC EC SMBus GPIO RTL8168 2230 HDA BIOS SPI HM76 DA0FH6MB6E0; do
+              echo
+              echo "### $term"
+              grep -Ein -m 30 -C 2 "$term" "$pages" || echo "No text match"
+            done
+          } > "$out"
+
       - name: Commit extracted documents and identity verification
         run: |
           git config user.name 'github-actions[bot]'
