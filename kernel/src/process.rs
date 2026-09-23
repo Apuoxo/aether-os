@@ -251,7 +251,8 @@ pub fn create(
     entry: usize,
     stack: usize,
 ) -> Option<usize> {
-    // minimal stub
+    // Compatibility helper: preserve the caller's requested personality owner.
+    // This must not silently convert a personality process into a native process.
     let img = elf::LoadedImage {
         entry,
         pages: [0; 8],
@@ -259,5 +260,5 @@ pub fn create(
         stack_top: stack,
         cr3: 0,
     };
-    create_from_image("stub", &img)
+    create_from_image_with_personality("stub", &img, _p)
 }
