@@ -255,7 +255,7 @@ pub fn create(
     // This must not silently convert a personality process into a native process.
     let img = elf::LoadedImage {
         entry,
-        pages: [0; 8],
+        pages: [0; elf::MAX_IMAGE_PAGES],
         page_count: 0,
         stack_top: stack,
         cr3: 0,
