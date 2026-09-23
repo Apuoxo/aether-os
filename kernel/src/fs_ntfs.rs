@@ -362,18 +362,15 @@ fn read_mft_record(ref_num: u32, out: &mut [u8]) -> bool {
     true
 }
 
-fn list_root() -> bool {
-    unsafe {
-        NENT = 0;
-    }
-    // MFT 5 = root directory
+fn list_directory(mft_ref: u32) -> bool {
+    unsafe { NENT = 0; }
     let mut rec = [0u8; 1024];
     let rec_size = unsafe { MFT_REC_SIZE as usize };
     if rec_size > 1024 {
         return false;
     }
-    if !read_mft_record(5, &mut rec[..rec_size]) {
-        serial::write_str("[NTFS] root MFT read fail\n");
+    if !read_mft_record(mft_ref, &mut rec[..rec_size]) {
+        serial::write_str("[NTFS] directory MFT read fail\n");
         return false;
     }
     // Walk attributes for INDEX_ROOT (0x90) resident
@@ -407,10 +404,14 @@ fn list_root() -> bool {
         // Also INDEX_ALLOCATION non-resident — skip for MVP if root fits in INDEX_ROOT
         attr_off += alen;
     }
-    serial::write_str("[NTFS] root entries=");
+    serial::write_str("[NTFS] directory entries=");
     serial::write_usize(unsafe { NENT });
     serial::write_str("\n");
     true
+}
+
+fn list_root() -> bool {
+    list_directory(5)
 }
 
 fn parse_index_entries(rec: &[u8], mut off: usize, end: usize) {
