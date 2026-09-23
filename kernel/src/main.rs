@@ -214,11 +214,9 @@ pub extern "C" fn kernel_main(mbi: usize) -> ! {
     let _ = fs::write_large("/bin/init", elf_blobs::INIT_ELF);
     let _ = fs::write_large("/bin/sh", elf_blobs::SH_ELF);
     if elf_blobs::calculator::CALCULATOR_ELF.len() > 4 {
-        if fs::write_large("/bin/calculator", elf_blobs::calculator::CALCULATOR_ELF) {
-            serial::write_str("[INIT] Calculator ELF installed\n");
-        } else {
-            serial::write_str("[INIT] Calculator ELF install FAIL\n");
-        }
+        serial::write_str("[INIT] Calculator ELF bundled bytes=");
+        serial::write_usize(elf_blobs::calculator::CALCULATOR_ELF.len());
+        serial::write_str(" (RAM/package path; no host-disk write)\n");
     } else {
         serial::write_str("[INIT] Calculator ELF not bundled\n");
     }
