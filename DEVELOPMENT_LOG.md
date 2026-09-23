@@ -127,3 +127,15 @@ Every significant change should be followed by:
 - Applied the next controlled bootloader experiment: restrict the ISO to the minimum GRUB modules needed for legacy BIOS ISO9660 + Multiboot2 + normal/terminal boot, and remove installed themes/fonts/locales. The kernel and runtime code are unchanged.
 - Commit: 0c79ad9da5e698b5f70412dd6339f36384b6bcac.
 - No claim of AH532 success yet. Required next step: CI build/QEMU smoke test, then fresh ISO on AH532. If the same error persists, the next investigation is the GRUB platform image/core path rather than further kernel changes.
+
+
+### 2026-09-24 — Explorer architecture correction: logical volumes vs physical partitions
+- Current task owned by Virt: finish the Windows 7-style Explorer so its UI semantics match the storage/filesystem architecture instead of exposing raw partition enumeration as the contents of Local Disk (C:).
+- Observed AH532 behavior before this correction: Explorer opened C: as a seven-partition physical-disk listing; individual partitions did not open; clicks in the Explorer pane caused visible flicker; sidebar items were not reliably actionable.
+- Root architectural correction: C: must represent a logical mounted filesystem volume. The physical partition table is a separate low-level/diagnostic view and must not be presented as the normal contents of C:.
+- Source change in kernel/src/files_mgr.rs: Computer -> C: now requests the NTFS mount path and opens the NTFS browser instead of the physical partition view. C: is labelled as a read-only NTFS system volume; AetherFS is labelled as a read/write RAM volume. Inert sidebar/toolbar clicks are no longer supposed to force a redraw.
+- Commit: 1952605f58d137349428b71318072aad63291e17 (Fix Explorer volume semantics and suppress redraw on inert clicks).
+- Build #166 (run 35931819785) previously completed successfully before this correction. Build #167 (run 35932421767) was triggered by the correction and must be verified before an ISO is presented as the current test artifact.
+- Acceptance criteria for this task: (1) empty/inert clicks do not visibly flicker; (2) Explorer sidebar/input hit-testing is functional; (3) double-clicking C: opens the actual root contents of the selected NTFS system volume, not the partition table; (4) physical partitions remain available only through an explicitly separate diagnostic/storage view; (5) no host-disk writes are introduced.
+- Important unresolved technical point: fs_ntfs::mount_first() must not be assumed to identify the user's intended C: volume when multiple NTFS/ExFAT partitions exist. The next source inspection must establish deterministic logical-volume selection from actual partition metadata, and if the NTFS root parser returns empty data, fix the filesystem path rather than masking it in the Explorer UI.
+- Working rule added: do not call the Explorer complete until source inspection, CI/QEMU verification, and the required AH532 runtime test support these acceptance criteria.
