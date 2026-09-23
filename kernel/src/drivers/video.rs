@@ -35,8 +35,8 @@ const DSPBSTRIDE: usize = 0x71188;
 const DSPBSURF: usize = 0x7119C;
 const GFX_MODE: usize = 0x70000;
 
-// GMBUS block. Read-only probing is limited to register reads; starting a
-// transaction requires writes and is intentionally deferred until validated.
+// GMBUS block. Normal initialization only snapshots these registers; EDID
+// transactions are explicit and are never started implicitly by init().
 const GMBUS0: usize = 0x5100;
 const GMBUS1: usize = 0x5104;
 const GMBUS2: usize = 0x5108;
@@ -142,7 +142,7 @@ fn print_bar(index: u8, raw: u32, upper: u32) {
 }
 
 /// Map a physical MMIO range into the current identity address space.
-/// Existing mappings are overwritten only with the same physical address.
+/// The identity mapping is intentional: VA == PA for the MMIO aperture.
 unsafe fn map_mmio(phys: u64, len: usize) -> bool {
     if phys == 0 || len == 0 || phys > usize::MAX as u64 {
         return false;
