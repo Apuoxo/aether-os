@@ -95,3 +95,18 @@ impl CapTable {
         true
     }
 }
+
+
+/// Deterministic boot-time regression for capability rights invariants.
+/// This validates the handle layer itself; syscall allow/deny runtime proof
+/// remains a separate test because it must execute through the Ring3 path.
+pub fn self_test() -> bool {
+    let mut t = CapTable::new();
+    let slot = match t.insert(Cap::new(0x100, CAP_READ | CAP_WRITE)) { Some(s) => s, None => return false };
+    if !t.check(slot, CAP_READ) || !t.check(slot, CAP_WRITE) { return false; }
+    if t.check(slot, CAP_MAP) { return false; }
+    if t.get(slot).and_then(|c| c.derive(CAP_READ | CAP_MAP)).is_some() { return false; }
+    if t.get(slot).and_then(|c| c.derive(CAP_READ)).is_none() { return false; }
+    if !t.revoke(slot) || t.check(slot, CAP_READ) || t.get(slot).is_some() { return false; }
+    true
+}
