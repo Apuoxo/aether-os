@@ -46,15 +46,16 @@ pub extern "C" fn page_fault_handler(cr2: u64, error: u64) {
 }
 
 /// Syscall ABI: RAX=nr, RDI=a1, RSI=a2, RDX=a3, R10=a4, R8=a5.
-/// isr.s snapshots GPRs in the fixed frame documented there.
+/// isr.s pushes GPRs in descending register order; frame indices therefore map
+/// R15..RAX to 0..14, with the iret frame beginning at index 15.
 #[no_mangle]
 pub extern "C" fn syscall_handler(frame: *mut u64) -> u64 {
     unsafe {
-        let nr = *frame.add(0);   // RAX
-        let a1 = *frame.add(5);   // RDI
-        let a2 = *frame.add(4);   // RSI
-        let a3 = *frame.add(3);   // RDX
-        let a4 = *frame.add(9);   // R10
+        let nr = *frame.add(14);  // RAX
+        let a1 = *frame.add(9);   // RDI
+        let a2 = *frame.add(10);  // RSI
+        let a3 = *frame.add(11);  // RDX
+        let a4 = *frame.add(5);   // R10
         let a5 = *frame.add(7);   // R8
         let cs = *frame.add(16);
         let cpl = cs & 3;
