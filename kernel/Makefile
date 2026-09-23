@@ -15,7 +15,13 @@ $(BUILD_DIR)/boot.o: src/arch/x86_64/boot.s | $(BUILD_DIR)
 
 RUST_SRCS := $(shell find src -type f -name '*.rs')
 
-$(KERNEL_LIB): $(RUST_SRCS) | $(BUILD_DIR)
+$(BUILD_DIR)/calculator_blob.rs: $(BUILD_DIR)/calculator.elf | $(BUILD_DIR)
+	python3 -c "import pathlib,base64; p=pathlib.Path('$(BUILD_DIR)/calculator.elf'); d=base64.b64encode(p.read_bytes()).decode(); pathlib.Path('$(BUILD_DIR)/calculator_blob.rs').write_text('pub static CALCULATOR_ELF: &[u8] = b\\\"'+d+'\\\";\\n')"
+
+$(BUILD_DIR)/calculator.elf: | $(BUILD_DIR)
+	@if [ ! -f $@ ]; then printf '%s\\n' 'calculator ELF not supplied; building kernel without bundled Calculator' >&2; printf '' > $@; fi
+
+$(KERNEL_LIB): $(RUST_SRCS) $(BUILD_DIR)/calculator_blob.rs | $(BUILD_DIR)
 	rustc --edition 2021 \
 		-C opt-level=s -C panic=abort \
 		-C overflow-checks=off -C debug-assertions=off \
