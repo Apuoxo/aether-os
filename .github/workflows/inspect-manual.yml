@@ -1,0 +1,30 @@
+name: Inspect AH532 service manual
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install RAR extractor
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y p7zip-full
+      - name: Extract manual
+        run: |
+          set -e
+          rm -rf manual_extract
+          mkdir manual_extract
+          7z x -y "DA0FH6MB6E0 rev E PDF .rar" -omanual_extract
+          find manual_extract -type f -printf '%P %s bytes\n' | sort
+          find manual_extract -type f -iname '*.pdf' -print
+      - name: Publish extracted manual
+        uses: actions/upload-artifact@v4
+        with:
+          name: ah532-service-manual-extracted
+          path: manual_extract/
+          if-no-files-found: error
