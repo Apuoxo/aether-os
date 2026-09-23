@@ -2,7 +2,7 @@
 
 ## Status basis
 
-This file is a laboratory status document, not a release-version identifier. Historical version strings in the repository are stale and must not override source/runtime evidence.
+This file is a laboratory status document, not a release-version identifier. Historical version strings in the repository must not override source/runtime evidence.
 
 ## Current engineering state — 2026-09-23
 
@@ -34,6 +34,8 @@ Confirmed/implemented stages:
 7. Existing hardware scanout can be compared against the Multiboot framebuffer.
 8. GMBUS/EDID support exists as an explicit, non-automatic path.
 9. Safe video diagnostic command vdiag exists.
+10. A verified 45-page FH6/FH6C HM70 schematic has been added and read page-by-page.
+11. Physical LCD/LVDS and HDMI/DDI-B display-routing information is now documented.
 
 Not complete:
 
@@ -46,22 +48,34 @@ Not complete:
 
 The GGTT/GSM region around physical 0xDF800000 remains blocked because previous mapping attempts rebooted the AH532.
 
-Detailed status: docs/VIDEO_DRIVER_STATUS.md.
+## Verified schematic status
 
-## Hardware documentation correction
+The repository now contains:
 
-The uploaded DA0FH6MB6E0 rev E service-manual archive has been extracted and inspected.
+- `Fujitsu_FH6C_FH6_hm70_r0c_mb_0522 SKCLAPPY.IN.pdf`
+- 1,498,316 bytes
+- SHA-256 `8011b1775a403b5d62ff816c278412f62c2e3d7873b955f2721fa664528badbc`
+- 45 pages.
 
-It is an Intel Calpella / Arrandale UMA, HM55, FH2 schematic, not an AH532/HM76 Sandy Bridge schematic.
+The document is a verified FH6/FH6C HM70-family board/variant schematic. It explicitly contains Ivy Bridge and optional N13P discrete-GPU variants, so it is used for physical board-family signal routing and not as proof of the exact installed GPU.
 
-It is therefore classified as REFERENCE-MISMATCH and must not be used as authoritative AH532 graphics documentation.
+The actual tested machine remains authoritative: Sandy Bridge HD Graphics 3000, 8086:0116.
 
-Detailed repository/material audit: docs/REPOSITORY_AUDIT_2026-09-23.md.
+Detailed display routing: `docs/AH532-SCHEMATIC_DISPLAY_SIGNAL_MAP.md`.
 
-## Source archive correction
+## Previous schematic correction
 
-aether-os-sources.zip is a historical snapshot. It contains an early software-framebuffer video driver and stale project documentation. It must not overwrite the current kernel tree.
+The older PDF extracted from `DA0FH6MB6E0 rev E PDF .rar` is a 34-page FH2/Arrandale/HM55 document and remains REFERENCE-MISMATCH. It must not be used as AH532 electrical evidence.
 
 ## Next controlled stage
 
-The next graphics stage is explicit read-only EDID/GMBUS validation on QEMU and then real AH532. No GGTT/GSM mapping and no automatic mode change should be introduced as part of that test.
+The next graphics stage is explicit read-only EDID/GMBUS validation on QEMU where applicable and then real AH532.
+
+The test must preserve the stable framebuffer and must not:
+
+- map GGTT/GSM;
+- automatically change display mode;
+- replace framebuffer ownership;
+- perform speculative power sequencing.
+
+Detailed status: `docs/VIDEO_DRIVER_STATUS.md`.
