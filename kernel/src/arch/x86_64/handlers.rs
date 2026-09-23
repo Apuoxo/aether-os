@@ -1,3 +1,5 @@
+static mut CAP_TEST_STAGE: u8 = 0;
+
 use crate::serial;
 
 fn vga_mark(col: usize, ch: u8) {
@@ -311,8 +313,7 @@ pub extern "C" fn process_exit_dispatch() {
             }
         }
     }
-    static mut CAP_TEST_STAGE: u8 = 0;
-    unsafe {
+        unsafe {
         if CAP_TEST_STAGE == 1 {
             CAP_TEST_STAGE = 2;
             if launch_cap_test_process("cap-deny", true) {
