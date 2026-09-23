@@ -641,3 +641,50 @@ The strongest remaining information gap is no longer generic documentation. It i
 11. USB topology including camera/card-reader candidates.
 
 This diagnostic list is deliberately read-only and does not authorize MMIO mapping, DMA activation, firmware writes, or access to the known-unsafe GTT physical address 0xDF800000.
+
+
+## 27. Fourth-pass audit: exact board-package fingerprints
+
+The fourth-pass search produced useful fingerprints for the board package, even though the actual schematic/boardview payload remains behind archive download access.
+
+### Exact schematic fingerprint
+Vinafix identifies the document as a **Discrete Block Diagram**, manufacturer/ODM Quanta, model FH6C, motherboard DA0FH6MB6E0, with key controllers Realtek ALC269 audio and Realtek RTL8111F LAN. It reports the schematic PDF SHA-256 as:
+`8011b1775a403b5d62ff816c278412f62c2e3d7873b955f2721fa664528badbc`
+The listed file size is 1.4 MB. This gives us a concrete fingerprint to use if the PDF is obtained elsewhere.
+
+Source:
+- https://vinafix.com/threads/fujitsu-ah532-fh6-fh6c-hm70-r0c_mb_0522.15516/
+
+### Exact firmware-package fingerprint
+The same archive identifies `DAOFH6MB6E0 REV E.zip` as a 3.6 MB SPI-NOR firmware package with SHA-256:
+`871ad6af3c87269a84276846dba44c9d620e3e2161b8483372f1fc7d497c6409`
+Its published contents include `2m.bin` and `4m.bin`. RepairLap separately lists U35, U7 and U24 images for the same board. These are valuable research fingerprints, but Aether must never flash them merely because they match the board marking.
+
+Sources:
+- https://vinafix.com/threads/fujitsu-ah532-fh6-fh6c-hm70-r0c_mb_0522.15516/
+- https://www.repairlap.com/threads/fujitsu-lifebook-ah532-schematic-da0fh6mb6e0-rev-e-bios.5293/post-8618
+
+### Strong evidence that U35/U7/U24 are separately archived
+A repair thread contains distinct old-file entries named `fh6u35old.BIN`, `fh6u7old.BIN`, and `fh6u24old.BIN`, and later an AH532 DA0FH6MB6E0 Rev.E set containing 2 MB, 4 MB and 1 MB images. This reinforces the three-device firmware layout seen in other sources.
+
+Source:
+- https://vinafix.com/threads/fujitsu-ah532-fh6-fh6c-hm70-r0c_mb_0522.15516/page-2
+
+### BoardView status remains unresolved
+The Telegram archive explicitly lists `DA0FH6MB6E0 rev E PDF .rar` as both `#SCHEMATIC` and `#BOARDVIEW`, with a 679.4 KB archive. However, the public indexed page does not expose the contained boardview data. We therefore record availability, but do not claim to have inspected the boardview itself.
+
+Source:
+- https://t.me/s/schematicslaptop?before=10583
+
+### Current conclusion from the source audit
+We now have independent confirmation of:
+- model/family relationship: Fujitsu AH532 ↔ Quanta FH6/FH6C;
+- exact board marking: DA0FH6MB6E0 Rev.E;
+- schematic filename and cryptographic fingerprint;
+- boardview archive existence;
+- firmware archive fingerprint and component layout;
+- candidate LAN/audio silicon;
+- official Fujitsu driver inventory;
+- independent Linux hardware/driver cross-checks.
+
+The remaining documentary gap is therefore specifically the **actual contents** of the board schematic and BoardView, plus machine-specific firmware/ACPI identity. Searching further for duplicate index pages is unlikely to add much unless it exposes the actual files or new primary evidence.
