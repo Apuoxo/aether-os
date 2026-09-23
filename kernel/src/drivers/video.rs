@@ -413,10 +413,12 @@ const GMBUS_RATE_100KHZ: u32 = 0 << 8;
 const GMBUS_SW_RDY: u32 = 1 << 30;
 const GMBUS_CYCLE_STOP: u32 = 4 << 25;
 const GMBUS_CYCLE_INDEX: u32 = 2 << 25;
+const GMBUS_HW_WAIT_PHASE: u32 = 1 << 14;
 const GMBUS_HW_RDY: u32 = 1 << 11;
 const GMBUS_SATOER: u32 = 1 << 10;
 const GMBUS_ACTIVE: u32 = 1 << 9;
 const GMBUS_BYTE_COUNT_SHIFT: u32 = 16;
+const GMBUS_SLAVE_INDEX_SHIFT: u32 = 8;
 const GMBUS_SLAVE_ADDR_SHIFT: u32 = 1;
 const GMBUS_SLAVE_READ: u32 = 1;
 const GMBUS_SLAVE_EDID: u32 = 0x50;
@@ -457,6 +459,7 @@ pub fn read_edid(port: u32, out: &mut [u8; 128]) -> bool {
         mmio_write32(GMBUS0, port | GMBUS_RATE_100KHZ);
         let command = GMBUS_CYCLE_INDEX
             | (128u32 << GMBUS_BYTE_COUNT_SHIFT)
+            | (0u32 << GMBUS_SLAVE_INDEX_SHIFT)
             | (GMBUS_SLAVE_EDID << GMBUS_SLAVE_ADDR_SHIFT)
             | GMBUS_SLAVE_READ
             | GMBUS_SW_RDY;
@@ -481,6 +484,9 @@ pub fn read_edid(port: u32, out: &mut [u8; 128]) -> bool {
         }
 
         if pos == 128 {
+            // Complete the transaction phase before issuing STOP, matching the
+            // Gen6 GMBUS state machine used by i915.
+            let _ = wait_gmbus(GMBUS_HW_WAIT_PHASE, false, GMBUS_TIMEOUT);
             let status = mmio_read32(GMBUS2);
             if status & GMBUS_SATOER == 0 {
                 let header_ok =
