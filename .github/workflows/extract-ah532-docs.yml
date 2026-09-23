@@ -44,25 +44,63 @@ jobs:
             for img in /tmp/ah532-ocr/page-*.jpg; do
               [ -e "$img" ] || continue
               tesseract "$img" stdout 2>/dev/null >> docs/AH532-SERVICE-MANUAL/manual-ocr.txt || true
-              printf '\n\\n--- PAGE ---\\n\\n' >> docs/AH532-SERVICE-MANUAL/manual-ocr.txt
+              printf '\n\n--- PAGE ---\n\n' >> docs/AH532-SERVICE-MANUAL/manual-ocr.txt
             done
           fi
 
-      - name: Record extraction
+      - name: Verify document identity
+        shell: bash
         run: |
-          {
-            echo "# Fujitsu LIFEBOOK AH532 — service documentation"
-            echo
-            echo "Source archive: `DA0FH6MB6E0 rev E PDF .rar`"
-            echo
-            echo "This directory contains files extracted automatically from the RAR archive."
-            echo "Searchable text/OCR is generated for technical analysis. Hardware facts for Aether OS must be verified against the source document and real AH532 diagnostics before being treated as confirmed."
-          } > docs/AH532-SERVICE-MANUAL/README.md
+          set -e
+          dir='docs/AH532-SERVICE-MANUAL'
+          pdf="$dir/DA0FH6MB6E0 rev E PDF .pdf"
+          text="$dir/manual-text.txt"
+          report="$dir/manual-identity-report.md"
 
-      - name: Commit extracted documents and analysis text
+          pdfinfo "$pdf" > "$dir/pdfinfo.txt" 2>&1 || true
+          pdftotext -f 1 -l 12 -layout "$pdf" "$dir/first-pages.txt" || true
+
+          {
+            echo "# Manual identity verification"
+            echo
+            echo "## File"
+            echo "- PDF: `$(basename "$pdf")`"
+            echo "- SHA-256: `$(sha256sum "$pdf" | awk '{print $1}')`"
+            echo "- Size: $(stat -c%s "$pdf") bytes"
+            echo
+            echo "## PDF metadata"
+            sed -n '1,40p' "$dir/pdfinfo.txt"
+            echo
+            echo "## Direct identity matches"
+            echo 'Search terms: AH532, LIFEBOOK, FUJITSU, DA0FH6MB6E0, MBDA0FH6MB6E0, FH6MB6E0'
+            echo
+            if grep -Ein -m 80 -C 2 'AH532|LIFEBOOK|FUJITSU|DA0FH6MB6E0|MBDA0FH6MB6E0|FH6MB6E0' "$text" > "$dir/identity-matches.txt"; then
+              sed -n '1,240p' "$dir/identity-matches.txt"
+            else
+              echo "NO_MATCHES_IN_EXTRACTED_TEXT"
+            fi
+            echo
+            echo "## First 12 pages — identity-related lines"
+            if grep -Ein -C 2 'AH532|LIFEBOOK|FUJITSU|DA0FH6MB6E0|MBDA0FH6MB6E0|FH6MB6E0' "$dir/first-pages.txt"; then
+              true
+            else
+              echo "NO_MATCHES_IN_FIRST_12_PAGES"
+            fi
+            echo
+            echo "## Preliminary assessment"
+            if grep -Eiq 'AH532|LIFEBOOK AH532' "$text"; then
+              echo "DIRECT_MODEL_IDENTIFIER_FOUND: The extracted text contains AH532/LIFEBOOK AH532. This is direct evidence of model relevance."
+            elif grep -Eiq 'DA0FH6MB6E0|MBDA0FH6MB6E0|FH6MB6E0' "$text"; then
+              echo "BOARD_IDENTIFIER_FOUND_BUT_MODEL_NOT_CONFIRMED: A matching board identifier appears, but AH532 was not found in extracted text. Corroboration is required before treating this as AH532-specific."
+            else
+              echo "NO_DIRECT_AH532_OR_BOARD_IDENTIFIER_FOUND: Do not treat this document as AH532-specific without further evidence."
+            fi
+          } > "$report"
+
+      - name: Commit extracted documents and identity verification
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add docs/AH532-SERVICE-MANUAL
-          git diff --cached --quiet || git commit -m 'docs: add searchable AH532 service manual text'
+          git diff --cached --quiet || git commit -m 'docs: verify service manual identity'
           git push
