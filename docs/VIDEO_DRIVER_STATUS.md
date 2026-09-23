@@ -144,7 +144,7 @@ Do not use the old 34-page FH2/HM55/Arrandale PDF as AH532 signal evidence.
 Do not claim KMS=READY means the complete Intel graphics driver is finished.
 Do not replace the stable framebuffer path until the replacement path has equivalent real-hardware evidence.
 
-## 8. Next controlled graphics stage
+## 9. Next controlled graphics stage
 
 Stage G6-EDID-1:
 1. Keep current MMIO-only initialization unchanged.
