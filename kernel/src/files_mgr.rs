@@ -167,8 +167,8 @@ pub fn draw(wx:usize,wy:usize,ww:usize,wh:usize,title_h:usize){
     if unsafe{CTX}{draw_context();}
     if unsafe{CONFIRM_DEL}{draw_confirm(wx,wy,ww,wh);}
     let status_y=wy+wh-18;graphics::fill_rect(wx+3,status_y,ww-6,16,TOOL);graphics::border_rect(wx+3,status_y,ww-6,16,BORDER);unsafe{let mut i=0;while i<STATUS_LEN{graphics::draw_char(wx+9+i*8,status_y+4,STATUS[i],DIM);i+=1;}}
-    let _=FOCUS_ADDR;
 }
+
 
 fn open_selected(){
     unsafe{
