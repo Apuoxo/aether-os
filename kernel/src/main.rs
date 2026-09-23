@@ -133,6 +133,10 @@ pub extern "C" fn kernel_main(mbi: usize) -> ! {
         serial::write_str("[CAP-TEST] rights/derive/revoke PASS\n");
     } else {
         serial::write_str("[CAP-TEST] FAIL\n");
+    }    if crate::personality::self_test() {
+        serial::write_str("[PERSONALITY-TEST] attach/block-unload/detach/unload PASS\n");
+    } else {
+        serial::write_str("[PERSONALITY-TEST] FAIL\n");
     }
     unsafe { paging::set_kernel_cr3(paging::read_cr3()); }
     serial::write_str("[OK] kernel CR3 saved=");
