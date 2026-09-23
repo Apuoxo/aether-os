@@ -40,10 +40,12 @@ kernel: $(KERNEL_BIN)
 	@ls -lh $(KERNEL_BIN)
 
 iso: $(KERNEL_BIN)
+	rm -rf $(ISO_DIR)
 	mkdir -p $(ISO_DIR)/boot/grub
 	cp $(KERNEL_BIN) $(ISO_DIR)/boot/aether.bin
-	printf 'set timeout=0\nset default=0\nterminal_output console\nmenuentry "Aether" {\n  multiboot2 /boot/aether.bin\n  boot\n}\n' > $(ISO_DIR)/boot/grub/grub.cfg
-	grub-mkrescue --install-modules="iso9660 multiboot2 normal terminal" --themes= --fonts= --locales= -o $(ISO) $(ISO_DIR)
+	printf 'set timeout=0\\nset default=0\\nterminal_output console\\nmenuentry "Aether" {\\n  multiboot2 /boot/aether.bin\\n  boot\\n}\\n' > $(ISO_DIR)/boot/grub/grub.cfg
+	# First-boot diagnostic image: BIOS/CSM only. Do not invoke x86_64-efi GRUB.
+	grub-mkrescue -d /usr/lib/grub/i386-pc --install-modules="iso9660 multiboot2 normal terminal" --themes= --fonts= --locales= -o $(ISO) $(ISO_DIR)
 	@ls -lh $(ISO)
 
 run: iso
