@@ -137,7 +137,6 @@ pub fn load(buf: &[u8]) -> Option<LoadedImage> {
         let vaddr = read_u64(buf, off + 16) as usize;
         let filesz = read_u64(buf, off + 32) as usize;
         let memsz = read_u64(buf, off + 40) as usize;
-        let flags = read_u32(buf, off + 4);
         serial::write_str("  [ELF] PT_LOAD vaddr=");
         serial::write_hex(vaddr);
         serial::write_str(" filesz=");
@@ -171,6 +170,10 @@ pub fn load(buf: &[u8]) -> Option<LoadedImage> {
         };
         let mut va = start;
         while va < end {
+            if page_count >= MAX_IMAGE_PAGES {
+                serial::write_str("  [ELF] image page limit reject\n");
+                return None;
+            }
             let phys = match mm::alloc_page() {
                 Some(p) => p,
                 None => {
@@ -188,11 +191,6 @@ pub fn load(buf: &[u8]) -> Option<LoadedImage> {
                 )
             } {
                 serial::write_str("  [ELF] map fail\n");
-                return None;
-            }
-            if page_count >= MAX_IMAGE_PAGES {
-                serial::write_str("  [ELF] image page limit reject\n");
-                mm::free_page(phys);
                 return None;
             }
             pages[page_count] = phys;
@@ -233,10 +231,13 @@ pub fn load(buf: &[u8]) -> Option<LoadedImage> {
     } {
         return None;
     }
-    if page_count < 8 {
-        pages[page_count] = stack_phys;
-        page_count += 1;
+    if page_count >= MAX_IMAGE_PAGES {
+        serial::write_str("  [ELF] stack page limit reject\n");
+        mm::free_page(stack_phys);
+        return None;
     }
+    pages[page_count] = stack_phys;
+    page_count += 1;
     unsafe { paging::load_cr3(cr3); }
 
     // Switch back to kernel CR3 for remaining boot (loader runs in kernel)
