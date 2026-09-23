@@ -445,3 +445,85 @@ The highest-value single diagnostic pass on the physical AH532 is now:
 5. SMBus controller discovery, no transactions initially.
 
 This ordering minimizes risk and gives Aether a real hardware map before writing additional drivers.
+
+
+## 21. Fujitsu support-package inventory (additional evidence)
+
+The official Fujitsu AH532 support search exposes more than the user manual and BIOS guide. The historical driver catalogue identifies the software components Fujitsu shipped for this platform, which is useful as a hardware inventory cross-check:
+
+- Intel Management Engine Interface
+- Intel Rapid Storage Technology
+- Intel Chipset Device Software
+- Intel Wireless LAN
+- Qualcomm Atheros Wireless LAN / Bluetooth for alternate AH532 configurations
+- Realtek PCIe GBE/FE Family Controller LAN
+- Realtek High Definition Audio
+- Intel USB 3.0 Host Controller
+- Realtek RTS5170 Memory Card reader
+- Sonix Camera
+- Synaptics Pointing Device / ALPS Flat Point on different configurations
+- Intel Display Driver
+- NVIDIA Display Driver on discrete-GPU configurations
+- Fujitsu FUJ02B1/FUJ02E3 platform-device drivers
+- Wireless Radio Switch Driver
+- WIDCOMM Bluetooth Software on some configurations
+
+Official Fujitsu search results:
+- https://support.ts.fujitsu.com/IndexQuickSearchResult.asp?OpenTab=&Q=LIFEBOOK+AH532&lng=
+- https://support.ts.fujitsu.com/IndexQuickSearchResult.asp?lng=RU&q=AH532
+
+IMPORTANT: these packages describe supported product configurations, not necessarily the exact hardware fitted to our machine. They are evidence for candidate controllers, not proof of presence.
+
+### Particularly useful new controller lead: Realtek RTS5170
+Fujitsu's AH532 support catalogue explicitly lists the Realtek RTS5170 Memory Card Driver. This gives us a concrete candidate for the SD/memory-card controller that was previously only marked unknown. The physical PCI/USB inventory must still identify the actual controller before a driver is written.
+
+### Camera lead: Sonix
+The same official catalogue lists a Sonix Camera driver. This is a useful candidate identification for the integrated webcam, but the exact USB VID/PID must be obtained from the physical machine.
+
+### Platform-management leads: FUJ02B1 / FUJ02E3
+Fujitsu ships dedicated FUJ02B1 and FUJ02E3 device drivers for AH532-family systems. These are important clues that some notebook-specific platform/ACPI functionality is exposed through Fujitsu-specific ACPI devices. Aether should therefore enumerate ACPI hardware IDs before attempting to reproduce any of those functions.
+
+### Alternate wireless configurations
+Fujitsu's catalogue contains both Intel Wireless LAN and Qualcomm Atheros Wireless LAN/Bluetooth packages. Our physical machine has already identified Intel Centrino Wireless-N 2230 8086:0887 with subsystem 8086:4062, so the Atheros packages should be treated as alternate configuration evidence, not as evidence against the Intel card.
+
+## 22. BoardView / schematic availability
+
+The research pass confirms that a board-level schematic exists for the AH532/A532 Quanta FH6/FH6C family and that boardview files have also circulated for the same board marking. Multiple sources identify:
+- DA0FH6MB6E0 Rev E
+- Quanta FH6/FH6C
+- 45-page schematic listings in commercial archives
+- a free/community maintenance-guide discussion that explicitly mentions PDF + FZ boardview files
+
+Sources:
+- https://www.realschematic.com/shop/9971/desc/fujitsu-lifebook-ah532-a532
+- https://www.diy-laptoprepair.com/forum/fix-FUJITSU-AH532-FH6-FH6C-HM70-repair-guide-schematics.html
+- https://www.alexlaptoprepair.com/forums/threads/fujitsu-lifebook-a532-ah532-da0fh6mb6e0-rev-e-schematic.5056/
+
+The boardview is potentially the most valuable missing board-level artifact because it can map controller pins, power rails, connectors, EC/GPIO relationships and component designators. However, it must only be applied after confirming the physical board marking/revision.
+
+## 23. Documentation completeness status — explicit
+
+We are NOT yet entitled to call the documentation complete.
+
+What is now covered well:
+- Fujitsu primary product/manual/BIOS documentation;
+- historical Fujitsu driver/package inventory;
+- Intel Sandy Bridge/Gen6 GPU programming references;
+- Intel 7-Series/Panther Point chipset references;
+- controller-level PCI IDs/register-map leads;
+- board/schematic/BIOS/EC community references;
+- boardview availability;
+- physical AH532 runtime facts already measured by Aether;
+- explicit separation of verified, documented, alternate-configuration and unknown data.
+
+What remains potentially missing and worth another dedicated pass:
+1. the actual FH6/FH6C schematic PDF contents, page by page;
+2. the matching boardview/FZ component database, if legally/technically obtainable;
+3. exact Fujitsu BIOS/EC package versions for the physical machine;
+4. ACPI/DSDT/SSDT dumps from the physical machine;
+5. exact PCI subsystem/revision data for every controller;
+6. Intel ME/firmware documentation relevant to the detected PCH generation;
+7. detailed datasheets/programming manuals for the exact Realtek LAN, HDA codec and card reader revisions;
+8. exact panel/eDP/LVDS/EDID topology;
+9. EC/GPIO/keyboard/touchpad power-management relationships;
+10. service-part numbers and connector pinouts.
