@@ -7,6 +7,7 @@ pub const PAGE_PRESENT: u64 = 1 << 0;
 pub const PAGE_WRITE: u64 = 1 << 1;
 pub const PAGE_USER: u64 = 1 << 2;
 pub const PAGE_ACCESSED: u64 = 1 << 5;
+pub const PAGE_PCD: u64 = 1 << 4;
 pub const PAGE_HUGE: u64 = 1 << 7;
 
 #[repr(align(4096))]

@@ -156,7 +156,7 @@ unsafe fn map_mmio(phys: u64, len: usize) -> bool {
     let mut va = start;
     while va < end {
         if !paging::map_page(
-            cr3, va, va, paging::PAGE_PRESENT | paging::PAGE_WRITE
+            cr3, va, va, paging::PAGE_PRESENT | paging::PAGE_WRITE | paging::PAGE_PCD
         ) {
             return false;
         }
