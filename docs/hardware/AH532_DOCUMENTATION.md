@@ -527,3 +527,63 @@ What remains potentially missing and worth another dedicated pass:
 8. exact panel/eDP/LVDS/EDID topology;
 9. EC/GPIO/keyboard/touchpad power-management relationships;
 10. service-part numbers and connector pinouts.
+
+
+## 24. Second-pass source audit: additional findings
+
+A dedicated second-pass search found additional evidence that should remain in the engineering record.
+
+### Fujitsu official support catalogue
+The official Fujitsu AH532 support search is substantially richer than a simple driver list. It records historical versions of Intel Management Engine Interface, Intel Rapid Storage Technology, Realtek High Definition Audio, Fujitsu BIOS Driver, FUJ02B1 and FUJ02E3 platform-device drivers, Intel Wireless LAN and Intel Bluetooth, Wireless Radio Switch, Sonix Camera, ALPS Flat Point and Synaptics pointing-device packages, Intel Chipset Device Software, and NVIDIA display drivers for discrete-GPU configurations.
+
+This confirms that the AH532 product family had multiple hardware/configuration variants. These entries are useful as candidate-hardware evidence, but must not override physical PCI/USB/ACPI evidence from our machine.
+
+Official source:
+- https://support.ts.fujitsu.com/IndexQuickSearchResult.asp?OpenTab=&Q=LIFEBOOK+AH532&lng=
+
+### Linux hardware-probe cross-check
+A public Linux hardware probe for an AH532/G-series machine provides a useful independent configuration cross-check. It reports a Samsung 1366x768 LCD panel, BIOS 2.14 dated 2018-09-07, Intel Core i3-3110M, Patriot DDR3-1600 4GB memory, USB 3.0 root hub, Intel integrated-rate-matching USB hub, and a USB Sigma Micro XM102K mouse.
+
+This is not proof of our exact AH532 configuration, but it demonstrates that the model exposes the expected platform classes to a real OS and gives us a reference for future Aether diagnostics.
+
+Source:
+- https://linux-hardware.org/?probe=d00301ccac
+
+### Independent Linux driver-stack evidence
+A real AH532/G21 Linux report shows the expected driver ecosystem around this platform, including i915, iwlwifi, snd_hda_intel, snd_hda_codec_realtek, r8169, xhci, uvcvideo, mei, fujitsu_laptop, i2c_i801 and serio_raw. This is useful as a discovery checklist only; it does not establish exact Aether register mappings.
+
+Source:
+- https://forum.rosa.ru/viewtopic.php?sid=5950eef09ee5e167506824654fa67b5c&t=10017
+
+### Board-level evidence strengthened
+Multiple independent repair archives identify the same board family: Quanta FH6/FH6C, DA0FH6MB6E0 Rev E, a 45-page schematic, and U35/U7/U24 firmware regions associated with the board. One repair archive also identifies the schematic block-diagram controller set as Realtek ALC269 audio and RTL8111F LAN. This is consistent with Fujitsu product documentation, but the exact silicon revision and subsystem IDs still need to come from our physical PCI scan.
+
+Sources:
+- https://www.repairlap.com/threads/fujitsu-lifebook-ah532-schematic-da0fh6mb6e0-rev-e-bios.5293/post-8614
+- https://vinafix.com/threads/fujitsu-ah532-fh6-fh6c-hm70-r0c_mb_0522.15516/
+- https://realschematic.com/shop/9971/desc/fujitsu-lifebook-ah532-a532
+
+### Important board/chipset ambiguity retained
+The community schematic filename contains hm70, while Fujitsu/Intel product documentation and our target-platform assumptions point toward HM76 / 7-Series mobile PCH. This discrepancy is explicitly retained as unresolved. It may reflect schematic naming, a related board variant, or a genuine configuration distinction. Aether must identify the actual PCH by PCI ID before using board-level assumptions.
+
+### BIOS evidence
+Community firmware archives identify AH532/FH6 firmware components as U35 main SPI, U7 ME-related SPI and U24 EC SPI. Another independent dump record identifies the same DA0FH6MB6E0 Rev E board and the three flash devices. These are documentation/research references only. No firmware write operation is part of Aether development.
+
+Sources:
+- https://www.repairlap.com/threads/fujitsu-lifebook-ah532-schematic-da0fh6mb6e0-rev-e-bios.5293/post-8615
+- https://remont-aud.net/dump/kompjutery_noutbuki_netbuki/fujitsu/fujitsu_lifebook_ah532_g52_shassi_main_board_da0fh6mb6e0_rev_e/433-1-0-57624
+
+## 25. Source-exhaustion rule
+
+This document should not be treated as literally containing every Internet page about AH532. The practical definition of completion is now:
+
+1. primary Fujitsu documentation and support inventory covered;
+2. Intel CPU/GPU/PCH primary documentation covered;
+3. board-level schematic/board-family evidence cross-checked across independent archives;
+4. BIOS/EC/ME evidence indexed without treating third-party firmware as authoritative;
+5. independent Linux hardware probes used only as cross-checks;
+6. every important unknown assigned a concrete physical diagnostic needed to resolve it;
+7. conflicting claims explicitly preserved instead of silently merged;
+8. no unsafe hardware experiment inferred from documentation alone.
+
+The remaining high-value work is therefore no longer broad web searching alone. It is obtaining the missing primary artifacts where accessible (especially the actual schematic/boardview contents) and collecting machine-specific runtime evidence: PCI configuration space, ACPI tables, controller BARs, exact revisions/subsystem IDs, EDID and panel identity, and EC/firmware identity.
