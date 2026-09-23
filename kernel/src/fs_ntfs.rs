@@ -311,31 +311,27 @@ fn read_mft_record(ref_num: u32, out: &mut [u8]) -> bool {
     }
     let bytes_per_cluster = unsafe { SPC as u64 * 512 };
     let offset = (ref_num as u64) * (rec_size as u64);
-    let first_cluster = offset / bytes_per_cluster;
-    let mut intra = (offset % bytes_per_cluster) as usize;
     let mut got = 0usize;
 
     while got < rec_size {
-        let cluster_index = first_cluster + ((intra as u64) / bytes_per_cluster);
+        let cur_offset = offset + got as u64;
+        let cluster_index = cur_offset / bytes_per_cluster;
+        let intra = (cur_offset % bytes_per_cluster) as usize;
         let lcn = match mft_cluster_lcn(cluster_index) {
             Some(v) => v,
             None => return false,
         };
-        let mut s = 0u32;
+        let mut s = (intra / 512) as u32;
+        let mut sec_off = intra % 512;
         let spc = unsafe { SPC as u32 };
         while s < spc && got < rec_size {
-            if intra >= 512 {
-                intra -= 512;
-                s += 1;
-                continue;
-            }
             let mut sec = [0u8; 512];
             let disk = unsafe { DISK };
             if !read_lba(disk, cluster_to_lba(lcn) + s, &mut sec) {
                 return false;
             }
-            let mut i = intra;
-            intra = 0;
+            let mut i = sec_off;
+            sec_off = 0;
             while i < 512 && got < rec_size {
                 out[got] = sec[i];
                 got += 1;
@@ -343,7 +339,6 @@ fn read_mft_record(ref_num: u32, out: &mut [u8]) -> bool {
             }
             s += 1;
         }
-        intra = 0;
     }
 
     // FILE record signature.
