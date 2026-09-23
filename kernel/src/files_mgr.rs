@@ -6,6 +6,7 @@ use crate::fs;
 use crate::graphics;
 use crate::gui::{font, icon, theme};
 use crate::serial;
+use crate::part;
 
 const WHITE:u32=0x00FFFFFF;
 const TEXT:u32=0x001F1F1F;
@@ -24,6 +25,7 @@ pub const VIEW_COMPUTER:u8=0;
 pub const VIEW_ROOT:u8=1;
 pub const VIEW_PROPS:u8=2;
 pub const VIEW_TEXT:u8=3;
+pub const VIEW_DISK:u8=4;
 
 static mut VIEW:u8=VIEW_COMPUTER;
 static mut SEL:i32=-1;
@@ -67,7 +69,10 @@ fn draw_header(wx:usize,wy:usize,ww:usize,body_y:usize){
     graphics::fill_rect(ax,body_y+5,aw,24,WHITE);
     graphics::border_rect(ax,body_y+5,aw,24,BORDER);
     graphics::draw_str(ax+8,body_y+13,"Computer",DIM);
-    if aw>90{graphics::draw_str(ax+76,body_y+13,">",DIM);unsafe{if VIEW==VIEW_ROOT{graphics::draw_str(ax+90,body_y+13,"AetherFS (A:)",TEXT);}}}
+    if aw>90{graphics::draw_str(ax+76,body_y+13,">",DIM);unsafe{
+        if VIEW==VIEW_ROOT{graphics::draw_str(ax+90,body_y+13,"AetherFS (A:)",TEXT);}
+        else if VIEW==VIEW_DISK{graphics::draw_str(ax+90,body_y+13,"Local Disk (C:)",TEXT);}
+    }}
     let sx=wx+ww.saturating_sub(94);
     graphics::fill_rect(sx,body_y+5,82,24,WHITE);graphics::border_rect(sx,body_y+5,82,24,BORDER);
     graphics::draw_str(sx+8,body_y+13,"Search",DIM);
@@ -112,6 +117,43 @@ fn draw_computer(wx:usize,y:usize,ww:usize,h:usize){
     let _=ww;
 }
 
+fn draw_disk(wx:usize,y:usize,ww:usize,h:usize){
+    graphics::fill_rect(wx,y,ww,h,WHITE);
+    graphics::draw_str(wx+8,y+8,"Local Disk (C:) — Partitions",TEXT);
+    let n=part::count();
+    if n==0{
+        graphics::draw_str(wx+10,y+34,"No partitions detected.",RED);
+        graphics::draw_str(wx+10,y+52,"AHCI/partition scan did not return volumes.",DIM);
+        return;
+    }
+    graphics::fill_rect(wx,y+24,ww,22,TOOL2);
+    graphics::draw_str(wx+8,y+31,"Volume",TEXT);
+    graphics::draw_str(wx+190,y+31,"Filesystem",TEXT);
+    graphics::draw_str(wx+300,y+31,"Size (MB)",TEXT);
+    unsafe{
+        let mut row=0usize;
+        let mut i=0usize;
+        while i<n&&row<16{
+            if let Some(p)=part::get(i){
+                let ry=y+48+row*24;
+                if SEL==row as i32{graphics::fill_rect(wx,ry,ww,24,SELECT);}
+                icon::blit(icon::IconId::MyComputer,wx+4,ry-2,false);
+                graphics::draw_str(wx+34,ry+7,"Partition",TEXT);
+                graphics::draw_str(wx+190,ry+7,part::type_name(p.ptype),DIM);
+                draw_num(wx+300,ry+7,p.sectors/2048);
+                row+=1;
+            }
+            i+=1;
+        }
+        if SEL>=0{
+            let s=SEL as usize;
+            if let Some(p)=part::get(s){
+                graphics::draw_str(wx+8,y+h.saturating_sub(38),"Read-only: ",DIM);
+                graphics::draw_str(wx+76,y+h.saturating_sub(38),part::type_name(p.ptype),TEXT);
+            }
+        }
+    }
+}
 fn draw_list(wx:usize,y:usize,ww:usize,h:usize){
     if !fs::is_mounted(){graphics::draw_str(wx+10,y+10,"AetherFS is not mounted.",RED);return;}
     let mut a=[fs::ListItem{name:[0;24],name_len:0,size:0,is_dir:false};16];
@@ -165,7 +207,7 @@ pub fn draw(wx:usize,wy:usize,ww:usize,wh:usize,title_h:usize){
     let side=150usize.min(ww/3);
     draw_sidebar(wx,sy,side,sh);
     let cx=wx+side+8;let cw=ww.saturating_sub(side+16);
-    match unsafe{VIEW}{VIEW_COMPUTER=>draw_computer(cx,sy,cw,sh),VIEW_ROOT=>draw_list(cx,sy,cw,sh),VIEW_TEXT=>draw_text(cx,sy,cw,sh),VIEW_PROPS=>draw_props(cx,sy,cw,sh),_=>{}}
+    match unsafe{VIEW}{VIEW_COMPUTER=>draw_computer(cx,sy,cw,sh),VIEW_ROOT=>draw_list(cx,sy,cw,sh),VIEW_DISK=>draw_disk(cx,sy,cw,sh),VIEW_TEXT=>draw_text(cx,sy,cw,sh),VIEW_PROPS=>draw_props(cx,sy,cw,sh),_=>{}}
     if unsafe{CTX}{draw_context();}
     if unsafe{CONFIRM_DEL}{draw_confirm(wx,wy,ww,wh);}
     let status_y=wy+wh-18;graphics::fill_rect(wx+3,status_y,ww-6,16,TOOL);graphics::border_rect(wx+3,status_y,ww-6,16,BORDER);unsafe{let mut i=0;while i<STATUS_LEN{graphics::draw_char(wx+9+i*8,status_y+4,STATUS[i],DIM);i+=1;}}
@@ -206,8 +248,10 @@ pub fn on_click(wx:i32,wy:i32,ww:i32,wh:i32,title_h:i32,mx:i32,my:i32,right:bool
             let cx=mx-(wx+side+8);let _=cx;
             if VIEW==VIEW_COMPUTER{
                 if my>=list_top+42&&my<list_top+98{
-                    log(b"physical drive selected: C:");
-                    status(b"Local Disk (C:) unavailable: no read-only disk filesystem backend");
+                    log(b"physical drive opened: C:");
+                    SEL=-1;
+                    VIEW=VIEW_DISK;
+                    status(b"Local Disk (C:) opened - read-only partitions");
                     return true;
                 }
                 if my>=list_top+98&&my<list_top+154{
@@ -217,6 +261,30 @@ pub fn on_click(wx:i32,wy:i32,ww:i32,wh:i32,title_h:i32,mx:i32,my:i32,right:bool
                     status(b"AetherFS (A:) opened");
                     return true;
                 }
+            }
+            else if VIEW==VIEW_DISK{
+                let n=part::count();
+                if my<list_top+48{return false;}
+                let row=((my-list_top-48)/24)as i32;
+                if row>=0&&row<n as i32{
+                    if SEL==row{
+                        if let Some(p)=part::get(row as usize){
+                            log(b"partition open requested");
+                            if p.ptype==0x07{
+                                status(b"NTFS/exFAT partition detected - filesystem browser next");
+                            }else if p.ptype==0x0B||p.ptype==0x0C||p.ptype==0x06||p.ptype==0x0E||p.ptype==0x04{
+                                status(b"FAT partition detected - filesystem browser next");
+                            }else{
+                                status(b"Partition is read-only metadata only");
+                            }
+                        }
+                    }else{
+                        SEL=row;
+                        status(b"Partition selected");
+                    }
+                    return true;
+                }
+                return false;
             }
             else if VIEW==VIEW_ROOT{
                 let mut a=[fs::ListItem{name:[0;24],name_len:0,size:0,is_dir:false};16];
