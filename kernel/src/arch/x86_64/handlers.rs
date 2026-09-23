@@ -352,25 +352,9 @@ pub extern "C" fn process_exit_dispatch() {
     // system desktop on an interactive foreground application during boot.
     serial::write_str("[INIT] Calculator kept available; skipping auto-launch during boot\\n");
 
-    static mut SH_DONE: bool = false;
-    let launch_sh = unsafe {
-        if !SH_DONE { SH_DONE = true; true } else { false }
-    };
-    if launch_sh {
-        let mut buf = [0u8; 8192];
-        if let Some(n) = crate::fs::read_large("/bin/sh", &mut buf) {
-            if let Some(img) = crate::elf::load(&buf) {
-                if let Some(pid) = crate::process::create_from_image("sh", &img) {
-                    crate::process::set_state(pid, crate::process::State::Running);
-                    crate::process::set_current(pid);
-                    unsafe {
-                        crate::mm::paging::load_cr3(img.cr3);
-                        enter_user_mode(img.entry as u64, img.stack_top as u64);
-                    }
-                }
-            }
-        }
-    }
+    // /bin/sh remains installed for explicit userspace launch, but boot must
+    // continue to the native desktop instead of blocking on an interactive shell.
+    serial::write_str("[INIT] /bin/sh installed; skipping auto-launch during boot\\n");
     crate::ring3_resume::continue_boot();
 }
 
