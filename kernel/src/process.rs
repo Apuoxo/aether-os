@@ -3,6 +3,7 @@
 use crate::serial;
 use crate::mm;
 use crate::elf;
+use crate::capability::{Cap, CapTable, CAP_READ, CAP_WRITE, CAP_MAP};
 
 pub const MAX_PROCESSES: usize = 8;
 
@@ -42,6 +43,7 @@ impl Process {
             page_count: 0,
             name: [0; 16],
             name_len: 0,
+            caps: CapTable::new(),
         }
     }
 }
@@ -94,6 +96,10 @@ pub fn create_from_image_with_personality(
         p.pid = pid;
         p.personality = personality;
         p.state = State::Ready;
+        // Initial bootstrap capabilities. Later domains must receive these explicitly.
+        let _ = p.caps.insert(Cap::new(1, CAP_READ));
+        let _ = p.caps.insert(Cap::new(2, CAP_WRITE));
+        let _ = p.caps.insert(Cap::new(3, CAP_MAP));
         p.entry = img.entry;
         p.stack = img.stack_top;
         p.cr3 = img.cr3;
