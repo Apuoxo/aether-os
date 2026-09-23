@@ -1,4 +1,6 @@
 static mut CAP_TEST_STAGE: u8 = 0;
+// 1=ALLOW observed, 2=DENY observed; used only by the deterministic Ring3 regression.
+static mut CAP_TEST_WRITE_RESULT: u8 = 0;
 
 use crate::serial;
 
@@ -113,11 +115,19 @@ fn current_has_cap(slot: usize, required: u32) -> bool {
 unsafe fn sys_write(buf: usize, len: usize) -> u64 {
     if !current_has_cap(1, crate::capability::CAP_WRITE) {
         serial::write_str("  [SYSCALL] write denied: capability\n");
+        if CAP_TEST_STAGE == 2 {
+            CAP_TEST_WRITE_RESULT = 2;
+            serial::write_str("  [CAP-RING3] WRITE DENY observed\n");
+        }
         return u64::MAX;
     }
     if !user_ok(buf, len) {
         serial::write_str("  [SYSCALL] write bad ptr\n");
         return u64::MAX;
+    }
+    if CAP_TEST_STAGE == 1 {
+        CAP_TEST_WRITE_RESULT = 1;
+        serial::write_str("  [CAP-RING3] WRITE ALLOW observed\n");
     }
     serial::write_str("  [SYSCALL] write FROM CPL=3 bytes=");
     serial::write_usize(len);
@@ -316,10 +326,24 @@ pub extern "C" fn process_exit_dispatch() {
     }
         unsafe {
         if CAP_TEST_STAGE == 1 {
+            if CAP_TEST_WRITE_RESULT == 1 {
+                serial::write_str("[CAP-RING3] WRITE ALLOW PASS\n");
+            } else {
+                serial::write_str("[CAP-RING3] WRITE ALLOW FAIL\n");
+            }
+            CAP_TEST_WRITE_RESULT = 0;
             CAP_TEST_STAGE = 2;
             if launch_cap_test_process("cap-deny", true) {
                 return;
             }
+        } else if CAP_TEST_STAGE == 2 {
+            if CAP_TEST_WRITE_RESULT == 2 {
+                serial::write_str("[CAP-RING3] WRITE DENY PASS\n");
+            } else {
+                serial::write_str("[CAP-RING3] WRITE DENY FAIL\n");
+            }
+            CAP_TEST_WRITE_RESULT = 0;
+            CAP_TEST_STAGE = 3;
         }
     }
 
