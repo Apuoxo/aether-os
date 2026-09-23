@@ -21,12 +21,20 @@ Aether currently has a working x86_64 native kernel/userspace foundation with:
 
 ## Kernel correctness repair progress
 
+Current P0 repair progress:
+
+- Process objects now carry an explicit PersonalityId owner; personality attach/detach hooks are tied to process lifetime.
+- Per-process capability infrastructure now exists: rights constants, validation, derivation without privilege escalation, lookup, checking, and revocation.
+- Exposed Ring3 syscalls now perform capability checks for write, read/list/input, and graphics operations.
+- The packaged calculator userspace ABI was corrected to match the canonical R10 fourth-argument convention.
+
+
 The first P0 source-repair pass is applied:
 
 - Syscall ABI is canonicalized to `RAX=nr, RDI=a1, RSI=a2, RDX=a3, R10=a4, R8=a5`; syscall return is restored through saved RAX.
 - The x86_64 TSS descriptor is encoded as a true 16-byte descriptor across GDT slots 5–6.
 
-These are **not yet complete**: deterministic QEMU evidence must still prove syscall arguments/return values and CPL3→CPL0 TSS/RSP0 entry. Next P0 work is Process↔Personality ownership, then real capability enforcement.
+These are **not yet complete**: deterministic QEMU evidence must still prove syscall arguments/return values and CPL3→CPL0 TSS/RSP0 entry. Capability enforcement is partially implemented; runtime allow/deny evidence and the full object-authority model remain pending.
 
 ## Graphics status
 
