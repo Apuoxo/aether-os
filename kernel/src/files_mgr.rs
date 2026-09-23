@@ -233,7 +233,25 @@ fn draw_props(wx:usize,y:usize,ww:usize,h:usize){
 }
 
 fn draw_context(){
-    unsafe{let x=CTX_X as usize;let y=CTX_Y as usize;graphics::fill_rect(x,y,150,112,WHITE);graphics::border_rect(x,y,150,112,BORDER);graphics::draw_str(x+10,y+10,"Open",TEXT);graphics::draw_str(x+10,y+30,"New folder",TEXT);graphics::draw_str(x+10,y+50,"New text file",TEXT);graphics::draw_str(x+10,y+70,"Rename",TEXT);graphics::draw_str(x+10,y+90,"Delete",TEXT);}
+    unsafe{
+        let x=CTX_X as usize;
+        let y=CTX_Y as usize;
+        let w=210usize;
+        let h=216usize;
+        graphics::fill_rect(x,y,w,h,WHITE);
+        graphics::border_rect(x,y,w,h,BORDER);
+        graphics::draw_str(x+10,y+10,"Open",TEXT);
+        graphics::draw_str(x+10,y+30,"Open with",TEXT);
+        graphics::draw_str(x+10,y+50,"Copy",TEXT);
+        graphics::draw_str(x+10,y+70,"Cut",DIM);
+        graphics::draw_str(x+10,y+90,"Rename",DIM);
+        graphics::draw_str(x+10,y+110,"Delete",DIM);
+        graphics::draw_str(x+10,y+130,"Properties",TEXT);
+        graphics::draw_str(x+10,y+150,"Refresh",TEXT);
+        graphics::fill_rect(x+6,y+169,w-12,1,BORDER);
+        graphics::draw_str(x+10,y+180,"New folder",DIM);
+        graphics::draw_str(x+10,y+200,"New text file",DIM);
+    }
 }
 fn draw_confirm(wx:usize,wy:usize,ww:usize,wh:usize){
     let x=wx+ww/2-120;let y=wy+wh/2-45;graphics::fill_rect(x,y,240,90,WHITE);graphics::border_rect(x,y,240,90,BORDER);graphics::draw_str(x+18,y+18,"Delete selected item?",TEXT);btn(x+24,y+52,70,"Delete",true);btn(x+112,y+52,70,"Cancel",false);
@@ -271,8 +289,47 @@ pub fn on_click(wx:i32,wy:i32,ww:i32,wh:i32,title_h:i32,mx:i32,my:i32,right:bool
     let by=wy+title_h;let relx=mx-wx;let rely=my-by;
     unsafe{
         if CONFIRM_DEL{let cx=ww/2;let cy=wh/2;if my>wy+cy+20&&my<wy+cy+60{if mx<wx+cx{delete_selected();}CONFIRM_DEL=false;}return true;}
-        if CTX{if mx>=CTX_X&&mx<CTX_X+150&&my>=CTX_Y&&my<CTX_Y+112{let r=(my-CTX_Y)/20;match r{0=>open_selected(),1=>new_folder(),2=>new_file(),3=>rename_selected(),4=>{CONFIRM_DEL=true;},_=>{}}CTX=false;return true;}CTX=false;return true;}
+        if CTX{
+            if mx>=CTX_X&&mx<CTX_X+210&&my>=CTX_Y&&my<CTX_Y+216{
+                let r=(my-CTX_Y)/20;
+                match r{
+                    0=>open_selected(),
+                    1=>status(b"Open with is not implemented"),
+                    2=>status(b"Copy is not implemented"),
+                    3=>status(b"Cut unavailable on read-only volume"),
+                    4=>status(b"Rename unavailable on read-only volume"),
+                    5=>status(b"Delete unavailable on read-only volume"),
+                    6=>{VIEW=VIEW_PROPS;status(b"Properties");},
+                    7=>{if VIEW==VIEW_NTFS{let _=fs_ntfs::list_directory(NTFS_CWD_REF);}else{let _=fs::list_ex_path(core::str::from_utf8_unchecked(&CWD[..CWD_LEN]),&mut [fs::ListItem{name:[0;24],name_len:0,size:0,is_dir:false};16]);}SEL=-1;status(b"Refreshed");},
+                    8=>status(b"New folder unavailable on read-only volume"),
+                    9=>status(b"New file unavailable on read-only volume"),
+                    _=>{}
+                }
+                CTX=false;
+                return true;
+            }
+            CTX=false;
+            return true;
+        }
         if right{
+            let side=150i32.min(ww/3);
+            let list_top=by+40;
+            if mx>=wx+side+8&&my>=list_top{
+                if VIEW==VIEW_NTFS{
+                    let n=fs_ntfs::entry_count();
+                    if my>=list_top+28{
+                        let row=((my-list_top-28)/20)as i32;
+                        if row>=0&&row<n as i32{SEL=row;}
+                    }
+                }else if VIEW==VIEW_ROOT{
+                    let mut a=[fs::ListItem{name:[0;24],name_len:0,size:0,is_dir:false};16];
+                    let n=fs::list_ex_path(core::str::from_utf8_unchecked(&CWD[..CWD_LEN]),&mut a);
+                    if my>=list_top+24{
+                        let row=((my-list_top-24)/20)as i32;
+                        if row>=0&&row<n as i32{SEL=row;}
+                    }
+                }
+            }
             CTX=true;
             CTX_X=mx;
             CTX_Y=my;
