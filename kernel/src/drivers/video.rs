@@ -194,14 +194,12 @@ fn detect_existing_scanout() {
             surf = mmio_read32(DSPBSURF) as u64;
             stride = mmio_read32(DSPBSTRIDE);
         } else {
-            serial::write_str("[VIDEO/SCANOUT] no active pipe
-");
+            serial::write_str("[VIDEO/SCANOUT] no active pipe\n");
             return;
         }
         let plane = if pipe == 0 { mmio_read32(DSPACNTR) } else { mmio_read32(DSPBCNTR) };
         if plane & (1 << 31) == 0 {
-            serial::write_str("[VIDEO/SCANOUT] active pipe but primary plane disabled
-");
+            serial::write_str("[VIDEO/SCANOUT] active pipe but primary plane disabled\n");
             return;
         }
         let expected_stride = if bpp == 32 { w.saturating_mul(4) } else { w.saturating_mul(3) };
@@ -218,8 +216,7 @@ fn detect_existing_scanout() {
         serial::write_usize(pipe as usize);
         serial::write_str(" surface=");
         log_hex64(surf);
-        serial::write_str("
-");
+        serial::write_str("\n");
     }
 }
 
