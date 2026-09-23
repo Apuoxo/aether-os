@@ -1,5 +1,6 @@
 BUILD_DIR  = build
 KERNEL_BIN = $(BUILD_DIR)/aether.bin
+KERNEL_LIB = $(BUILD_DIR)/libaether.a
 ISR_OBJ    = $(BUILD_DIR)/isr.o
 ISO        = $(BUILD_DIR)/aether.iso
 ISO_DIR    = $(BUILD_DIR)/isofiles
@@ -14,20 +15,20 @@ $(BUILD_DIR)/boot.o: src/arch/x86_64/boot.s | $(BUILD_DIR)
 
 RUST_SRCS := $(shell find src -type f -name '*.rs')
 
-$(BUILD_DIR)/kernel.o: $(RUST_SRCS) | $(BUILD_DIR)
+$(KERNEL_LIB): $(RUST_SRCS) | $(BUILD_DIR)
 	rustc --edition 2021 \
 		-C opt-level=s -C panic=abort \
 		-C overflow-checks=off -C debug-assertions=off \
 		-C force-frame-pointers=no \
 		--target x86_64-unknown-linux-gnu \
 		-C relocation-model=static \
-		--emit=obj -o $@ src/main.rs
+		--crate-type=staticlib -o $@ src/main.rs
 
 $(ISR_OBJ): src/arch/x86_64/isr.s | $(BUILD_DIR)
 	nasm -f elf64 $< -o $@
 
-$(KERNEL_BIN): $(BUILD_DIR)/boot.o $(BUILD_DIR)/kernel.o $(ISR_OBJ) linker/linker.ld
-	ld -n -T linker/linker.ld -o $@ $(BUILD_DIR)/boot.o $(BUILD_DIR)/kernel.o $(ISR_OBJ)
+$(KERNEL_BIN): $(BUILD_DIR)/boot.o $(KERNEL_LIB) $(ISR_OBJ) linker/linker.ld
+	ld -n -T linker/linker.ld -o $@ $(BUILD_DIR)/boot.o $(KERNEL_LIB) $(ISR_OBJ)
 
 kernel: $(KERNEL_BIN)
 	@ls -lh $(KERNEL_BIN)
