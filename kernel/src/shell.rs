@@ -151,6 +151,154 @@ fn cmd_help() {
     write_str("Commands: help ls cat mem uname vdiag vedid echo halt\n");
 }
 
+fn cmd_dsk() {
+    write_str("======== DSK: real storage probe (READ-ONLY) ========\\n");
+
+    let snap = crate::storage_hw_diag::snapshot();
+    write_str("PCI mass-storage controllers: ");
+    serial::write_usize(snap.mass_n);
+    write_str("  AHCI=");
+    serial::write_usize(snap.ahci_n);
+    write_str(" IDE=");
+    serial::write_usize(snap.ide_n);
+    write_str(" NVMe=");
+    serial::write_usize(snap.nvme_n);
+    write_str("\\n");
+
+    if snap.mass_n > 0 {
+        let mut i = 0usize;
+        while i < snap.mass_n {
+            let d = snap.mass[i];
+            write_str("  PCI ");
+            serial::write_usize(d.bus as usize);
+            write_str(":");
+            serial::write_usize(d.dev as usize);
+            write_str(".");
+            serial::write_usize(d.func as usize);
+            write_str(" ");
+            serial::write_hex(d.vid as usize);
+            write_str(":");
+            serial::write_hex(d.did as usize);
+            write_str(" AHCI=");
+            write_str(if d.is_ahci { "Y" } else { "N" });
+            write_str(" ABAR=");
+            serial::write_hex(d.abar as usize);
+            write_str(" PI=");
+            serial::write_hex(d.pi as usize);
+            write_str(" present=");
+            serial::write_hex(d.ports_present as usize);
+            write_str("\\n");
+            i += 1;
+        }
+    }
+
+    let nd = crate::drivers::ahci::disk_count();
+    write_str("AHCI runtime disks: ");
+    serial::write_usize(nd);
+    write_str("\\n");
+
+    let mut di = 0usize;
+    while di < nd {
+        let mut model = [0u8; 40];
+        let ml = crate::drivers::ahci::disk_model(di, &mut model);
+        write_str("  disk");
+        serial::write_usize(di);
+        write_str(" model=");
+        let mut j = 0usize;
+        while j < ml {
+            putc(model[j]);
+            j += 1;
+        }
+        write_str(" sectors=");
+        serial::write_usize(crate::drivers::ahci::disk_sectors(di) as usize);
+        write_str("\\n");
+
+        let mut sec0 = [0u8; 512];
+        let ok = crate::drivers::ahci::read_sectors(di, 0, 1, &mut sec0);
+        write_str("    LBA0 READ=");
+        write_str(if ok { "OK" } else { "FAIL" });
+        if ok {
+            write_str(" sig=");
+            if sec0[510] == 0x55 && sec0[511] == 0xAA {
+                write_str("MBR");
+            } else {
+                write_str("no-55AA");
+            }
+        }
+        write_str("\\n");
+        di += 1;
+    }
+
+    let nb = crate::block::count();
+    write_str("Block devices: ");
+    serial::write_usize(nb);
+    write_str("\\n");
+    let mut bi = 0usize;
+    while bi < nb {
+        if let Some(d) = crate::block::get(bi) {
+            write_str("  block");
+            serial::write_usize(bi);
+            write_str(" hw=");
+            write_str(if d.is_hw { "Y" } else { "N" });
+            write_str(" ahci=");
+            write_str(if d.is_ahci { "Y" } else { "N" });
+            write_str(" sectors32=");
+            serial::write_usize(d.sectors as usize);
+            write_str("\\n");
+        }
+        bi += 1;
+    }
+
+    let np = crate::part::count();
+    write_str("Partitions parsed from READ data: ");
+    serial::write_usize(np);
+    write_str("\\n");
+    let mut pi = 0usize;
+    while pi < np {
+        if let Some(p) = crate::part::get(pi) {
+            write_str("  #");
+            serial::write_usize(pi);
+            write_str(" disk=");
+            serial::write_usize(p.disk as usize);
+            write_str(" idx=");
+            serial::write_usize(p.index as usize);
+            write_str(" type=");
+            write_str(crate::part::type_name(p.ptype));
+            write_str(" LBA=");
+            serial::write_usize(p.lba_start as usize);
+            write_str(" sectors=");
+            serial::write_usize(p.sectors as usize);
+
+            let mut sec = [0u8; 512];
+            let ok = crate::block::read(p.disk, p.lba_start, 1, &mut sec);
+            write_str(" read=");
+            write_str(if ok { "OK" } else { "FAIL" });
+            if ok {
+                write_str(" fs=");
+                if sec[3] == b'N' && sec[4] == b'T' && sec[5] == b'F' && sec[6] == b'S' {
+                    write_str("NTFS");
+                } else if sec[54] == b'F' && sec[55] == b'A' && sec[56] == b'T' {
+                    write_str("FAT");
+                } else {
+                    write_str("unknown");
+                }
+            }
+            write_str("\\n");
+        }
+        pi += 1;
+    }
+
+    write_str("NTFS mounted: ");
+    write_str(if crate::fs_ntfs::is_mounted() { "YES" } else { "NO" });
+    write_str("\\n");
+    if crate::fs_ntfs::is_mounted() {
+        write_str("NTFS root entries: ");
+        serial::write_usize(crate::fs_ntfs::entry_count());
+        write_str("\\n");
+    }
+    write_str("======== END DSK ========\\n");
+}
+
 fn cmd_vdiag() {
     write_str("======== Video diagnostic ========\n");
     write_str("software FB: ");
@@ -336,6 +484,8 @@ fn run_line(line: &[u8], len: usize) {
         cmd_cat_test();
     } else if eq(line, s, clen, b"mem") {
         cmd_mem();
+    } else if eq(line, s, clen, b"dsk") {
+        cmd_dsk();
     } else if eq(line, s, clen, b"vdiag") {
         cmd_vdiag();
     } else if eq(line, s, clen, b"vedid") {
