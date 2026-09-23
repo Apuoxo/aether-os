@@ -42,6 +42,10 @@ jobs:
           grep -q "\[INIT\] Calculator ELF bundled bytes=" /tmp/aether-qemu.log
           grep -q "\[CALC\] loaded bundled ELF bytes=" /tmp/aether-qemu.log
           grep -q "\[SYSCALL\] nr=12" /tmp/aether-qemu.log
+          grep -q "\[CAP-RING3\] WRITE ALLOW PASS" /tmp/aether-qemu.log
+          grep -q "\[CAP-RING3\] WRITE DENY PASS" /tmp/aether-qemu.log
+          ! grep -q "\[CAP-RING3\] WRITE ALLOW FAIL" /tmp/aether-qemu.log
+          ! grep -q "\[CAP-RING3\] WRITE DENY FAIL" /tmp/aether-qemu.log
           ! grep -q "PANIC" /tmp/aether-qemu.log
           ! grep -q "\[PF\] killing process" /tmp/aether-qemu.log
 
