@@ -1,0 +1,85 @@
+name: Verify AH532 schematic PDF
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Fujitsu_FH6C_FH6_hm70_r0c_mb_0522 SKCLAPPY.IN.pdf"
+      - ".github/workflows/verify-ah532-schematic.yml"
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install PDF tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y poppler-utils
+
+      - name: Verify SHA-256 and metadata
+        run: |
+          set -euo pipefail
+          PDF="Fujitsu_FH6C_FH6_hm70_r0c_mb_0522 SKCLAPPY.IN.pdf"
+          EXPECTED="8011b1775a403b5d62ff816c278412f62c2e3d7873b955f2721fa664528badbc"
+          ACTUAL="$(sha256sum "$PDF" | awk '{print $1}')"
+          SIZE="$(stat -c '%s' "$PDF")"
+          echo "FILE=$PDF"
+          echo "SIZE=$SIZE bytes"
+          echo "SHA256=$ACTUAL"
+          if [ "$ACTUAL" = "$EXPECTED" ]; then
+            echo "SHA256_STATUS=MATCH"
+          else
+            echo "SHA256_STATUS=MISMATCH"
+          fi
+          pdfinfo "$PDF" | tee pdfinfo.txt
+          PAGES="$(pdfinfo "$PDF" | awk '/^Pages:/ {print $2}')"
+          echo "PAGE_COUNT=$PAGES"
+
+      - name: Extract full text
+        run: |
+          set -euo pipefail
+          pdftotext -layout "Fujitsu_FH6C_FH6_hm70_r0c_mb_0522 SKCLAPPY.IN.pdf" schematic-full.txt
+          wc -c schematic-full.txt
+          grep -Ein -C 2 'AH532|FH6C|FH6|DA0FH6MB6E0|HM70|HM76|Sandy Bridge|Ivy Bridge|Intel HD|0116|GMBUS|EDID|eDP|LVDS|HDMI|DisplayPort|USB|xHCI|SATA|AHCI|RTL8111|RTL8168|WLAN|2230|ALC269|HDA|EC|LPC|SPI|BIOS|ME|PCH|GPIO|SMBus|PCI' schematic-full.txt > technical-identifiers.txt || true
+
+      - name: Build verification report
+        run: |
+          set -euo pipefail
+          PDF="Fujitsu_FH6C_FH6_hm70_r0c_mb_0522 SKCLAPPY.IN.pdf"
+          SHA="$(sha256sum "$PDF" | awk '{print $1}')"
+          SIZE="$(stat -c '%s' "$PDF")"
+          PAGES="$(pdfinfo "$PDF" | awk '/^Pages:/ {print $2}')"
+          STATUS="MISMATCH"
+          [ "$SHA" = "8011b1775a403b5d62ff816c278412f62c2e3d7873b955f2721fa664528badbc" ] && STATUS="MATCH"
+          {
+            echo "# AH532 schematic verification"
+            echo
+            echo "- File: `$PDF`"
+            echo "- Size: $SIZE bytes"
+            echo "- SHA-256: `$SHA`"
+            echo "- Expected SHA-256: `8011b1775a403b5d62ff816c278412f62c2e3d7873b955f2721fa664528badbc`"
+            echo "- SHA-256 status: **$STATUS**"
+            echo "- Page count: **$PAGES**"
+            echo
+            echo "## PDF metadata"
+            echo
+            cat pdfinfo.txt
+            echo
+            echo "## Technical identifier hits"
+            echo
+            cat technical-identifiers.txt
+          } > docs/AH532-SCHEMATIC_VERIFICATION.md
+
+      - name: Publish verification artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ah532-schematic-verification
+          path: |
+            docs/AH532-SCHEMATIC_VERIFICATION.md
+            pdfinfo.txt
+            schematic-full.txt
+            technical-identifiers.txt
+          if-no-files-found: error
