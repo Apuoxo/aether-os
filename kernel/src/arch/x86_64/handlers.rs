@@ -278,7 +278,40 @@ pub extern "C" fn process_exit_dispatch() {
         }
     }
 
-    // Launch /bin/sh once after init (or any last process)
+    // Stage 1 after /bin/init: launch the native Calculator.
+    // Stage 2: launch the shell. This keeps the Calculator as a real
+    // independent ELF process instead of linking it into the kernel.
+    static mut APP_STAGE: u8 = 0;
+
+    unsafe {
+        if APP_STAGE == 0 {
+            APP_STAGE = 1;
+            serial::write_str("\n======== USERSACE CALCULATOR STAGE ========\n");
+            let mut buf = [0u8; 8192];
+            if let Some(n) = crate::fs::read_large("/bin/calculator", &mut buf) {
+                serial::write_str("[CALC] loaded ELF bytes=");
+                serial::write_usize(n);
+                serial::write_str("\n");
+                if let Some(img) = crate::elf::load(&buf) {
+                    if let Some(pid) = crate::process::create_from_image("calculator", &img) {
+                        crate::process::set_state(pid, crate::process::State::Running);
+                        crate::process::set_current(pid);
+                        serial::write_str("[CALC] PID=");
+                        serial::write_usize(pid);
+                        serial::write_str(" USER_CR3=");
+                        serial::write_hex(img.cr3);
+                        serial::write_str("\n");
+                        crate::mm::paging::load_cr3(img.cr3);
+                        enter_user_mode(img.entry as u64, img.stack_top as u64);
+                    }
+                }
+            } else {
+                serial::write_str("[CALC] /bin/calculator missing — skip\n");
+            }
+        }
+    }
+
+    // Calculator is absent or has exited: launch /bin/sh once.
     static mut SH_DONE: bool = false;
     let launch_sh = unsafe {
         if !SH_DONE {
@@ -310,10 +343,8 @@ pub extern "C" fn process_exit_dispatch() {
                         serial::write_str("[SH] CR3 DIFFERENT = YES\n");
                     }
                     serial::write_str("[SH] enter CPL=3\n");
-                    unsafe {
-                        crate::mm::paging::load_cr3(img.cr3);
-                        enter_user_mode(img.entry as u64, img.stack_top as u64);
-                    }
+                    crate::mm::paging::load_cr3(img.cr3);
+                    enter_user_mode(img.entry as u64, img.stack_top as u64);
                 }
             }
         } else {
