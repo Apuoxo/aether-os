@@ -12,6 +12,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install build tools
         run: sudo apt-get update && sudo apt-get install -y nasm grub-pc-bin grub-common xorriso mtools jq unzip curl
+      - name: Clean kernel build directory
+        working-directory: kernel
+        run: make clean
+
       - name: Fetch latest Calculator ELF from Aether Apps
         run: |
           set -e
@@ -25,7 +29,7 @@ jobs:
 
       - name: Build kernel
         working-directory: kernel
-        run: make clean kernel
+        run: make kernel
       - name: Build ISO
         working-directory: kernel
         run: make iso
