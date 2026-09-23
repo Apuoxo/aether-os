@@ -568,6 +568,37 @@ pub fn preferred_mode() -> Option<DisplayMode> {
     unsafe { PREFERRED_MODE }
 }
 
+/// Validate that a requested mode can be represented by the existing
+/// Multiboot framebuffer without touching display hardware.
+pub fn mode_matches_framebuffer(mode: DisplayMode) -> bool {
+    if !fb::is_ready() { return false; }
+    let w = fb::width() as u16;
+    let h = fb::height() as u16;
+    mode.width == w && mode.height == h && mode.pixel_clock_khz != 0
+}
+
+/// Attach to an already programmed display mode only when the primary plane
+/// and its framebuffer surface match Multiboot. No hardware writes occur.
+pub fn attach_existing_mode() -> Option<DisplayMode> {
+    unsafe {
+        if !SCANOUT_READY { return None; }
+    }
+    preferred_mode().filter(|m| mode_matches_framebuffer(*m))
+}
+
+/// Draw a small driver-owned diagnostic marker through the existing graphics
+/// path. This never changes Intel display registers.
+pub fn draw_driver_marker() -> bool {
+    if !scanout_ready() || !fb::is_ready() { return false; }
+    let w = fb::width();
+    let h = fb::height();
+    if w < 32 || h < 16 { return false; }
+    graphics::border_rect(4, 4, 24, 12, 0x00FF00);
+    graphics::draw_str(7, 6, "A6", 0x00FFFFFF);
+    true
+}
+
+
 /// Try the Sandy Bridge DDC pins until one returns a valid EDID block.
 pub fn probe_edid(out: &mut [u8; 128]) -> u32 {
     let ports = [
