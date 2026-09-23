@@ -22,7 +22,7 @@ jobs:
           mkdir -p kernel/build
           curl -fsSL -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer ${{ github.token }}" \
             'https://api.github.com/repos/Apuoxo/aether-apps/contents/apps/calculator/dist/calculator.elf?ref=main' \
-            | jq -r '.content' | tr -d '\\n' | base64 -d > kernel/build/calculator.elf
+            | jq -r '.content' | tr -d '\n' | base64 -d > kernel/build/calculator.elf
           test -s kernel/build/calculator.elf
           file kernel/build/calculator.elf
 
