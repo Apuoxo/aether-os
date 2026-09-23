@@ -92,3 +92,23 @@ pub fn process_detach(id: PersonalityId) {
         }
     }
 }
+
+
+/// Deterministic lifecycle regression: a loaded personality must not unload
+/// while it owns a process, and must unload after the final detach.
+pub fn self_test() -> bool {
+    let id = PersonalityId::Windows;
+    let idx = id as usize;
+    unsafe {
+        PERSONALITIES[idx].loaded = false;
+        PERSONALITIES[idx].process_count = 0;
+    }
+    if !load(id) || !is_loaded(id) { return false; }
+    process_attach(id);
+    if unload(id) { return false; }
+    if unsafe { PERSONALITIES[idx].process_count } != 1 { return false; }
+    process_detach(id);
+    if unsafe { PERSONALITIES[idx].process_count } != 0 { return false; }
+    if !unload(id) || is_loaded(id) { return false; }
+    true
+}
