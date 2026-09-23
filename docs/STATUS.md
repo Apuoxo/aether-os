@@ -4,7 +4,7 @@
 
 This file is a laboratory status document, not a release-version identifier. Historical version strings in the repository must not override source/runtime evidence.
 
-## Current engineering state — 2026-09-23
+## Current engineering state — 2026-09-24
 
 Aether currently has a working x86_64 native kernel/userspace foundation with:
 
@@ -34,7 +34,7 @@ The first P0 source-repair pass is applied:
 - Syscall ABI is canonicalized to `RAX=nr, RDI=a1, RSI=a2, RDX=a3, R10=a4, R8=a5`; syscall return is restored through saved RAX.
 - The x86_64 TSS descriptor is encoded as a true 16-byte descriptor across GDT slots 5–6.
 
-These are **not yet complete**: deterministic QEMU evidence must still prove syscall arguments/return values and CPL3→CPL0 TSS/RSP0 entry. Capability enforcement is partially implemented; runtime allow/deny evidence and the full object-authority model remain pending.
+These are **not yet complete**: deterministic QEMU evidence must still prove syscall arguments/return values and CPL3→CPL0 TSS/RSP0 entry. Capability enforcement is partially implemented; the Ring3 write allow/revoke regression now has CI-verified evidence, while the full object-authority model remains pending.
 
 ## Graphics status
 
@@ -96,3 +96,16 @@ The test must preserve the stable framebuffer and must not:
 - perform speculative power sequencing.
 
 Detailed status: `docs/VIDEO_DRIVER_STATUS.md`.
+
+
+## Work log — 2026-09-24
+
+### Repository/CI verification
+- Request: continue the controlled Aether engineering work after the G6-EDID-1 diagnostic hardening.
+- Verified `main` HEAD: `0f9b19b1197accd769b7c4e4d420671d525b7cec`.
+- Verified GitHub Actions for that exact commit:
+  - `Aether OS build` run #124: **success**.
+  - `Unpack Aether source archive` run #63: **success**.
+- Result: the current documented video diagnostic changes are build-clean in CI; no new graphics-risky operation was introduced.
+- Capability note: CI already verifies the Ring3 capability write allow/revoke evidence added in the preceding P0 repair pass; the remaining gap is the full object-authority model and deterministic runtime evidence for syscall/TSS paths.
+- Next controlled graphics action remains explicit `vedid`/GMBUS validation on QEMU where applicable and then the real AH532. No GGTT/GSM mapping, automatic modeset, framebuffer takeover, or speculative power sequencing is authorized.
