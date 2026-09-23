@@ -16,27 +16,13 @@ jobs:
         working-directory: kernel
         run: make clean
 
-      - name: Fetch latest Calculator ELF from Aether Apps
+      - name: Fetch packaged Calculator ELF from Aether Apps
         run: |
           set -e
           mkdir -p kernel/build
-          for attempt in $(seq 1 20); do
-            run_id="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer ${{ github.token }}" 'https://api.github.com/repos/Apuoxo/aether-apps/actions/runs?per_page=20' | jq -r '[.workflow_runs[] | select(.name == "Aether Calculator" and .head_branch == "main" and .conclusion == "success")] | sort_by(.updated_at) | last | .id')"
-            if [ "$run_id" != "null" ]; then
-              url="$(curl -fsSL -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer ${{ github.token }}" "https://api.github.com/repos/Apuoxo/aether-apps/actions/runs/$run_id/artifacts" | jq -r '[.artifacts[] | select(.name == "aether-calculator-elf" and .expired == false)] | sort_by(.created_at) | last | .archive_download_url')"
-              if [ "$url" != "null" ]; then
-                rm -rf /tmp/aether-calculator
-                mkdir -p /tmp/aether-calculator
-                if curl -fsSL "$url" -o /tmp/aether-calculator.zip && unzip -o /tmp/aether-calculator.zip -d /tmp/aether-calculator >/dev/null && test -s /tmp/aether-calculator/calculator; then
-                  cp /tmp/aether-calculator/calculator kernel/build/calculator.elf
-                  break
-                fi
-              fi
-            fi
-            echo "Calculator artifact not ready; retry $attempt/20"
-            sleep 15
-          done
+          curl -fsSL 'https://raw.githubusercontent.com/Apuoxo/aether-apps/main/apps/calculator/dist/calculator.elf' -o kernel/build/calculator.elf
           test -s kernel/build/calculator.elf
+          file kernel/build/calculator.elf
 
       - name: Build kernel
         working-directory: kernel
