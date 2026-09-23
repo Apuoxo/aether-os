@@ -249,6 +249,35 @@ fn sys_yield() -> u64 {
     0
 }
 
+fn launch_cap_test_process(name: &str, revoke_write: bool) -> bool {
+    let buf = crate::elf_blobs::INIT_ELF;
+    if let Some(img) = crate::elf::load(buf) {
+        if let Some(pid) = crate::process::create_from_image(name, &img) {
+            if revoke_write {
+                if let Some(p) = crate::process::get(pid) {
+                    let mut caps = p.caps;
+                    if caps.revoke(1) {
+                        crate::process::update_caps(pid, caps);
+                    }
+                }
+            }
+            crate::process::set_state(pid, crate::process::State::Running);
+            crate::process::set_current(pid);
+            serial::write_str("[CAP-RING3] launch ");
+            serial::write_str(name);
+            serial::write_str(" WRITE=");
+            serial::write_str(if revoke_write { "DENY" } else { "ALLOW" });
+            serial::write_str(" CPL=3 pending
+");
+            unsafe {
+                crate::mm::paging::load_cr3(img.cr3);
+                enter_user_mode(img.entry as u64, img.stack_top as u64);
+            }
+        }
+    }
+    false
+}
+
 /// Exit path from Ring 3: destroy process, then resume kernel boot/desktop
 #[no_mangle]
 pub extern "C" fn process_exit_dispatch() {
@@ -275,6 +304,16 @@ pub extern "C" fn process_exit_dispatch() {
             }
         }
     }
+    static mut CAP_TEST_STAGE: u8 = 0;
+    unsafe {
+        if CAP_TEST_STAGE == 1 {
+            CAP_TEST_STAGE = 2;
+            if launch_cap_test_process("cap-deny", true) {
+                return;
+            }
+        }
+    }
+
     static mut APP_STAGE: u8 = 0;
     unsafe {
         if APP_STAGE == 0 {
