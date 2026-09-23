@@ -730,3 +730,20 @@ Source:
 
 ### Important outcome
 The documentary search has now reached a practical boundary: the same primary/near-primary artifacts are independently indexed, but the actual schematic/boardview bytes are access-controlled or not exposed through searchable pages. The next useful move is therefore **not another generic web search**. It is either obtaining the actual archive through an accessible legitimate source or proceeding with machine-specific read-only hardware/ACPI evidence and later matching it against the board package.
+
+
+## 29. Fifth-pass result: source boundary reached for the exact board package
+
+The latest search checked the exact schematic filename, exact board ID, firmware filenames, and alternate archive names. It found no new publicly exposed copy of the actual PDF/BoardView bytes beyond the already indexed repair archives.
+
+Important new evidence:
+- RepairLap exposes the exact schematic attachment `Fujitsu_FH6C_FH6_hm70_r0c_mb_0522.pdf` (1.5 MB) together with 2 MB and 4 MB firmware images for DA0FH6MB6E0 Rev.E. It also separately exposes U35/U7/U24 images. Source: https://www.repairlap.com/threads/fujitsu-lifebook-ah532-schematic-da0fh6mb6e0-rev-e-bios.5293/post-8615
+- Vinafix's technical-documentation index exposes the exact PDF's SHA-256 and confirms download access is membership-gated. Source: https://vinafix.com/forums/technical-documentation.15/page-35?direction=desc&order=reply_count
+- AlexLaptopRepair independently indexes `FUJITSU LIFEBOOK A532AH532 DA0FH6MB6E0 rev E schematic.rar`, 633.8 KB, confirming another archive copy. Source: https://www.alexlaptoprepair.com/forums/threads/fujitsu-lifebook-a532-ah532-da0fh6mb6e0-rev-e-schematic.5056/
+- DR-BIOS explicitly advertises a boardview entry for `fujitsu fh6c fh6 hm70 rev-0c mb 0522`. Source: https://dr-bios.com/threads/da0fh6mb6e0.54744/
+- The Telegram archive lists `DA0FH6MB6E0 rev E PDF .rar` as both SCHEMATIC and BOARDVIEW, 679.4 KB. Source: https://t.me/s/schematicslaptop?before=10575
+
+### Practical conclusion
+The exact board package is real and repeatedly independently indexed. The public search layer has now reached the point where it returns archive/index metadata rather than the underlying file bytes. We should not claim to have inspected the schematic or boardview until the actual files are obtained through an accessible legitimate route.
+
+For Aether engineering, the next highest-value action is now machine-specific read-only acquisition: identify the physical PCH by PCI ID, enumerate D20-D31, dump BARs/subsystem IDs/revisions, enumerate ACPI table identities, and collect EDID/USB topology. Those results can then be mapped against the known board-package fingerprints without unsafe MMIO or firmware operations.
