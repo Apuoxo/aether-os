@@ -108,3 +108,13 @@ Every significant change should be followed by:
 - No kernel, Intel driver, framebuffer ownership, GGTT/GSM, Ring3, storage, or Wi-Fi code was changed.
 - Commit: 3c60f7ca5cabd61346b5077542a6123a288b6455.
 - Runtime result: not yet verified. Required next step is GitHub CI build + QEMU smoke test, then a fresh ISO must be tested on AH532.
+
+
+### 2026-09-24 — AH532 retry: GRUB text-mode settings did not resolve failure
+- Real AH532 retest of build #142 still reports the same "Error: no suitable video mode found" before Aether startup.
+- This disproves the previous assumption that adding runtime `gfxmode=text` and `gfxpayload=text` was sufficient.
+- No kernel/runtime evidence has been obtained from this boot attempt; Ring3, Intel KMS, framebuffer, storage, and userspace are therefore not implicated by this symptom.
+- Applied a narrower follow-up bootloader experiment: removed the `gfxmode` and `gfxpayload` directives and retained only `terminal_output console` in the generated GRUB configuration.
+- Commit: 45a59d24f4b695f29f43d2849f3ac4a27f5c427d.
+- No kernel, graphics-driver, GGTT/GSM, Ring3, storage, or Wi-Fi code was changed.
+- Next step: verify CI/QEMU build, then test the resulting ISO on AH532. If the same GRUB error persists, inspect the GRUB image/modules and boot path rather than making further blind kernel changes.
