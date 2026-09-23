@@ -1,6 +1,6 @@
 # Intel Gen6 Video Driver Status
 
-Last reviewed: 2026-09-23
+Last reviewed: 2026-09-24
 Target: Fujitsu LIFEBOOK AH532, runtime-detected Intel Sandy Bridge HD Graphics 3000, PCI 8086:0116.
 
 ## 1. Evidence levels
@@ -126,7 +126,18 @@ The verified schematic now gives physical-board context for EDID:
 
 This does **not** prove that a particular GMBUS pin maps to a particular physical connector on the tested machine. Runtime probing is still required.
 
-## 7. Safety constraints
+## 7. G6-EDID-1 implementation log
+
+On 2026-09-24 the diagnostic EDID transaction path was tightened without changing display mode or framebuffer ownership:
+- each explicit GMBUS transaction logs the selected pin, 100 kHz rate and requested 128-byte block;
+- HW_RDY timeout now records GMBUS2 status, reported byte count and SATOER;
+- completed transactions record GMBUS2 status, byte count and SATOER;
+- a validated 128-byte block records an explicit `bytes_read=128` marker before checksum/header validation;
+- the probe remains explicit through `vedid`; normal video initialization still does not start an EDID transaction.
+
+This is a logging/diagnostic step only. Real-AH532 EDID success is still unproven until the command is run on hardware.
+
+## 8. Safety constraints
 
 Do not re-enable access to the known-unsafe GGTT/GSM physical region 0xDF800000 merely because MMIO works.
 Do not use the old 34-page FH2/HM55/Arrandale PDF as AH532 signal evidence.
