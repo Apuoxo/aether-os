@@ -20,7 +20,7 @@ This file is the persistent engineering log for the Aether OS repository.
 - Restored the existing compatible Rust target: x86_64-unknown-linux-gnu.
 - Removed the now-unused x86_64-unknown-none target installation from CI.
 - Latest corrective commits: b3ede6e0224679647b1896edd5bb001ccedce460 and 499bdceef4a7e1225962e82a8a9a3cd784ed7b1a.
-- Next verification: inspect the GitHub Actions run triggered by 499bdce...; do not assume success until the job result is observed.
+- Verification must be based on the observed GitHub Actions result, not the commit message alone.
 
 ### Video
 
@@ -30,7 +30,21 @@ This file is the persistent engineering log for the Aether OS repository.
 - MMIO and KMS path are usable.
 - GGTT/GSM mapping attempts around physical 0xDF800000 caused an AH532 reboot and remain disabled.
 - A safe shell diagnostic command vdiag was added to inspect video state without mapping GGTT/GSM.
-- Next video phase after CI is green: inspect/validate read-only scanout and EDID/GMBUS paths, with strict bounds and no risky GGTT/GSM access.
+- Current source also contains explicit read-only scanout and EDID/GMBUS paths.
+- Real-AH532 EDID success is not yet proven.
+- Detailed status is maintained in docs/VIDEO_DRIVER_STATUS.md.
+
+### Archive and hardware-document audit — 2026-09-23
+
+- aether-os-sources.zip was unpacked successfully through GitHub Actions.
+- The archive is a historical source snapshot; its video.rs is only the old software-framebuffer wrapper.
+- The current repository video driver is substantially newer and must not be overwritten by the archive.
+- The uploaded DA0FH6MB6E0 rev E RAR was extracted successfully through GitHub Actions.
+- Its PDF identifies an Intel Calpella / Arrandale UMA platform with HM55 PCH and project FH2, not the AH532 Sandy Bridge/HM76 platform.
+- The PDF is therefore classified as REFERENCE-MISMATCH for AH532 hardware design.
+- It must not be used for AH532 GPU register, power, GPIO, display-routing, or pinout decisions.
+- Repository documentation was updated to record this distinction.
+- The next graphics step remains controlled read-only EDID/GMBUS validation; no GGTT/GSM mapping or automatic modeset should be introduced as part of that test.
 
 ### Working discipline
 
@@ -60,18 +74,18 @@ Every significant change should be followed by:
 - Do not treat a successful QEMU build/boot as proof of AH532 graphics correctness.
 - Do not proceed to broad driver expansion while the CI build is broken.
 
-
 ## Calculator native app pipeline (2026-09-23)
+
 - Added experimental Ring3 syscall surface for keyboard polling, kernel-mediated text/rectangle drawing, yield, and process exit.
 - Added PS/2 polling bridge so the known-good AH532 keyboard path reaches native apps; USB HID events continue through the existing input queue.
 - Prepared the existing Multiboot framebuffer before Ring3 without adding any GGTT/GSM mapping or display-register writes.
-- Added separate `Apuoxo/aether-apps` Calculator ELF build pipeline and Aether OS CI packaging path.
-- Calculator is launched as an independent ELF process after `/bin/init`; shell remains the fallback/next stage.
+- Added separate Apuoxo/aether-apps Calculator ELF build pipeline and Aether OS CI packaging path.
+- Calculator is launched as an independent ELF process after /bin/init; shell remains the fallback/next stage.
 - Runtime status: NOT YET VERIFIED on QEMU or AH532. CI success alone is insufficient.
 
-
 ## QEMU Calculator evidence (2026-09-23)
-- Aether Apps Calculator CI builds a freestanding x86_64 ELF successfully and publishes `apps/calculator/dist/calculator.elf`.
+
+- Aether Apps Calculator CI builds a freestanding x86_64 ELF successfully and publishes apps/calculator/dist/calculator.elf.
 - Aether OS CI packages that ELF into the kernel build without writing the Calculator image to AetherFS/host storage.
 - QEMU smoke test passed: Calculator ELF loaded from the bundled package, PID=2 entered with USER_CR3 different from KERNEL_CR3, and syscalls 12 (rectangle), 11 (text), 10 (keyboard poll), and 13 (yield) were observed from CPL=3.
 - No PANIC or user page-fault kill was observed in the smoke test.
