@@ -100,14 +100,14 @@ unsafe fn user_ok(ptr: usize, len: usize) -> bool {
     true
 }
 
-unsafe fn current_has_cap(slot: usize, required: u32) -> bool {
-    match crate::process::get(crate::process::current_pid()) {
+fn current_has_cap(slot: usize, required: u32) -> bool {
+    match unsafe { crate::process::get(crate::process::current_pid()) } {
         Some(p) => p.caps.check(slot, required),
         None => false,
     }
 }
 
-fn sys_write(buf: usize, len: usize) -> u64 {
+unsafe fn sys_write(buf: usize, len: usize) -> u64 {
     if !current_has_cap(1, crate::capability::CAP_WRITE) {
         serial::write_str("  [SYSCALL] write denied: capability\n");
         return u64::MAX;
