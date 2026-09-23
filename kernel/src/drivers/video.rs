@@ -586,6 +586,31 @@ pub fn attach_existing_mode() -> Option<DisplayMode> {
     preferred_mode().filter(|m| mode_matches_framebuffer(*m))
 }
 
+/// Return the geometry of the already programmed framebuffer scanout.
+/// This does not require EDID and never writes display hardware.
+pub fn active_mode_from_framebuffer() -> Option<DisplayMode> {
+    unsafe {
+        if !SCANOUT_READY || !fb::is_ready() { return None; }
+        let w = fb::width();
+        let h = fb::height();
+        let bpp = fb::bpp() as usize;
+        if w == 0 || h == 0 || (bpp != 32 && bpp != 24) {
+            return None;
+        }
+        let bytes = bpp / 8;
+        if fb::pitch() < w.saturating_mul(bytes) {
+            return None;
+        }
+        Some(DisplayMode {
+            width: w as u16,
+            height: h as u16,
+            pixel_clock_khz: 0,
+            h_total: w as u16,
+            v_total: h as u16,
+        })
+    }
+}
+
 /// Draw a small driver-owned diagnostic marker through the existing graphics
 /// path. This never changes Intel display registers.
 pub fn draw_driver_marker() -> bool {
