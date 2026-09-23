@@ -89,35 +89,32 @@ Current implementation includes:
 
 This code is not yet equivalent to runtime proof of EDID success on the physical AH532. A dedicated diagnostic run is still required.
 
-## 5. Service-manual correction
+## 5. DA0FH6MB6E0 Rev E archive — provenance correction
 
-The repository contains:
+The repository contains an archive named `DA0FH6MB6E0 rev E PDF .rar`. The **board identifier itself is strongly associated with Fujitsu LIFEBOOK AH532 / Quanta FH6** by multiple independent repair-documentation sources. citeturn0search0turn0search3turn0search6
 
-DA0FH6MB6E0 rev E PDF .rar
+However, the PDF actually extracted from our archive must **not** currently be treated as the AH532 schematic.
 
-It was extracted and inspected through GitHub Actions.
+The extracted PDF has its own internal metadata/title and text that identify a different platform/project (including FH2 / Arrandale / HM55 / Ibex Peak-M terminology). That conflicts with the AH532 target. Therefore the repository now records two separate facts:
 
-The extracted schematic is explicitly:
+- **BOARD-ID ASSOCIATION:** `DA0FH6MB6E0 Rev E` ↔ AH532/FH6 — externally corroborated. citeturn0search0turn0search6
+- **EXTRACTED-PDF CONTENT:** the specific 663333-byte, 34-page PDF currently inside our RAR does not provide reliable AH532-specific electrical evidence and is marked **REFERENCE-MISMATCH** until the correct FH6/HM70 schematic is obtained and verified.
 
-- Intel Calpella;
-- Arrandale UMA;
-- Arrandale 35W CPU;
-- HM55 PCH (82801IBM);
-- project FH2;
-- dated 2009.
+This distinction is intentional. The filename/board identifier alone is not sufficient to promote the PDF's signal names, power rails, display routing, GPIO ownership, or controller details into AH532 hardware facts.
 
-Therefore it is **REFERENCE-MISMATCH** for the current AH532 target.
+### 5.1 What can still be retained
 
-It must not be used to infer AH532:
+The extracted document remains useful as a **separate historical/reference artifact** and its text can be searched for generic board-design concepts. It must not be used as the source of truth for AH532 driver development.
 
-- Intel HD Graphics 3000 register layout;
-- Panther Point/HM76 power sequencing;
-- LVDS/eDP/HDMI routing;
-- GPIO ownership;
-- PCI resources;
-- graphics power rails.
+### 5.2 Correct target for future schematic work
 
-It is retained in the repository as a historical/reference artifact only.
+The externally corroborated target is the **Fujitsu FH6/FH6C / DA0FH6MB6E0 Rev E** schematic family associated with AH532/A532. A separate source describes the same board family as Quanta FH6/FH6C and DA0FH6MB6E0. citeturn0search3turn0search6
+
+Until the actual matching schematic is verified by its internal board/project identifiers, Aether driver work must continue to rely on:
+1. real-AH532 runtime evidence;
+2. Intel chipset/GPU documentation;
+3. verified AH532/FH6 documentation;
+4. only then, schematic-specific signal tracing.
 
 ## 6. Storage notes
 
