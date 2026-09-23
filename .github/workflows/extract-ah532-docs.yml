@@ -1,0 +1,46 @@
+name: Extract AH532 service documentation
+
+on:
+  push:
+    paths:
+      - 'DA0FH6MB6E0 rev E PDF .rar'
+      - '.github/workflows/extract-ah532-docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install 7-Zip
+        run: sudo apt-get update && sudo apt-get install -y p7zip-full
+
+      - name: Extract RAR
+        run: |
+          rm -rf docs/AH532-SERVICE-MANUAL
+          mkdir -p docs/AH532-SERVICE-MANUAL
+          7z x 'DA0FH6MB6E0 rev E PDF .rar' -odocs/AH532-SERVICE-MANUAL -y
+
+      - name: Record extraction
+        run: |
+          {
+            echo "# Fujitsu LIFEBOOK AH532 — service documentation"
+            echo
+            echo "Source archive: `DA0FH6MB6E0 rev E PDF .rar`"
+            echo
+            echo "This directory contains the files extracted automatically from the RAR archive."
+            echo "The documents are source material; hardware facts for Aether OS should be verified against the manuals and real AH532 diagnostics before being treated as confirmed."
+          } > docs/AH532-SERVICE-MANUAL/README.md
+
+      - name: Commit extracted documents
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/AH532-SERVICE-MANUAL
+          git diff --cached --quiet || git commit -m 'docs: extract AH532 service documentation'
+          git push
