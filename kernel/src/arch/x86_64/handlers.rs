@@ -347,26 +347,11 @@ pub extern "C" fn process_exit_dispatch() {
         }
     }
 
-    static mut APP_STAGE: u8 = 0;
-    unsafe {
-        if APP_STAGE == 0 {
-            APP_STAGE = 1;
-            serial::write_str("\n======== USERSACE CALCULATOR STAGE ========\n");
-            let buf = crate::elf_blobs::calculator::CALCULATOR_ELF;
-            if buf.len() > 4 {
-                if let Some(img) = crate::elf::load(buf) {
-                    if let Some(pid) = crate::process::create_from_image("calculator", &img) {
-                        crate::process::set_state(pid, crate::process::State::Running);
-                        crate::process::set_current(pid);
-                        unsafe {
-                            crate::mm::paging::load_cr3(img.cr3);
-                            enter_user_mode(img.entry as u64, img.stack_top as u64);
-                        }
-                    }
-                }
-            }
-        }
-    }
+    // Calculator is a real userspace application, not a mandatory boot stage.
+    // Keep it bundled for later launch from the desktop, but do not block the
+    // system desktop on an interactive foreground application during boot.
+    serial::write_str("[INIT] Calculator kept available; skipping auto-launch during boot\\n");
+
     static mut SH_DONE: bool = false;
     let launch_sh = unsafe {
         if !SH_DONE { SH_DONE = true; true } else { false }
