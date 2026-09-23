@@ -5,72 +5,124 @@ Last reviewed: 2026-09-23
 ## 1. Verified target
 
 The correct schematic family for the target machine is independently identified as:
-
 - Fujitsu LIFEBOOK AH532 / A532
 - Quanta FH6 / FH6C
 - motherboard marking DA0FH6MB6E0
 - Rev E
-- schematic filename: `Fujitsu_FH6C_FH6_hm70_r0c_mb_0522.pdf`
+- schematic: `Fujitsu_FH6C_FH6_hm70_r0c_mb_0522.pdf`
 
-Independent repair-documentation sources associate this exact schematic family with AH532/FH6 and DA0FH6MB6E0. The sources also report a 45-page schematic variant.
+The repository now contains a copy obtained from SKCLAPPY and verified by GitHub Actions.
 
-## 2. The PDF currently in our repository
-
-The PDF extracted from our uploaded RAR is **not the verified FH6/HM70 document**.
+## 2. Cryptographic verification
 
 Repository file:
+`Fujitsu_FH6C_FH6_hm70_r0c_mb_0522 SKCLAPPY.IN.pdf`
 
-`docs/AH532-SERVICE-MANUAL/DA0FH6MB6E0 rev E PDF .pdf`
+Verified:
+- Size: 1,498,316 bytes
+- SHA-256: `8011b1775a403b5d62ff816c278412f62c2e3d7873b955f2721fa664528badbc`
+- Page count: 45
+- PDF text extraction succeeds
+- Technical identifier extraction succeeds
 
-Observed properties:
+The verification workflow is:
+`.github/workflows/verify-ah532-schematic.yml`
 
-- 34 pages
-- 663333 bytes
-- metadata title: `FH2_MB_A_1221_1(FINAL)`
-- extracted text contains Arrandale / HM55 / IBEX PEAK-M terminology
+## 3. What the verified document actually contains
 
-This is inconsistent with the independently identified AH532/FH6 target. It remains classified:
+The 45-page document is a genuine FH6C/HM70-family schematic, but its variant content matters.
 
-**REFERENCE-MISMATCH**
+It explicitly includes:
+- Ivy Bridge processor terminology;
+- HM70 Panther Point;
+- FH6 UMA consumer/commercial variants;
+- FH6 N13P-LP and N13P-GLP discrete-GPU variants;
+- FH6C project-disable/variant references.
 
-The existing technical index is therefore only an index of that mismatched PDF and must not be treated as an AH532 signal database.
+Therefore it is a **verified board-family/variant schematic and physical signal-routing source**, not proof that every depicted processor/GPU option exists in the tested AH532.
 
-## 3. Important correction
+## 4. Runtime-vs-schematic rule
 
-The filename `DA0FH6MB6E0 rev E PDF` was not enough to establish that the PDF content itself was the AH532 schematic.
+The tested AH532 reports:
+- PCI GPU 8086:0116;
+- Intel Sandy Bridge HD Graphics 3000;
+- Gen6.
 
-The stronger identification is:
+That runtime evidence remains authoritative for the actual GPU.
 
-**AH532 target → Quanta FH6/FH6C → DA0FH6MB6E0 Rev E → FH6C/FH6 HM70 r0c_mb_0522 schematic family.**
+The schematic's Ivy Bridge eDP signals and N13P blocks must not be promoted to installed-hardware facts without additional runtime or board-specific evidence.
 
-The repository's current 34-page PDF does not match that chain internally.
+## 5. Display routing extracted from pages 8, 24 and 25
 
-## 4. Next required artifact
+### PCH / display transport
+Page 8 documents FDI and PCH display paths, including:
+- FDI_TXP/N0..7;
+- FDI_RXP/N0..7;
+- FDI_FSYNC0/1;
+- FDI_LSYNC0/1;
+- LCD/LVDS-related nets;
+- DDI-B/C/D auxiliary, HPD and data paths.
 
-The next documentation artifact should be the actual **FH6/FH6C HM70 r0c_mb_0522** schematic, preferably the 45-page variant, with internal project/board identifiers verified before ingestion.
+### HDMI
+Page 24 documents:
+- connector CN6;
+- TMDS pairs;
+- HDMI_DDCCLK;
+- HDM_DDCDATA;
+- DDC5V;
+- HDMI_CON_HP / Port-B_HPD;
+- INT_HDMI_SCL/SDA;
+- DDC level-shifting and termination circuitry.
 
-Verification checklist:
+### Internal LCD/LVDS
+Page 25 documents:
+- LCD connector CN33;
+- LCD_TXLOUT0/1/2 and clock differential pairs;
+- LCD_EDIDCLK/LCD_EDIDDATA;
+- LVDS_PWM / LVDS_PWM_EC;
+- LCD_BLON_I;
+- LVDS_DIGON;
+- LCDVCC and LCD_BK_POWER;
+- LCD power-switch circuitry;
+- EDID pull-ups R326/R327 = 2.2K to 3V_S0.
 
-1. project name FH6/FH6C;
-2. DA0FH6MB6E0 / related FH6 board identifier;
-3. HM70 platform terminology;
-4. internal schematic page count/structure;
-5. display/GPU topology;
-6. USB topology;
-7. SATA/AHCI;
-8. LAN/WLAN;
-9. audio;
-10. power/reset/EC/GPIO.
+These are valuable for physical routing and connector investigation.
 
-Only after these checks pass should signal-level data be promoted into the AH532 hardware profile.
+## 6. Other hardware blocks inspected
 
-## 5. Driver-development rule
+The 45 pages were read as a complete document. The schematic also contains:
+- PCH PCIe/SMBus/LAN/WLAN-related sections;
+- SATA/RTC/HDA/LPC;
+- EC/power-management and GPIO-related sections;
+- CPU/PCH power rails;
+- discrete-GPU power circuitry.
 
-Until the matching schematic is obtained:
+Because some of these sections are variant-dependent, they should be used as physical reference only until correlated with runtime hardware.
 
-- actual AH532 runtime observations remain authoritative;
-- Intel Sandy Bridge/HD Graphics 3000 documentation remains authoritative for GPU architecture;
-- the current mismatched PDF remains reference-only;
-- no AH532 GMBUS/EDID, GPIO, power-sequencing or display-routing claim may be based solely on the 34-page PDF.
+## 7. Previous wrong document
 
-This protects the working video driver from a schematic provenance error.
+The earlier 34-page PDF from `DA0FH6MB6E0 rev E PDF .rar` is internally identified as:
+- FH2;
+- Arrandale;
+- HM55;
+- Ibex Peak-M / Calpella-era platform.
+
+It is therefore permanently classified REFERENCE-MISMATCH for AH532 development.
+
+## 8. Documentation consequence
+
+The repository now has three distinct evidence classes:
+1. **Runtime facts** from the actual AH532.
+2. **Verified FH6/FH6C schematic facts** for board-family physical routing.
+3. **Rejected historical/reference material** that does not match the target.
+
+This distinction must be preserved in future driver work.
+
+## 9. Next documentation/engineering stage
+
+Use the verified schematic together with Gen6 runtime/register evidence to build and validate the display connector path:
+1. correlate GMBUS pins with the documented LCD/HDMI DDC paths;
+2. test EDID read-only;
+3. correlate HPD where available;
+4. document results as AETHER runtime evidence;
+5. only then consider connector-specific policy or modeset changes.
