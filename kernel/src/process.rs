@@ -99,9 +99,9 @@ pub fn create_from_image_with_personality(
         p.personality = personality;
         p.state = State::Ready;
         // Initial bootstrap capabilities. Later domains must receive these explicitly.
-        let _ = p.caps.insert(Cap::new(1, CAP_READ));
-        let _ = p.caps.insert(Cap::new(2, CAP_WRITE));
-        let _ = p.caps.insert(Cap::new(3, CAP_MAP));
+        let _ = p.caps.insert(Cap::new(0, CAP_READ));
+        let _ = p.caps.insert(Cap::new(1, CAP_WRITE));
+        let _ = p.caps.insert(Cap::new(2, CAP_MAP));
         p.entry = img.entry;
         p.stack = img.stack_top;
         p.cr3 = img.cr3;
