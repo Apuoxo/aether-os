@@ -866,3 +866,51 @@ The new evidence increases confidence that the AH532/A532 platform uses the FH6/
 
 Until the actual schematic/boardview payload is inspected, all net-level information remains unverified.
 
+## 32. Seventh-pass: a potentially accessible maintenance-guide lead
+
+A new independent repair-forum report materially changes the status of the DAFH6CMB6D0 documentation lead. The forum states that a user obtained a **Fujitsu LifeBook A532 DAFH6CMB6D0 Quanta maintenance guide (PDF + FZ)** from a blog referenced through Reddit. The report specifically says the package contains the PDF plus **FZ boardview files listing components on the motherboard PCB** and that the files were downloadable after a survey. Multiple subsequent commenters state that they downloaded the same guide.
+
+Source:
+- https://www.diy-laptoprepair.com/forum/fix-Fujitsu-LifeBook-A532-DAFH6CMB6D0-Quanta-repair-guide-schematics.html
+
+A closely related thread for the HM70-labelled variant reports the same result: the package contains a maintenance-guide PDF and FZ boardview files, and commenters confirm successful download.
+
+Source:
+- https://www.diy-laptoprepair.com/forum/fix-FUJITSU-LifeBook-A532-DAFH6CMB6D0-hm70-repair-guide-schematics.html
+
+### What this proves — and what it does not
+
+This is stronger than merely finding another filename in an archive index:
+- the existence of a **PDF + FZ boardview package** is independently reported by users who claim to have downloaded it;
+- the boardview format is explicitly identified as FZ;
+- the boardview is described as containing component listings for the PCB.
+
+However, the search result does **not expose the actual PDF/FZ bytes or the originating blog URL**. Therefore Aether still must not claim to have inspected the boardview contents.
+
+### New acquisition target
+
+The exact package to locate is now:
+
+`Fujitsu LifeBook A532 DAFH6CMB6D0 Quanta maintenance guide (pdf & fz)`
+
+and the closely related:
+
+`Fujitsu LifeBook A532 DAFH6CMB6D0 hm70 maintenance guide (pdf & fz)`
+
+This should be searched by exact title, not merely by `DA0FH6MB6E0`, because it may expose a freely accessible copy of the actual boardview payload.
+
+### Evidence hierarchy update
+
+For future use, classify the board-level material as:
+
+1. **Payload inspected by Aether team** — highest confidence for net/component claims.
+2. **Actual downloadable payload identified but not yet inspected** — existence confirmed, contents pending.
+3. **Independent user report of successful download** — strong availability evidence, but contents still unverified.
+4. **Archive/index listing only** — confirms that a file/package is known to exist.
+5. **Search-engine filename/third-party assertion only** — lead, not hardware evidence.
+
+The DAFH6CMB6D0 PDF+FZ package is currently category 3, not category 1.
+
+### Safety boundary
+
+Even if the boardview is obtained, it must first be treated as documentation. Net names, EC addresses, GPIOs, power rails and component designators must be cross-checked against the physical board and runtime PCI/ACPI evidence before Aether uses them to drive hardware.
