@@ -152,7 +152,7 @@ fn cmd_help() {
 }
 
 fn cmd_dsk() {
-    write_str("======== DSK: real storage probe (READ-ONLY) ========\\n");
+    write_str("======== DSK: real storage probe (READ-ONLY) ========\n");
 
     let snap = crate::storage_hw_diag::snapshot();
     write_str("PCI mass-storage controllers: ");
@@ -163,7 +163,7 @@ fn cmd_dsk() {
     serial::write_usize(snap.ide_n);
     write_str(" NVMe=");
     serial::write_usize(snap.nvme_n);
-    write_str("\\n");
+    write_str("\n");
 
     if snap.mass_n > 0 {
         let mut i = 0usize;
@@ -187,7 +187,7 @@ fn cmd_dsk() {
             serial::write_hex(d.pi as usize);
             write_str(" present=");
             serial::write_hex(d.ports_present as usize);
-            write_str("\\n");
+            write_str("\n");
             i += 1;
         }
     }
@@ -195,7 +195,7 @@ fn cmd_dsk() {
     let nd = crate::drivers::ahci::disk_count();
     write_str("AHCI runtime disks: ");
     serial::write_usize(nd);
-    write_str("\\n");
+    write_str("\n");
 
     let mut di = 0usize;
     while di < nd {
@@ -211,7 +211,7 @@ fn cmd_dsk() {
         }
         write_str(" sectors=");
         serial::write_usize(crate::drivers::ahci::disk_sectors(di) as usize);
-        write_str("\\n");
+        write_str("\n");
 
         let mut sec0 = [0u8; 512];
         let ok = crate::drivers::ahci::read_sectors(di, 0, 1, &mut sec0);
@@ -225,14 +225,14 @@ fn cmd_dsk() {
                 write_str("no-55AA");
             }
         }
-        write_str("\\n");
+        write_str("\n");
         di += 1;
     }
 
     let nb = crate::block::count();
     write_str("Block devices: ");
     serial::write_usize(nb);
-    write_str("\\n");
+    write_str("\n");
     let mut bi = 0usize;
     while bi < nb {
         if let Some(d) = crate::block::get(bi) {
@@ -244,7 +244,7 @@ fn cmd_dsk() {
             write_str(if d.is_ahci { "Y" } else { "N" });
             write_str(" sectors32=");
             serial::write_usize(d.sectors as usize);
-            write_str("\\n");
+            write_str("\n");
         }
         bi += 1;
     }
@@ -252,7 +252,7 @@ fn cmd_dsk() {
     let np = crate::part::count();
     write_str("Partitions parsed from READ data: ");
     serial::write_usize(np);
-    write_str("\\n");
+    write_str("\n");
     let mut pi = 0usize;
     while pi < np {
         if let Some(p) = crate::part::get(pi) {
@@ -283,20 +283,20 @@ fn cmd_dsk() {
                     write_str("unknown");
                 }
             }
-            write_str("\\n");
+            write_str("\n");
         }
         pi += 1;
     }
 
     write_str("NTFS mounted: ");
     write_str(if crate::fs_ntfs::is_mounted() { "YES" } else { "NO" });
-    write_str("\\n");
+    write_str("\n");
     if crate::fs_ntfs::is_mounted() {
         write_str("NTFS root entries: ");
         serial::write_usize(crate::fs_ntfs::entry_count());
-        write_str("\\n");
+        write_str("\n");
     }
-    write_str("======== END DSK ========\\n");
+    write_str("======== END DSK ========\n");
 }
 
 fn cmd_vdiag() {
