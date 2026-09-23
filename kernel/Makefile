@@ -43,7 +43,7 @@ iso: $(KERNEL_BIN)
 	mkdir -p $(ISO_DIR)/boot/grub
 	cp $(KERNEL_BIN) $(ISO_DIR)/boot/aether.bin
 	printf 'set timeout=0\nset default=0\nterminal_output console\nmenuentry "Aether" {\n  multiboot2 /boot/aether.bin\n  boot\n}\n' > $(ISO_DIR)/boot/grub/grub.cfg
-	grub-mkrescue --install-modules="iso9660 biosdisk multiboot2 normal terminal" --themes= --fonts= --locales= -o $(ISO) $(ISO_DIR)
+	grub-mkrescue --install-modules="iso9660 multiboot2 normal terminal" --themes= --fonts= --locales= -o $(ISO) $(ISO_DIR)
 	@ls -lh $(ISO)
 
 run: iso
