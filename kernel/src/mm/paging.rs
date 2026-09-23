@@ -69,6 +69,34 @@ pub unsafe fn identity_map_2mb(pml4_phys: usize, n_2mb: usize) -> bool {
     true
 }
 
+/// Replace a 2 MiB identity mapping with a 4 KiB page table preserving its flags.
+pub unsafe fn split_huge_page(pml4_phys: usize, virt: usize) -> bool {
+    let pml4 = &mut *(pml4_phys as *mut PageTable);
+    let i4 = (virt >> 39) & 0x1FF;
+    let i3 = (virt >> 30) & 0x1FF;
+    let i2 = (virt >> 21) & 0x1FF;
+    let pdpt_phys = pml4.get(i4) & !0xFFF;
+    if pdpt_phys == 0 { return false; }
+    let pdpt = &mut *(pdpt_phys as *mut PageTable);
+    let pd_phys = pdpt.get(i3) & !0xFFF;
+    if pd_phys == 0 { return false; }
+    let pd = &mut *(pd_phys as *mut PageTable);
+    let old = pd.get(i2);
+    if old & PAGE_HUGE == 0 { return true; }
+    let pt_phys = match alloc_table() { Some(p) => p as u64, None => return false };
+    let pt = &mut *(pt_phys as *mut PageTable);
+    pt.clear();
+    let base = old & !0x1F_FFFF;
+    let flags = old & 0xFFF;
+    let mut i = 0usize;
+    while i < 512 {
+        pt.set(i, base + ((i as u64) << 12), flags);
+        i += 1;
+    }
+    pd.set(i2, pt_phys, PAGE_PRESENT | PAGE_WRITE | (flags & PAGE_USER));
+    true
+}
+
 /// Map a 4K page. If flags contain USER, force USER on ALL intermediate entries.
 pub unsafe fn map_page(pml4_phys: usize, virt: usize, phys: usize, flags: u64) -> bool {
     let pml4 = &mut *(pml4_phys as *mut PageTable);
@@ -105,9 +133,9 @@ pub unsafe fn map_page(pml4_phys: usize, virt: usize, phys: usize, flags: u64) -
     }
     let pd = &mut *(pd_phys as *mut PageTable);
 
-    // If huge page already mapped here, cannot install 4K
+    // Split an existing 2 MiB identity mapping on demand.
     if pd.get(pd_idx) & PAGE_HUGE != 0 {
-        return false;
+        if !split_huge_page(pml4_phys, virt) { return false; }
     }
 
     // PD → PT
