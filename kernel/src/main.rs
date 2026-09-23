@@ -225,45 +225,9 @@ pub extern "C" fn kernel_main(mbi: usize) -> ! {
     } else {
         serial::write_str("[INIT] Calculator ELF not bundled\n");
     }
-    let mut elfbuf = [0u8; 8192];
-    let n = match fs::read_large("/bin/init", &mut elfbuf) {
-        Some(n) => n,
-        None => {
-            serial::write_str("[INIT] FATAL read /bin/init\n");
-            0
-        }
-    };
-    if n >= 4 && elfbuf[0] == 0x7f && elfbuf[1] == b'E' {
-        serial::write_str("[INIT] ELF from AetherFS bytes=");
-        serial::write_usize(n);
-        serial::write_str("\n");
-        if let Some(img) = elf::load(&elfbuf) {
-            if let Some(pid) = process::create_from_image("init", &img) {
-                process::set_state(pid, process::State::Running);
-                process::set_current(pid);
-                serial::write_str("[INIT] PID=");
-                serial::write_usize(pid);
-                serial::write_str("\n");
-                serial::write_str("[INIT] USER_CR3=");
-                serial::write_hex(img.cr3);
-                serial::write_str(" KERNEL_CR3=");
-                serial::write_hex(unsafe { paging::kernel_cr3() });
-                serial::write_str("\n");
-                if img.cr3 != unsafe { paging::kernel_cr3() } {
-                    serial::write_str("[INIT] USER_CR3 != KERNEL_CR3\n");
-                }
-                serial::write_str("[INIT] enter CPL=3 via process path\n");
-                extern "C" { fn enter_user_mode(entry: u64, stack: u64) -> !; }
-                unsafe {
-                    paging::load_cr3(img.cr3);
-                    enter_user_mode(img.entry as u64, img.stack_top as u64);
-                }
-            }
-        } else {
-            serial::write_str("[INIT] elf::load FAIL\n");
-        }
-    } else {
-        serial::write_str("[INIT] no ELF — continue\n");
+    serial::write_str("[CAP-RING3] starting real allow/deny regression\\n");
+    if !arch::x86_64::handlers::start_capability_ring3_test() {
+        serial::write_str("[CAP-RING3] launch failed; continuing normal boot\\n");
     }
 
     // If enter_user returned (should not) or load failed:
