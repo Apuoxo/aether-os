@@ -1,0 +1,40 @@
+name: Unpack Aether source archive
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  unpack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unpack source archive
+        run: |
+          set -e
+          rm -rf unpacked
+          mkdir -p unpacked
+          unzip -q aether-os-sources.zip -d unpacked
+          echo "=== top-level ==="
+          find unpacked -maxdepth 2 -type f | sort | head -200
+          echo "=== counts ==="
+          printf "files="
+          find unpacked -type f | wc -l
+          printf "dirs="
+          find unpacked -type d | wc -l
+          printf "bytes="
+          du -sb unpacked | cut -f1
+
+      - name: Create source manifest
+        run: |
+          find unpacked -type f -printf '%P\n' | sort > unpacked/SOURCE_MANIFEST.txt
+          sha256sum aether-os-sources.zip > unpacked/ARCHIVE_SHA256.txt
+
+      - name: Publish unpacked sources
+        uses: actions/upload-artifact@v4
+        with:
+          name: aether-sources-unpacked
+          path: unpacked/
+          if-no-files-found: error
