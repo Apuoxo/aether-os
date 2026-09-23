@@ -17,6 +17,8 @@ pub enum State {
 #[derive(Clone, Copy)]
 pub struct Process {
     pub pid: usize,
+    /// Runtime personality owner. None means native Aether process.
+    pub personality: crate::personality::PersonalityId,
     pub state: State,
     pub entry: usize,
     pub stack: usize,
@@ -31,6 +33,7 @@ impl Process {
     pub const fn empty() -> Self {
         Process {
             pid: 0,
+            personality: crate::personality::PersonalityId::None,
             state: State::Empty,
             entry: 0,
             stack: 0,
@@ -61,6 +64,15 @@ pub fn free_count_before() -> usize {
 
 /// Create process from already-loaded ELF image
 pub fn create_from_image(name: &str, img: &elf::LoadedImage) -> Option<usize> {
+    create_from_image_with_personality(name, img, crate::personality::PersonalityId::None)
+}
+
+/// Create a process and bind it to exactly one personality owner.
+pub fn create_from_image_with_personality(
+    name: &str,
+    img: &elf::LoadedImage,
+    personality: crate::personality::PersonalityId,
+) -> Option<usize> {
     unsafe {
         let mut slot = None;
         let mut i = 0usize;
@@ -72,10 +84,15 @@ pub fn create_from_image(name: &str, img: &elf::LoadedImage) -> Option<usize> {
             i += 1;
         }
         let s = slot?;
+        if personality != crate::personality::PersonalityId::None
+            && !crate::personality::load(personality) {
+            return None;
+        }
         let pid = NEXT_PID;
         NEXT_PID += 1;
         let mut p = Process::empty();
         p.pid = pid;
+        p.personality = personality;
         p.state = State::Ready;
         p.entry = img.entry;
         p.stack = img.stack_top;
@@ -91,6 +108,9 @@ pub fn create_from_image(name: &str, img: &elf::LoadedImage) -> Option<usize> {
         }
         p.name_len = nlen;
         TABLE[s] = p;
+        if personality != crate::personality::PersonalityId::None {
+            crate::personality::process_attach(personality);
+        }
         serial::write_str("  [PROC] create PID=");
         serial::write_usize(pid);
         serial::write_str(" name=");
@@ -112,6 +132,7 @@ pub fn destroy(pid: usize) {
         while i < MAX_PROCESSES {
             if TABLE[i].pid == pid && TABLE[i].state != State::Empty {
                 let n = TABLE[i].page_count;
+                let personality = TABLE[i].personality;
                 let mut j = 0usize;
                 while j < n {
                     let pg = TABLE[i].pages[j];
@@ -125,6 +146,9 @@ pub fn destroy(pid: usize) {
                 serial::write_str(" EXIT pages_freed=");
                 serial::write_usize(n);
                 serial::write_str("\n");
+                if personality != crate::personality::PersonalityId::None {
+                    crate::personality::process_detach(personality);
+                }
                 TABLE[i] = Process::empty();
                 if CURRENT_PID == pid {
                     CURRENT_PID = 0;
@@ -176,12 +200,12 @@ pub fn set_state(pid: usize, st: State) {
 }
 
 /// Legacy stubs for other modules
-pub fn count_by_personality(_id: crate::personality::PersonalityId) -> usize {
+pub fn count_by_personality(id: crate::personality::PersonalityId) -> usize {
     unsafe {
         let mut c = 0usize;
         let mut i = 0usize;
         while i < MAX_PROCESSES {
-            if TABLE[i].state != State::Empty {
+            if TABLE[i].state != State::Empty && TABLE[i].personality == id {
                 c += 1;
             }
             i += 1;
