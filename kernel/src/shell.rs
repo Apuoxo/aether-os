@@ -148,7 +148,7 @@ fn eq(line: &[u8], s: usize, clen: usize, b: &[u8]) -> bool {
 }
 
 fn cmd_help() {
-    write_str("Commands: help ls cat mem uname vdiag echo halt\n");
+    write_str("Commands: help ls cat mem uname vdiag vedid echo halt\n");
 }
 
 fn cmd_vdiag() {
@@ -168,6 +168,44 @@ fn cmd_vdiag() {
         write_str("\n");
     }
     crate::drivers::video::snapshot();
+}
+
+fn cmd_vedid() {
+    write_str("======== Sandy Bridge EDID probe ========\\n");
+    if !crate::drivers::video::hardware_ready() {
+        write_str("EDID unavailable: Intel Gen6 MMIO not ready\\n");
+        return;
+    }
+    let mut block = [0u8; 128];
+    if crate::drivers::video::probe_edid(&mut block) == 0 {
+        write_str("EDID: no validated block found\\n");
+        return;
+    }
+    if !crate::drivers::video::parse_edid(&block) {
+        write_str("EDID: block read but validation/parser rejected it\\n");
+        return;
+    }
+    serial::write_str("[VIDEO/EDID] block0:");
+    let mut i = 0usize;
+    while i < 128 {
+        if i % 16 == 0 { serial::write_str(if i == 0 { " " } else { "\\n[VIDEO/EDID] " }); }
+        serial::write_hex(block[i] as usize);
+        i += 1;
+    }
+    serial::write_str("\\n");
+    if let Some(m) = crate::drivers::video::preferred_mode() {
+        write_str("preferred mode: ");
+        serial::write_usize(m.width as usize);
+        write_str("x");
+        serial::write_usize(m.height as usize);
+        write_str(" clock_khz=");
+        serial::write_usize(m.pixel_clock_khz as usize);
+        write_str(" htotal=");
+        serial::write_usize(m.h_total as usize);
+        write_str(" vtotal=");
+        serial::write_usize(m.v_total as usize);
+        write_str("\\n");
+    }
 }
 
 fn cmd_ls() {
@@ -300,6 +338,8 @@ fn run_line(line: &[u8], len: usize) {
         cmd_mem();
     } else if eq(line, s, clen, b"vdiag") {
         cmd_vdiag();
+    } else if eq(line, s, clen, b"vedid") {
+        cmd_vedid();
     } else if eq(line, s, clen, b"uname") {
         cmd_uname();
     } else if eq(line, s, clen, b"echo") {
