@@ -148,7 +148,26 @@ fn eq(line: &[u8], s: usize, clen: usize, b: &[u8]) -> bool {
 }
 
 fn cmd_help() {
-    write_str("Commands: help ls cat mem echo uname halt\n");
+    write_str("Commands: help ls cat mem uname vdiag echo halt\\n");
+}
+
+fn cmd_vdiag() {
+    write_str("======== Video diagnostic ========\\n");
+    write_str("software FB: ");
+    write_str(if crate::drivers::video::ready() { "ready\\n" } else { "not-ready\\n" });
+    write_str("Intel Gen6 MMIO: ");
+    write_str(if crate::drivers::video::hardware_ready() { "ready\\n" } else { "not-ready\\n" });
+    write_str("existing scanout: ");
+    write_str(if crate::drivers::video::scanout_ready() { "attached\\n" } else { "not-attached\\n" });
+    if crate::drivers::video::scanout_ready() {
+        write_str("pipe: ");
+        serial::write_usize(crate::drivers::video::scanout_pipe() as usize);
+        write_str("\\n");
+        write_str("surface: ");
+        serial::write_hex(crate::drivers::video::scanout_surface() as usize);
+        write_str("\\n");
+    }
+    crate::drivers::video::snapshot();
 }
 
 fn cmd_ls() {
@@ -279,6 +298,8 @@ fn run_line(line: &[u8], len: usize) {
         cmd_cat_test();
     } else if eq(line, s, clen, b"mem") {
         cmd_mem();
+    } else if eq(line, s, clen, b"vdiag") {
+        cmd_vdiag();
     } else if eq(line, s, clen, b"uname") {
         cmd_uname();
     } else if eq(line, s, clen, b"echo") {
