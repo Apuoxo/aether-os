@@ -21,13 +21,16 @@ jobs:
           set -e
           mkdir -p kernel/build
           for attempt in $(seq 1 20); do
-            url="$(curl -fsSL 'https://api.github.com/repos/Apuoxo/aether-apps/actions/artifacts?name=aether-calculator-elf&per_page=100' | jq -r '[.artifacts[] | select(.expired == false and .workflow_run.head_branch == "main")] | sort_by(.created_at) | last | .archive_download_url')"
-            if [ "$url" != "null" ]; then
-              rm -rf /tmp/aether-calculator
-              mkdir -p /tmp/aether-calculator
-              if curl -fsSL "$url" -o /tmp/aether-calculator.zip && unzip -o /tmp/aether-calculator.zip -d /tmp/aether-calculator >/dev/null && test -s /tmp/aether-calculator/calculator; then
-                cp /tmp/aether-calculator/calculator kernel/build/calculator.elf
-                break
+            run_id="$(curl -fsSL -H 'Accept: application/vnd.github+json' 'https://api.github.com/repos/Apuoxo/aether-apps/actions/runs?per_page=20' | jq -r '[.workflow_runs[] | select(.name == "Aether Calculator" and .head_branch == "main" and .conclusion == "success")] | sort_by(.updated_at) | last | .id')"
+            if [ "$run_id" != "null" ]; then
+              url="$(curl -fsSL -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/Apuoxo/aether-apps/actions/runs/$run_id/artifacts" | jq -r '[.artifacts[] | select(.name == "aether-calculator-elf" and .expired == false)] | sort_by(.created_at) | last | .archive_download_url')"
+              if [ "$url" != "null" ]; then
+                rm -rf /tmp/aether-calculator
+                mkdir -p /tmp/aether-calculator
+                if curl -fsSL "$url" -o /tmp/aether-calculator.zip && unzip -o /tmp/aether-calculator.zip -d /tmp/aether-calculator >/dev/null && test -s /tmp/aether-calculator/calculator; then
+                  cp /tmp/aether-calculator/calculator kernel/build/calculator.elf
+                  break
+                fi
               fi
             fi
             echo "Calculator artifact not ready; retry $attempt/20"
