@@ -207,7 +207,8 @@ unsafe fn sys_poll_key(out_ptr: usize) -> u64 {
     }
 
     crate::drivers::ps2::poll();
-    if let Some(sc) = crate::drivers::ps2::last_scancode() {
+    let sc = crate::drivers::ps2::last_scancode();
+    if sc != 0 {
         if let Some(key) = crate::drivers::ps2::scancode_to_ascii(sc) {
             *((out_ptr) as *mut u8) = key;
             *((out_ptr + 1) as *mut u8) = 1;
@@ -301,8 +302,10 @@ pub extern "C" fn process_exit_dispatch() {
                         serial::write_str(" USER_CR3=");
                         serial::write_hex(img.cr3);
                         serial::write_str("\n");
-                        crate::mm::paging::load_cr3(img.cr3);
-                        enter_user_mode(img.entry as u64, img.stack_top as u64);
+                        unsafe {
+                            crate::mm::paging::load_cr3(img.cr3);
+                            enter_user_mode(img.entry as u64, img.stack_top as u64);
+                        }
                     }
                 }
             } else {
