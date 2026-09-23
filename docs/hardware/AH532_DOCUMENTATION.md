@@ -261,3 +261,85 @@ This list is deliberately separate from assumptions. The goal is to make the QEM
 This is a substantially expanded research index, but it is NOT honest to call it “all documentation”. Some Fujitsu service/repair material appears to be distributed through third-party archives, some board-level files are configuration-specific, and some firmware/board information must be obtained from the physical unit.
 
 The highest-value primary references currently found are Fujitsu's AH532 documentation and Intel's Sandy Bridge Gen6 graphics PRMs. The board-level schematic/repair references are retained as leads, not as verified facts about our exact machine.
+
+
+## 15. Deeper board / firmware findings (research pass)
+
+### Board identity: stronger but still not physical-unit proof
+Multiple independent repair indexes now converge on an AH532/A532 board family:
+- Quanta ODM
+- FH6 / FH6C
+- board marking DA0FH6MB6E0
+- Rev E is repeatedly listed
+- schematic filename: Fujitsu_FH6C_FH6_hm70_r0c_mb_0522.pdf
+
+The same community technical package identifies Realtek ALC269 audio and Realtek RTL8111F LAN on this board family. It also publishes SHA-256 hashes for the referenced schematic/firmware package.
+
+Sources:
+- RepairLap: https://www.repairlap.com/threads/fujitsu-lifebook-ah532-schematic-da0fh6mb6e0-rev-e-bios.5293/post-8615
+- Vinafix: https://vinafix.com/threads/fujitsu-ah532-fh6-fh6c-hm70-r0c_mb_0522.15516/
+- Alex Laptop Repair: https://www.alexlaptoprepair.com/forums/threads/fujitsu-lifebook-a532-ah532-da0fh6mb6e0-rev-e-schematic.5056/
+
+IMPORTANT CONFLICT: the community schematic/package is labelled HM70 in its filename, while Fujitsu product documentation and the AH532 configuration relevant to this project identify HM76-family systems. Therefore the schematic must NOT be treated as the exact electrical map of our machine until the physical board marking and runtime PCH PCI ID are confirmed.
+
+### SPI / firmware architecture lead
+A separate repair report for an A532/AH532-family board describes three SPI devices:
+- U24: 1 MB, described as EC firmware
+- U35: 4 MB, main BIOS
+- U7: 2 MB, Intel Management Engine region/device
+
+Other repair indexes independently list the same U35/U7/U24 sizes for DA0FH6MB6E0 Rev E. This is useful evidence for understanding the firmware topology, but it is third-party repair evidence and must not be used to write/flash anything on the Aether machine.
+
+Sources:
+- https://winraid.level1techs.com/t/realtek-network-problem-on-fujitsu-a532/36245
+- https://www.bios-downloads.com/product-category/bios/laptop-bios/fujitsu-laptop-bios/page/18/
+
+### HM76 PCI identity
+Intel documentation identifies mobile HM76 LPC as PCI device ID 8086:1E59. The broader Intel 7-Series/Panther Point documentation describes HM76 as a 12-USB/6-SATA mobile PCH with up to 8 PCIe 2.0 lanes.
+
+Reference:
+- https://www.intel.com/content/www/us/en/docs/dynamic-application-loader/developer-guide/1-0/for-api-level-2-intel-me-8-0-ivy-bridge.html
+- https://www.intel.com/content/dam/www/public/us/en/documents/datasheets/7-series-chipset-pch-datasheet.pdf
+
+For Aether this gives us a concrete runtime check: the real machine should expose the HM76 LPC function as 8086:1E59 if the HM76 assumption is correct. We should verify this in the next PCI diagnostic rather than hard-code it from documentation.
+
+### BIOS guide details worth preserving
+The AH/LH BIOS Guide explicitly documents AH532/LH532 firmware menus and states that the System/Advanced menus expose storage and device-feature controls, including the Serial ATA controller and USB-related options. It also notes that displayed fields vary with system configuration.
+
+Reference:
+- https://www.manualslib.com/manual/829337/Fujitsu-Lifebook-Ah532.html
+
+This matters to Aether because ACPI/firmware routing should be discovered from the actual machine rather than inferred only from the product factsheet.
+
+## 16. Hardware-map research matrix
+
+| Subsystem | Documentation | Runtime target evidence | Aether status | Main unknown |
+|---|---|---|---|---|
+| CPU | Intel Sandy Bridge/Ivy Bridge platform docs | CPUID still needed | booted x86_64 | exact model/features |
+| PCH/HM76 | Intel 7-Series PCH datasheet | expected LPC ID 8086:1E59; verify | PCI discovery exists | full function/BAR/ACPI map |
+| HD Graphics 3000 | Intel SNB Gen6 PRMs | 8086:0116, Gen6, KMS 800x600 verified | partial display driver | safe scanout/EDID/advanced acceleration |
+| Display panel/connector | Fujitsu manual + Intel display PRM | EDID/connector dump still needed | framebuffer/KMS | exact panel/link topology |
+| PCIe root ports | Intel PCH docs | full root-port dump needed | partial PCI | exact routing to Wi-Fi/LAN/etc. |
+| xHCI | Intel PCH docs | 8086:1E31 observed | controller found | BAR/capabilities/port routing |
+| AHCI/SATA | Intel PCH docs + Fujitsu manual | physical disks observed | read-only storage | exact AHCI PCI/BAR/port map |
+| LAN | Fujitsu/board references + Realtek family docs | 10EC:8168 observed | not a complete native driver | exact revision/subsystem/PHY |
+| Wi-Fi/BT | Intel 2230 docs | 8086:0887, subsystem 8086:4062 | not implemented | PCI BAR/firmware/transport/runtime state |
+| HDA/ALC269 | Fujitsu/board references | codec/controller runtime dump needed | not implemented | exact HDA codec/link routing |
+| SMBus | Intel PCH docs | runtime PCI function needed | not mapped | SMBus BAR/addressing and devices |
+| EC | board/firmware repair evidence | runtime/ACPI evidence needed | not implemented | exact EC model/register interface |
+| ACPI | Fujitsu BIOS + actual firmware | table dump needed | partial assumptions only | DSDT/SSDT/GPE/device topology |
+| SPI/BIOS/ME | third-party board repair evidence | BIOS version/date needed | read-only awareness | exact flash layout on physical board |
+| Card reader | Fujitsu product docs; board family likely Realtek | runtime PCI ID needed | unknown | controller/device ID |
+| Camera | Fujitsu product docs | USB topology needed | unknown | exact USB device/interface |
+| Audio jacks/speakers/mic | Fujitsu manual | HDA + GPIO/codec evidence needed | unknown | exact jack/GPIO routing |
+| Power/battery/thermal | Fujitsu manual + ACPI | ACPI/EC/battery dump needed | unknown | EC/thermal zones/fan control |
+
+## 17. New rule for exact-hardware matching
+
+Do not identify the physical AH532 from the model name alone. For any board-level assumption, require at least one of:
+1. matching runtime PCI IDs/subsystem IDs;
+2. matching DMI/SMBIOS board identifiers;
+3. physical board marking/revision;
+4. a firmware/ACPI identifier that uniquely matches the board family.
+
+Until then, board schematics are research leads only.
