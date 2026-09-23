@@ -452,6 +452,9 @@ pub fn read_edid(port: u32, out: &mut [u8; 128]) -> bool {
         }
 
         let mut ok = false;
+        serial::write_str("[VIDEO/EDID] transaction pin=");
+        serial::write_usize(port as usize);
+        serial::write_str(" rate=100kHz bytes=128\n");
         mmio_write32(GMBUS0, port | GMBUS_RATE_100KHZ);
         let command = GMBUS_CYCLE_INDEX
             | (128u32 << GMBUS_BYTE_COUNT_SHIFT)
@@ -467,7 +470,13 @@ pub fn read_edid(port: u32, out: &mut [u8; 128]) -> bool {
         let mut pos = 0usize;
         while pos < 128 {
             if !wait_gmbus(GMBUS_HW_RDY, true, GMBUS_TIMEOUT) {
-                serial::write_str("[VIDEO/EDID] HW_RDY timeout\n");
+                let status = mmio_read32(GMBUS2);
+                serial::write_str("[VIDEO/EDID] HW_RDY timeout status=");
+                serial::write_hex(status as usize);
+                serial::write_str(" byte_count=");
+                serial::write_usize(((status >> GMBUS_BYTE_COUNT_SHIFT) & 0x1FF) as usize);
+                serial::write_str(" SATOER=");
+                serial::write_str(if status & GMBUS_SATOER != 0 { "1\n" } else { "0\n" });
                 break;
             }
             let word = mmio_read32(GMBUS3);
@@ -484,7 +493,14 @@ pub fn read_edid(port: u32, out: &mut [u8; 128]) -> bool {
             // Gen6 GMBUS state machine used by i915.
             let _ = wait_gmbus(GMBUS_HW_WAIT_PHASE, false, GMBUS_TIMEOUT);
             let status = mmio_read32(GMBUS2);
+            serial::write_str("[VIDEO/EDID] complete status=");
+            serial::write_hex(status as usize);
+            serial::write_str(" byte_count=");
+            serial::write_usize(((status >> GMBUS_BYTE_COUNT_SHIFT) & 0x1FF) as usize);
+            serial::write_str(" SATOER=");
+            serial::write_str(if status & GMBUS_SATOER != 0 { "1\n" } else { "0\n" });
             if status & GMBUS_SATOER == 0 {
+                serial::write_str("[VIDEO/EDID] bytes_read=128\n");
                 let header_ok =
                     out[0] == 0x00 && out[1] == 0xFF && out[2] == 0xFF &&
                     out[3] == 0xFF && out[4] == 0xFF && out[5] == 0xFF &&
