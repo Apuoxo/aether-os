@@ -7,6 +7,7 @@ use crate::graphics;
 use crate::gui::{font, icon, theme};
 use crate::serial;
 use crate::part;
+use crate::{fs_fat, fs_ntfs};
 
 const WHITE:u32=0x00FFFFFF;
 const TEXT:u32=0x001F1F1F;
@@ -193,7 +194,7 @@ fn draw_ntfs(wx:usize,y:usize,ww:usize,h:usize){
 fn draw_list(wx:usize,y:usize,ww:usize,h:usize){
     if !fs::is_mounted(){graphics::draw_str(wx+10,y+10,"AetherFS is not mounted.",RED);return;}
     let mut a=[fs::ListItem{name:[0;24],name_len:0,size:0,is_dir:false};16];
-    let n=fs::list_ex_path(core::str::from_utf8_unchecked(&CWD[..CWD_LEN]),&mut a);
+    let n=unsafe{fs::list_ex_path(core::str::from_utf8_unchecked(&CWD[..CWD_LEN]),&mut a)};
     graphics::fill_rect(wx,y,ww,h,WHITE);
     // Details header.
     graphics::fill_rect(wx,y,ww,22,TOOL2);
