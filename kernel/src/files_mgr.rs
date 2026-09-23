@@ -5,6 +5,7 @@
 use crate::fs;
 use crate::graphics;
 use crate::gui::{font, icon, theme};
+use crate::serial;
 
 const WHITE:u32=0x00FFFFFF;
 const TEXT:u32=0x001F1F1F;
@@ -43,7 +44,8 @@ static mut PREVIEW_LEN:usize=0;
 static mut STATUS:[u8;64]=[0;64];
 static mut STATUS_LEN:usize=0;
 
-fn status(s:&[u8]){unsafe{let mut i=0;while i<64{STATUS[i]=0;i+=1;}i=0;while i<s.len()&&i<63{STATUS[i]=s[i];i+=1;}STATUS_LEN=i;}}
+fn log(s:&[u8]){serial::write_str("[EXPLORER] ");if let Ok(v)=core::str::from_utf8(s){serial::write_str(v);}serial::write_str("\n");}
+fn status(s:&[u8]){log(s);unsafe{let mut i=0;while i<64{STATUS[i]=0;i+=1;}i=0;while i<s.len()&&i<63{STATUS[i]=s[i];i+=1;}STATUS_LEN=i;}}
 fn set_root(){unsafe{CWD[0]=b'/';CWD_LEN=1;VIEW=VIEW_ROOT;SEL=-1;}}
 fn push_hist(){unsafe{if HIST_N<8{let mut i=0;while i<32{HIST[HIST_N][i]=CWD[i];i+=1;}HIST_LEN[HIST_N]=CWD_LEN;HIST_N+=1;HIST_I=HIST_N;}}}
 fn draw_num(x:usize,y:usize,mut n:u32){if n==0{graphics::draw_char(x,y,b'0',TEXT);return;}let mut d=[0u8;10];let mut c=0;while n>0{d[c]=(n%10)as u8+b'0';n/=10;c+=1;}while c>0{c-=1;graphics::draw_char(x+(d.len()-1-c)*0,y,d[c],TEXT);}}
@@ -113,7 +115,7 @@ fn draw_computer(wx:usize,y:usize,ww:usize,h:usize){
 fn draw_list(wx:usize,y:usize,ww:usize,h:usize){
     if !fs::is_mounted(){graphics::draw_str(wx+10,y+10,"AetherFS is not mounted.",RED);return;}
     let mut a=[fs::ListItem{name:[0;24],name_len:0,size:0,is_dir:false};16];
-    let n=fs::list_ex(&mut a);
+    let n=fs::list_ex_path(core::str::from_utf8_unchecked(&CWD[..CWD_LEN]),&mut a);
     graphics::fill_rect(wx,y,ww,h,WHITE);
     // Details header.
     graphics::fill_rect(wx,y,ww,22,TOOL2);
@@ -174,7 +176,7 @@ fn open_selected(){
     unsafe{
         if SEL<0{return;}
         let mut a=[fs::ListItem{name:[0;24],name_len:0,size:0,is_dir:false};16];let n=fs::list_ex(&mut a);let s=SEL as usize;if s>=n{return;}
-        if a[s].is_dir{status(b"Folder navigation is next VFS stage");return;}
+        if a[s].is_dir{let mut j=0;while j<a[s].name_len&&CWD_LEN<32{if CWD_LEN>1{CWD[CWD_LEN]=b'/';CWD_LEN+=1;}CWD[CWD_LEN]=a[s].name[j];CWD_LEN+=1;j+=1;}SEL=-1;VIEW=VIEW_ROOT;status(b"folder opened");return;}
         let mut buf=[0u8;512];if let Some(r)=fs::read_name(&a[s].name,a[s].name_len,&mut buf){let mut i=0;while i<r&&i<512{PREVIEW[i]=buf[i];i+=1;}PREVIEW_LEN=r;VIEW=VIEW_TEXT;status(b"Preview opened");}else{status(b"Cannot open file");}
     }
 }
@@ -197,7 +199,7 @@ pub fn on_click(wx:i32,wy:i32,ww:i32,wh:i32,title_h:i32,mx:i32,my:i32,right:bool
         if mx>=wx+side+8&&my>=list_top{
             let cx=mx-(wx+side+8);let _=cx;
             if VIEW==VIEW_COMPUTER{if my>=list_top+42&&my<list_top+150{push_hist();set_root();status(b"AetherFS (A:) opened");}}
-            else if VIEW==VIEW_ROOT{let row=((my-list_top-24)/20)as i32;if row>=0&&row<16{if SEL==row{open_selected();}else{SEL=row;status(b"Selected");}}}
+            else if VIEW==VIEW_ROOT{let row=((my-list_top-24)/20)as i32;if row>=0&&row<16{if SEL==row{log(b"open selected");open_selected();}else{SEL=row;log(b"selection changed");status(b"Selected");}}}
             return true;
         }
         if my>=list_top&&my<list_top+330&&mx<wx+side{
