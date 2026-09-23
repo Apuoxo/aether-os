@@ -76,6 +76,21 @@ pub unsafe extern "C" fn memcmp(a: *const u8, b: *const u8, n: usize) -> i32 {
     let mut i=0; while i<n { let x=*a.add(i); let y=*b.add(i); if x!=y { return x as i32-y as i32; } i+=1; } 0
 }
 
+#[no_mangle]
+pub unsafe extern "C" fn bcmp(a: *const u8, b: *const u8, n: usize) -> i32 {
+    let mut i = 0usize;
+    while i < n {
+        if *a.add(i) != *b.add(i) {
+            return 1;
+        }
+        i += 1;
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn rust_eh_personality() {}
+
 extern "C" { fn enter_user_mode(entry: u64, stack: u64) -> !; }
 
 
