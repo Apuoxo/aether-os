@@ -279,8 +279,10 @@ pub extern "C" fn process_exit_dispatch() {
                 if let Some(pid) = crate::process::create_from_image("sh", &img) {
                     crate::process::set_state(pid, crate::process::State::Running);
                     crate::process::set_current(pid);
-                    crate::mm::paging::load_cr3(img.cr3);
-                    enter_user_mode(img.entry as u64, img.stack_top as u64);
+                    unsafe {
+                        crate::mm::paging::load_cr3(img.cr3);
+                        enter_user_mode(img.entry as u64, img.stack_top as u64);
+                    }
                 }
             }
         }
