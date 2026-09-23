@@ -288,12 +288,12 @@ pub extern "C" fn process_exit_dispatch() {
         if APP_STAGE == 0 {
             APP_STAGE = 1;
             serial::write_str("\n======== USERSACE CALCULATOR STAGE ========\n");
-            let mut buf = [0u8; 32768];
-            if let Some(n) = crate::fs::read_large("/bin/calculator", &mut buf) {
-                serial::write_str("[CALC] loaded ELF bytes=");
-                serial::write_usize(n);
+            let buf = crate::elf_blobs::calculator::CALCULATOR_ELF;
+            if buf.len() > 4 {
+                serial::write_str("[CALC] loaded bundled ELF bytes=");
+                serial::write_usize(buf.len());
                 serial::write_str("\n");
-                if let Some(img) = crate::elf::load(&buf) {
+                if let Some(img) = crate::elf::load(buf) {
                     if let Some(pid) = crate::process::create_from_image("calculator", &img) {
                         crate::process::set_state(pid, crate::process::State::Running);
                         crate::process::set_current(pid);
@@ -309,7 +309,7 @@ pub extern "C" fn process_exit_dispatch() {
                     }
                 }
             } else {
-                serial::write_str("[CALC] /bin/calculator missing — skip\n");
+                serial::write_str("[CALC] Calculator ELF not bundled — skip\n");
             }
         }
     }
