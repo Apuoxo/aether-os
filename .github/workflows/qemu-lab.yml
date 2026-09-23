@@ -12,103 +12,48 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install QEMU and NASM
+      - name: Install Aether build and QEMU tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y qemu-system-x86 nasm
+          sudo apt-get install -y nasm grub-pc-bin grub-common xorriso mtools jq unzip curl qemu-system-x86
 
-      - name: Verify QEMU host
+      - name: Fetch packaged Calculator ELF
         run: |
           set -eux
-          qemu-system-x86_64 --version
-          command -v qemu-system-x86_64
-          command -v nasm
+          mkdir -p kernel/build
+          curl -fsSL -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer ${{ github.token }}"             'https://api.github.com/repos/Apuoxo/aether-apps/contents/apps/calculator/dist/calculator.elf?ref=main'             | jq -r '.content' | tr -d '\n' | base64 -d > kernel/build/calculator.elf
+          test -s kernel/build/calculator.elf
 
-      - name: Build minimal boot experiment
+      - name: Build Aether ISO
+        working-directory: kernel
         run: |
-          set -eux
-          cat > /tmp/qemu-lab.asm <<'EOF'
-          bits 16
-          org 0x7c00
+          make clean
+          make kernel
+          make iso
+          test -s build/aether.iso
+          sha256sum build/aether.iso | tee ../lab-results-iso-sha.txt
 
-          cli
-          xor ax, ax
-          mov ds, ax
-          mov ss, ax
-          mov sp, 0x7c00
-
-          mov si, message
-          call serial_init
-
-          .loop:
-            lodsb
-            test al, al
-            jz .halt
-            call serial_putc
-            jmp .loop
-
-          .halt:
-            cli
-            hlt
-            jmp .halt
-
-          serial_init:
-            mov dx, 0x3f9
-            mov al, 0
-            out dx, al
-            mov dx, 0x3fb
-            mov al, 0x80
-            out dx, al
-            mov dx, 0x3f8
-            mov al, 1
-            out dx, al
-            mov dx, 0x3f9
-            mov al, 0
-            out dx, al
-            mov dx, 0x3fb
-            mov al, 3
-            out dx, al
-            ret
-
-          serial_putc:
-            push ax
-            push dx
-          .wait:
-            mov dx, 0x3fd
-            in al, dx
-            test al, 0x20
-            jz .wait
-            mov dx, 0x3f8
-            pop dx
-            pop ax
-            out dx, al
-            ret
-
-          message db "AETHER-QEMU-LAB: BOOT OK", 13, 10, 0
-
-          times 510-($-$$) db 0
-          dw 0xaa55
-          EOF
-
-          nasm -f bin /tmp/qemu-lab.asm -o /tmp/qemu-lab.bin
-          test `stat -c %s /tmp/qemu-lab.bin` -eq 512
-          mkdir -p lab-results
-          cp /tmp/qemu-lab.bin lab-results/qemu-lab-boot.bin
-
-      - name: Run QEMU experiment
+      - name: Run Aether in QEMU
         run: |
           set +e
-          timeout 5s qemu-system-x86_64             -drive format=raw,file=/tmp/qemu-lab.bin,if=floppy             -display none             -serial file:/tmp/qemu-lab.log             -monitor none             -no-reboot             -no-shutdown
+          timeout 20s qemu-system-x86_64             -cdrom kernel/build/aether.iso             -serial file:/tmp/aether-qemu.log             -display none             -m 128M             -no-reboot
           rc=$?
           set -e
-          cat /tmp/qemu-lab.log
-          cp /tmp/qemu-lab.log lab-results/serial.log
-          printf "timeout_exit_code=%s\n" "$rc" | tee lab-results/result.txt
-          grep -q "AETHER-QEMU-LAB: BOOT OK" /tmp/qemu-lab.log
+          mkdir -p lab-results
+          cp /tmp/aether-qemu.log lab-results/aether-serial.log
+          printf "qemu_exit_code=%s\n" "$rc" > lab-results/result.txt
+          cat /tmp/aether-qemu.log
           test "$rc" -eq 124
+          grep -q "\[INIT\] Calculator ELF bundled bytes=" /tmp/aether-qemu.log
+          grep -q "\[CALC\] loaded bundled ELF bytes=" /tmp/aether-qemu.log
+          grep -q "\[SYSCALL\] nr=12" /tmp/aether-qemu.log
+          ! grep -q "PANIC" /tmp/aether-qemu.log
+          ! grep -q "\[PF\] killing process" /tmp/aether-qemu.log
 
-      - name: Publish experiment results
+      - name: Publish Aether QEMU evidence
         uses: actions/upload-artifact@v4
         with:
-          name: qemu-lab-results
-          path: lab-results/
+          name: aether-qemu-lab
+          path: |
+            lab-results/
+            lab-results-iso-sha.txt
