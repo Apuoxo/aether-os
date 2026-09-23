@@ -1,0 +1,25 @@
+name: Aether OS build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  kernel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y nasm grub-pc-bin grub-common xorriso
+      - name: Build kernel
+        working-directory: kernel
+        run: make clean kernel
+      - name: Build ISO
+        working-directory: kernel
+        run: make iso
+      - name: Publish ISO
+        uses: actions/upload-artifact@v4
+        with:
+          name: aether-iso
+          path: kernel/build/aether.iso
