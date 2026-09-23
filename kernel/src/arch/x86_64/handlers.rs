@@ -346,8 +346,10 @@ pub extern "C" fn process_exit_dispatch() {
                         serial::write_str("[SH] CR3 DIFFERENT = YES\n");
                     }
                     serial::write_str("[SH] enter CPL=3\n");
-                    crate::mm::paging::load_cr3(img.cr3);
-                    enter_user_mode(img.entry as u64, img.stack_top as u64);
+                    unsafe {
+                        crate::mm::paging::load_cr3(img.cr3);
+                        enter_user_mode(img.entry as u64, img.stack_top as u64);
+                    }
                 }
             }
         } else {
