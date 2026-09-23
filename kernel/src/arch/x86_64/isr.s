@@ -9,6 +9,9 @@ extern rust_kernel_after_user
 extern process_exit_dispatch
 extern rust_ring3_done
 
+; Syscall frame layout after pushes:
+; 0=RAX,1=RBX,2=RCX,3=RDX,4=RSI,5=RDI,6=RBP,
+; 7=R8,8=R9,9=R10,10=R11,11=R12,12=R13,13=R14,14=R15.
 isr_page_fault:
     push rax
     push rdi
@@ -23,7 +26,6 @@ isr_page_fault:
     iretq
 
 isr_syscall:
-    ; Snapshot GPRs BEFORE any clobber (dx used for serial)
     push rax
     push rbx
     push rcx
@@ -39,15 +41,19 @@ isr_syscall:
     push r13
     push r14
     push r15
-    ; marker 'S'
+
     mov al, 0x53
     mov dx, 0x3F8
     out dx, al
     mov rdi, rsp
     call syscall_handler
+
     cmp rax, 0xDEAD
     je .do_exit
-    mov [rsp+14*8], rax
+
+    ; syscall_handler returns the value for userspace in RAX.
+    ; RAX is frame slot 0, so restore it from there after all pops.
+    mov [rsp], rax
     pop r15
     pop r14
     pop r13
@@ -64,6 +70,7 @@ isr_syscall:
     pop rbx
     pop rax
     iretq
+
 .do_exit:
     add rsp, 15*8
     add rsp, 5*8
