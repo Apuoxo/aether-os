@@ -1,5 +1,6 @@
 BUILD_DIR  = build
 KERNEL_BIN = $(BUILD_DIR)/aether.bin
+ISR_OBJ    = $(BUILD_DIR)/isr.o
 ISO        = $(BUILD_DIR)/aether.iso
 ISO_DIR    = $(BUILD_DIR)/isofiles
 
@@ -18,12 +19,15 @@ $(BUILD_DIR)/kernel.o: $(RUST_SRCS) | $(BUILD_DIR)
 		-C opt-level=s -C panic=abort \
 		-C overflow-checks=off -C debug-assertions=off \
 		-C force-frame-pointers=no \
-		--target x86_64-unknown-linux-gnu \
+		--target x86_64-unknown-none \
 		-C relocation-model=static \
 		--emit=obj -o $@ src/main.rs
 
-$(KERNEL_BIN): $(BUILD_DIR)/boot.o $(BUILD_DIR)/kernel.o linker/linker.ld
-	ld -n -T linker/linker.ld -o $@ $(BUILD_DIR)/boot.o $(BUILD_DIR)/kernel.o
+$(ISR_OBJ): src/arch/x86_64/isr.s | $(BUILD_DIR)
+	nasm -f elf64 $< -o $@
+
+$(KERNEL_BIN): $(BUILD_DIR)/boot.o $(BUILD_DIR)/kernel.o $(ISR_OBJ) linker/linker.ld
+	ld -n -T linker/linker.ld -o $@ $(BUILD_DIR)/boot.o $(BUILD_DIR)/kernel.o $(ISR_OBJ)
 
 kernel: $(KERNEL_BIN)
 	@ls -lh $(KERNEL_BIN)
