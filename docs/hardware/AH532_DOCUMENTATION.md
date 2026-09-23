@@ -343,3 +343,105 @@ Do not identify the physical AH532 from the model name alone. For any board-leve
 4. a firmware/ACPI identifier that uniquely matches the board family.
 
 Until then, board schematics are research leads only.
+
+
+## 18. Controller-level documentation pass
+
+### Intel 7-Series PCH function map
+Intel's 7-Series PCH specification update gives a useful exact device/function map for the family:
+- D31:F2 SATA: mobile AHCI device ID 1E03 (with configuration-dependent alternatives)
+- D31:F3 SMBus: device ID 1E22
+- D31:F6 Thermal: device ID 1E24
+- D29:F0 EHCI #1: 1E26
+- D26:F0 EHCI #2: 1E2D
+- D20:F0 xHCI: 1E31
+- D27:F0 Intel HD Audio: 1E20
+- D28:F0/F1/F2 PCIe root ports: 1E10 / 1E12 / 1E14 in the normal mobile configuration
+
+Primary Intel sources:
+- https://www.intel.com/content/dam/www/public/us/en/documents/specification-updates/7-series-chipset-pch-spec-update.pdf
+- https://www.intel.com/content/dam/www/public/us/en/documents/datasheets/7-series-chipset-pch-datasheet.pdf
+
+This is especially useful for the next Aether PCI diagnostic: one scan can determine whether the physical machine's PCH topology matches the expected family instead of assuming it.
+
+### SMBus: concrete register target
+Intel documents the SMBus controller at D31:F3. Its PCI configuration includes:
+- SMBMBAR1 at offset 14h-17h for a 64-bit memory base field
+- SMB_BASE at offset 20h-23h
+- SMB_BASE is I/O mapped, with the base encoded in bits 15:5
+
+Source: Intel 7-Series PCH datasheet, SMBus controller registers.
+
+For Aether this means the first SMBus step should be strictly read-only PCI configuration discovery: VID/DID, command/status, BAR/base, revision and interrupt routing. Only after that should any SMBus transaction engine be considered.
+
+### xHCI: concrete PCI discovery targets
+Intel documents the xHCI controller at D20:F0 and gives its PCI header fields, including command/status, revision, subsystem IDs and the MMIO BAR at offset 10h-17h. The physical AH532 already reports 8086:1E31, so this is a strong match between documentation and target hardware.
+
+Source: Intel 7-Series PCH datasheet.
+
+The next xHCI diagnostic should therefore collect the complete PCI header and xHCI capability registers without enabling ports or starting DMA. This is safer than jumping directly into USB HID work.
+
+### AHCI/SATA: exact family target
+Intel's specification update identifies mobile AHCI as D31:F2 / device ID 1E03 for the relevant 7-Series mobile configurations. The physical Aether system already exposes working ATA/AHCI storage, so the next useful evidence is the controller's PCI command/status, BARs and AHCI CAP/PI registers.
+
+No write operations are needed: the controller can be characterized with read-only PCI and AHCI capability reads.
+
+### HD Audio / ALC269
+Intel identifies the PCH HD Audio controller as D27:F0 / 1E20. Linux's HD-Audio documentation confirms the architecture: a controller plus one or more codecs on the HD-audio bus, with codec-specific handling for Realtek ALC269-class devices. The Linux documentation also records ALC269-specific laptop/digital-mic/headset fixup categories.
+
+Sources:
+- https://www.kernel.org/doc/html/latest/sound/hd-audio/notes.html
+- https://cdn.kernel.org/doc/html/latest/sound/hd-audio/models.html
+
+For Aether, the first audio milestone should be controller discovery and codec enumeration only. We need the actual codec vendor/device ID and NID topology from the physical AH532 before implementing playback or GPIO/jack handling.
+
+### Realtek LAN
+The physical controller is known only at the PCI-family level so far: 10EC:8168. The exact RTL8168/RTL8111 revision and subsystem still need to be read from PCI configuration. Do not select a register sequence based only on the marketing name RTL8111F.
+
+The safest next step is a complete read-only PCI header/BAR/revision dump, followed by PHY identification. TX/RX DMA should come only after the MMIO/DMA addressability assumptions are independently verified.
+
+## 19. ACPI / EC / thermal research boundary
+
+No trustworthy public source found in this pass provides a complete, machine-specific AH532 DSDT/SSDT set that can be treated as the firmware of our physical unit. Therefore Aether should not hard-code EC addresses, fan registers, battery registers or GPIO mappings from a random AH532 dump.
+
+The correct next evidence is obtained from the physical firmware:
+1. RSDP/XSDT/RSDT addresses and checksums;
+2. enumerate DSDT/SSDT tables with OEM ID, OEM Table ID and revision;
+3. locate EC device(s), thermal zones, battery/AC adapters and fan-related methods;
+4. record PCI _ADR/_STA/_CRS relationships for xHCI, SATA, HDA and PCIe devices;
+5. record GPIO/SMBus dependencies only when explicitly described by ACPI;
+6. keep all table parsing read-only.
+
+This is a deliberate boundary: documentation tells us what the chipset can contain, while ACPI on the actual machine tells Aether how Fujitsu wired/configured it.
+
+## 20. Revised next hardware diagnostic set
+
+The highest-value single diagnostic pass on the physical AH532 is now:
+
+### PCI/PCH
+- scan bus 0 functions, especially D20-D31;
+- record VID:DID, revision, class, command/status, subsystem IDs;
+- record every BAR without mapping or touching the MMIO contents.
+
+### PCH-specific expected IDs to compare
+- D31:F2 SATA: 8086:1E03 expected for mobile AHCI family;
+- D31:F3 SMBus: 8086:1E22;
+- D31:F6 Thermal: 8086:1E24;
+- D20:F0 xHCI: 8086:1E31 (already observed);
+- D27:F0 HDA: 8086:1E20;
+- D28:F0/F1/F2 PCIe: 8086:1E10/1E12/1E14 in the normal mobile configuration.
+
+### Then ACPI
+- RSDP/XSDT/RSDT;
+- DSDT/SSDT identity metadata;
+- device names and _ADR/_CRS for the controllers above;
+- EC, thermal, battery and fan objects.
+
+### Then individual controller probes
+1. xHCI capabilities, read-only;
+2. AHCI CAP/PI, read-only;
+3. HDA controller + codec enumeration, read-only;
+4. RTL8168 PCI revision/subsystem/PHY identification, read-only;
+5. SMBus controller discovery, no transactions initially.
+
+This ordering minimizes risk and gives Aether a real hardware map before writing additional drivers.
