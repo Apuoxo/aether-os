@@ -44,6 +44,9 @@ static mut HIST_N:usize=0;
 static mut HIST_I:usize=0;
 static mut CWD:[u8;32]=[b'/',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
 static mut CWD_LEN:usize=1;
+static mut NTFS_CWD_REF:u32=5;
+static mut NTFS_PARENT:[u32;8]=[0;8];
+static mut NTFS_DEPTH:usize=0;
 static mut PREVIEW:[u8;512]=[0;512];
 static mut PREVIEW_LEN:usize=0;
 static mut STATUS:[u8;64]=[0;64];
@@ -56,7 +59,7 @@ fn push_hist(){unsafe{if HIST_N<8{let mut i=0;while i<32{HIST[HIST_N][i]=CWD[i];
 fn draw_num(x:usize,y:usize,mut n:u32){if n==0{graphics::draw_char(x,y,b'0',TEXT);return;}let mut d=[0u8;10];let mut c=0;while n>0{d[c]=(n%10)as u8+b'0';n/=10;c+=1;}while c>0{c-=1;graphics::draw_char(x+(d.len()-1-c)*0,y,d[c],TEXT);}}
 fn btn(x:usize,y:usize,w:usize,label:&str,hot:bool){graphics::fill_rect(x,y,w,24,if hot{BLUE2}else{TOOL});graphics::border_rect(x,y,w,24,BORDER);graphics::draw_str(x+8,y+8,label,if hot{BLUE}else{TEXT});}
 
-pub fn reset(){unsafe{VIEW=VIEW_COMPUTER;SEL=-1;HOVER=-1;FOCUS_ADDR=false;CTX=false;CONFIRM_DEL=false;HIST_N=0;HIST_I=0;CWD[0]=b'/';CWD_LEN=1;PREVIEW_LEN=0;}status(b"Ready");}
+pub fn reset(){unsafe{VIEW=VIEW_COMPUTER;SEL=-1;HOVER=-1;FOCUS_ADDR=false;CTX=false;CONFIRM_DEL=false;HIST_N=0;HIST_I=0;CWD[0]=b'/';CWD_LEN=1;NTFS_CWD_REF=5;NTFS_DEPTH=0;PREVIEW_LEN=0;}status(b"Ready");}
 
 fn draw_header(wx:usize,wy:usize,ww:usize,body_y:usize){
     // Windows 7-like command bar.
@@ -333,6 +336,37 @@ pub fn on_click(wx:i32,wy:i32,ww:i32,wh:i32,title_h:i32,mx:i32,my:i32,right:bool
                 }
                 return false;
             }
+            else if VIEW==VIEW_NTFS{
+                let n=fs_ntfs::entry_count();
+                if my<list_top+28{return false;}
+                let row=((my-list_top-28)/20)as i32;
+                if row>=0&&row<n as i32{
+                    if SEL==row{
+                        if let Some(e)=fs_ntfs::entry(row as usize){
+                            if e.is_dir{
+                                if fs_ntfs::list_directory(e.mft_ref){
+                                    if NTFS_DEPTH<8{
+                                        NTFS_PARENT[NTFS_DEPTH]=NTFS_CWD_REF;
+                                        NTFS_DEPTH+=1;
+                                    }
+                                    NTFS_CWD_REF=e.mft_ref;
+                                    SEL=-1;
+                                    status(b"NTFS folder opened");
+                                }else{
+                                    status(b"NTFS folder read failed");
+                                }
+                            }else{
+                                status(b"NTFS file preview not implemented");
+                            }
+                        }
+                    }else{
+                        SEL=row;
+                        status(b"Selected");
+                    }
+                    return true;
+                }
+                return false;
+            }
             else if VIEW==VIEW_ROOT{
                 let mut a=[fs::ListItem{name:[0;24],name_len:0,size:0,is_dir:false};16];
                 let n=fs::list_ex_path(core::str::from_utf8_unchecked(&CWD[..CWD_LEN]),&mut a);
@@ -372,6 +406,24 @@ fn go_back(){unsafe{if HIST_I>0{HIST_I-=1;let mut i=0;while i<32{CWD[i]=HIST[HIS
 fn go_forward(){unsafe{if HIST_I+1<HIST_N{HIST_I+=1;VIEW=VIEW_ROOT;SEL=-1;status(b"Forward");}}}
 fn go_up(){
     unsafe{
+        if VIEW==VIEW_NTFS{
+            if NTFS_DEPTH>0{
+                NTFS_DEPTH-=1;
+                NTFS_CWD_REF=NTFS_PARENT[NTFS_DEPTH];
+                if fs_ntfs::list_directory(NTFS_CWD_REF){
+                    SEL=-1;
+                    status(b"Up");
+                }else{
+                    status(b"NTFS parent read failed");
+                }
+            }else{
+                VIEW=VIEW_COMPUTER;
+                SEL=-1;
+                NTFS_CWD_REF=5;
+                status(b"Computer");
+            }
+            return;
+        }
         if VIEW!=VIEW_ROOT{
             VIEW=VIEW_COMPUTER;
             SEL=-1;
