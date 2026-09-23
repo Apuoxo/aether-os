@@ -148,24 +148,24 @@ fn eq(line: &[u8], s: usize, clen: usize, b: &[u8]) -> bool {
 }
 
 fn cmd_help() {
-    write_str("Commands: help ls cat mem uname vdiag echo haltundefined");
+    write_str("Commands: help ls cat mem uname vdiag echo halt\n");
 }
 
 fn cmd_vdiag() {
-    write_str("======== Video diagnostic ========undefined");
+    write_str("======== Video diagnostic ========\n");
     write_str("software FB: ");
-    write_str(if crate::drivers::video::ready() { "readyundefined" } else { "not-readyundefined" });
+    write_str(if crate::drivers::video::ready() { "ready\n" } else { "not-ready\n" });
     write_str("Intel Gen6 MMIO: ");
-    write_str(if crate::drivers::video::hardware_ready() { "readyundefined" } else { "not-readyundefined" });
+    write_str(if crate::drivers::video::hardware_ready() { "ready\n" } else { "not-ready\n" });
     write_str("existing scanout: ");
-    write_str(if crate::drivers::video::scanout_ready() { "attachedundefined" } else { "not-attachedundefined" });
+    write_str(if crate::drivers::video::scanout_ready() { "attached\n" } else { "not-attached\n" });
     if crate::drivers::video::scanout_ready() {
         write_str("pipe: ");
         serial::write_usize(crate::drivers::video::scanout_pipe() as usize);
-        write_str("undefined");
+        write_str("\n");
         write_str("surface: ");
         serial::write_hex(crate::drivers::video::scanout_surface() as usize);
-        write_str("undefined");
+        write_str("\n");
     }
     crate::drivers::video::snapshot();
 }
