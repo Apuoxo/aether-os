@@ -1,0 +1,21 @@
+[package]
+name = "aether"
+version = "0.1.0"
+edition = "2021"
+authors = ["Aether Project"]
+description = "Polymorphic Native Kernel"
+
+[dependencies]
+
+[profile.dev]
+panic = "abort"
+opt-level = 1
+
+[profile.release]
+panic = "abort"
+lto = true
+codegen-units = 1
+opt-level = "s"
+
+[features]
+default = []

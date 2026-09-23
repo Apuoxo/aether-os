@@ -1,0 +1,212 @@
+//! Aether Process Manager — native, not Linux process model
+
+use crate::serial;
+use crate::mm;
+use crate::elf;
+
+pub const MAX_PROCESSES: usize = 8;
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum State {
+    Empty,
+    Ready,
+    Running,
+    Exited,
+}
+
+#[derive(Clone, Copy)]
+pub struct Process {
+    pub pid: usize,
+    pub state: State,
+    pub entry: usize,
+    pub stack: usize,
+    pub cr3: usize,
+    pub pages: [usize; 8],
+    pub page_count: usize,
+    pub name: [u8; 16],
+    pub name_len: usize,
+}
+
+impl Process {
+    pub const fn empty() -> Self {
+        Process {
+            pid: 0,
+            state: State::Empty,
+            entry: 0,
+            stack: 0,
+            cr3: 0,
+            pages: [0; 8],
+            page_count: 0,
+            name: [0; 16],
+            name_len: 0,
+        }
+    }
+}
+
+static mut TABLE: [Process; MAX_PROCESSES] = [Process::empty(); MAX_PROCESSES];
+static mut NEXT_PID: usize = 1;
+static mut CURRENT_PID: usize = 0;
+
+pub fn current_pid() -> usize {
+    unsafe { CURRENT_PID }
+}
+
+pub fn set_current(pid: usize) {
+    unsafe { CURRENT_PID = pid; }
+}
+
+pub fn free_count_before() -> usize {
+    mm::free_count()
+}
+
+/// Create process from already-loaded ELF image
+pub fn create_from_image(name: &str, img: &elf::LoadedImage) -> Option<usize> {
+    unsafe {
+        let mut slot = None;
+        let mut i = 0usize;
+        while i < MAX_PROCESSES {
+            if TABLE[i].state == State::Empty {
+                slot = Some(i);
+                break;
+            }
+            i += 1;
+        }
+        let s = slot?;
+        let pid = NEXT_PID;
+        NEXT_PID += 1;
+        let mut p = Process::empty();
+        p.pid = pid;
+        p.state = State::Ready;
+        p.entry = img.entry;
+        p.stack = img.stack_top;
+        p.cr3 = img.cr3;
+        p.pages = img.pages;
+        p.page_count = img.page_count;
+        let nb = name.as_bytes();
+        let nlen = if nb.len() > 16 { 16 } else { nb.len() };
+        let mut j = 0usize;
+        while j < nlen {
+            p.name[j] = nb[j];
+            j += 1;
+        }
+        p.name_len = nlen;
+        TABLE[s] = p;
+        serial::write_str("  [PROC] create PID=");
+        serial::write_usize(pid);
+        serial::write_str(" name=");
+        serial::write_str(name);
+        serial::write_str(" entry=");
+        serial::write_hex(img.entry);
+        serial::write_str(" user_CR3=");
+        serial::write_hex(img.cr3);
+        serial::write_str(" pages=");
+        serial::write_usize(img.page_count);
+        serial::write_str("\n");
+        Some(pid)
+    }
+}
+
+pub fn destroy(pid: usize) {
+    unsafe {
+        let mut i = 0usize;
+        while i < MAX_PROCESSES {
+            if TABLE[i].pid == pid && TABLE[i].state != State::Empty {
+                let n = TABLE[i].page_count;
+                let mut j = 0usize;
+                while j < n {
+                    let pg = TABLE[i].pages[j];
+                    if pg != 0 {
+                        mm::free_page(pg);
+                    }
+                    j += 1;
+                }
+                serial::write_str("  [PROC] PID=");
+                serial::write_usize(pid);
+                serial::write_str(" EXIT pages_freed=");
+                serial::write_usize(n);
+                serial::write_str("\n");
+                TABLE[i] = Process::empty();
+                if CURRENT_PID == pid {
+                    CURRENT_PID = 0;
+                }
+                return;
+            }
+            i += 1;
+        }
+    }
+}
+
+pub fn next_ready() -> Option<usize> {
+    unsafe {
+        let mut i = 0usize;
+        while i < MAX_PROCESSES {
+            if TABLE[i].state == State::Ready {
+                return Some(TABLE[i].pid);
+            }
+            i += 1;
+        }
+        None
+    }
+}
+
+pub fn get(pid: usize) -> Option<Process> {
+    unsafe {
+        let mut i = 0usize;
+        while i < MAX_PROCESSES {
+            if TABLE[i].pid == pid && TABLE[i].state != State::Empty {
+                return Some(TABLE[i]);
+            }
+            i += 1;
+        }
+        None
+    }
+}
+
+pub fn set_state(pid: usize, st: State) {
+    unsafe {
+        let mut i = 0usize;
+        while i < MAX_PROCESSES {
+            if TABLE[i].pid == pid {
+                TABLE[i].state = st;
+                return;
+            }
+            i += 1;
+        }
+    }
+}
+
+/// Legacy stubs for other modules
+pub fn count_by_personality(_id: crate::personality::PersonalityId) -> usize {
+    unsafe {
+        let mut c = 0usize;
+        let mut i = 0usize;
+        while i < MAX_PROCESSES {
+            if TABLE[i].state != State::Empty {
+                c += 1;
+            }
+            i += 1;
+        }
+        c
+    }
+}
+pub fn page_count(pid: usize) -> usize {
+    get(pid).map(|p| p.page_count).unwrap_or(0)
+}
+pub fn exit(pid: usize) {
+    destroy(pid);
+}
+pub fn create(
+    _p: crate::personality::PersonalityId,
+    entry: usize,
+    stack: usize,
+) -> Option<usize> {
+    // minimal stub
+    let img = elf::LoadedImage {
+        entry,
+        pages: [0; 8],
+        page_count: 0,
+        stack_top: stack,
+        cr3: 0,
+    };
+    create_from_image("stub", &img)
+}
