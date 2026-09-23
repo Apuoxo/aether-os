@@ -196,12 +196,32 @@ pub extern "C" fn kernel_main(mbi: usize) -> ! {
         }
     }
 
-    // ---- Permanent userspace: /bin/init then /bin/sh (via exit path) ----
+    // Prepare the existing Multiboot framebuffer before Ring3. This only
+    // discovers/maps the firmware-provided scanout surface; it does not
+    // program Intel display registers or touch the known-unsafe GGTT/GSM.
+    serial::write_str("\n======== USERSPACE DISPLAY PREP ========\n");
+    if fb::init_from_mbi(mbi) {
+        serial::write_str("[APP-DISPLAY] framebuffer ready before Ring3\n");
+        let _ = drivers::video::init();
+    } else {
+        serial::write_str("[APP-DISPLAY] framebuffer unavailable; apps remain headless\n");
+    }
+
+    // ---- Permanent userspace: /bin/init -> Calculator -> /bin/sh ----
     ring3_resume::arm(mbi);
     serial::write_str("\n======== USERSPACE INIT STAGE ========\n");
     serial::write_str("[INIT] install ELF /bin/init /bin/sh to AetherFS\n");
     let _ = fs::write_large("/bin/init", elf_blobs::INIT_ELF);
     let _ = fs::write_large("/bin/sh", elf_blobs::SH_ELF);
+    if elf_blobs::calculator::CALCULATOR_ELF.len() > 4 {
+        if fs::write_large("/bin/calculator", elf_blobs::calculator::CALCULATOR_ELF) {
+            serial::write_str("[INIT] Calculator ELF installed\n");
+        } else {
+            serial::write_str("[INIT] Calculator ELF install FAIL\n");
+        }
+    } else {
+        serial::write_str("[INIT] Calculator ELF not bundled\n");
+    }
     let mut elfbuf = [0u8; 8192];
     let n = match fs::read_large("/bin/init", &mut elfbuf) {
         Some(n) => n,
