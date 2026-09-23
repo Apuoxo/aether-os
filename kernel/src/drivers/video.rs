@@ -512,6 +512,59 @@ pub fn read_edid(port: u32, out: &mut [u8; 128]) -> bool {
     }
 }
 
+#[derive(Copy, Clone)]
+pub struct DisplayMode {
+    pub width: u16,
+    pub height: u16,
+    pub pixel_clock_khz: u32,
+    pub h_total: u16,
+    pub v_total: u16,
+}
+
+static mut PREFERRED_MODE: Option<DisplayMode> = None;
+
+fn edid_mode(block: &[u8; 128]) -> Option<DisplayMode> {
+    // EDID detailed timing descriptor #1 at byte 54.
+    let p = 54usize;
+    let clock = (block[p] as u32) | ((block[p + 1] as u32) << 8);
+    if clock == 0 { return None; }
+    let h_active = (block[p + 2] as u16) | (((block[p + 4] as u16) & 0xF0) << 4);
+    let h_blank = (block[p + 3] as u16) | (((block[p + 4] as u16) & 0x0F) << 8);
+    let v_active = (block[p + 5] as u16) | (((block[p + 7] as u16) & 0xF0) << 4);
+    let v_blank = (block[p + 6] as u16) | (((block[p + 7] as u16) & 0x0F) << 8);
+    if h_active < 320 || v_active < 200 || h_active > 4096 || v_active > 2160 {
+        return None;
+    }
+    Some(DisplayMode {
+        width: h_active,
+        height: v_active,
+        pixel_clock_khz: clock * 10,
+        h_total: h_active.saturating_add(h_blank),
+        v_total: v_active.saturating_add(v_blank),
+    })
+}
+
+/// Parse a validated EDID block supplied by the caller. This does not touch hardware.
+pub fn parse_edid(block: &[u8; 128]) -> bool {
+    if !(block[0] == 0x00 && block[1] == 0xFF && block[2] == 0xFF &&
+         block[3] == 0xFF && block[4] == 0xFF && block[5] == 0xFF &&
+         block[6] == 0xFF && block[7] == 0x00) {
+        return false;
+    }
+    let mut sum = 0u8;
+    let mut i = 0usize;
+    while i < 128 { sum = sum.wrapping_add(block[i]); i += 1; }
+    if sum != 0 { return false; }
+    unsafe {
+        PREFERRED_MODE = edid_mode(block);
+        PREFERRED_MODE.is_some()
+    }
+}
+
+pub fn preferred_mode() -> Option<DisplayMode> {
+    unsafe { PREFERRED_MODE }
+}
+
 /// Try the Sandy Bridge DDC pins until one returns a valid EDID block.
 pub fn probe_edid(out: &mut [u8; 128]) -> u32 {
     let ports = [
