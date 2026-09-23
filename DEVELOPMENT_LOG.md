@@ -68,3 +68,11 @@ Every significant change should be followed by:
 - Added separate `Apuoxo/aether-apps` Calculator ELF build pipeline and Aether OS CI packaging path.
 - Calculator is launched as an independent ELF process after `/bin/init`; shell remains the fallback/next stage.
 - Runtime status: NOT YET VERIFIED on QEMU or AH532. CI success alone is insufficient.
+
+
+## QEMU Calculator evidence (2026-09-23)
+- Aether Apps Calculator CI builds a freestanding x86_64 ELF successfully and publishes `apps/calculator/dist/calculator.elf`.
+- Aether OS CI packages that ELF into the kernel build without writing the Calculator image to AetherFS/host storage.
+- QEMU smoke test passed: Calculator ELF loaded from the bundled package, PID=2 entered with USER_CR3 different from KERNEL_CR3, and syscalls 12 (rectangle), 11 (text), 10 (keyboard poll), and 13 (yield) were observed from CPL=3.
+- No PANIC or user page-fault kill was observed in the smoke test.
+- This is QEMU evidence only; AH532 hardware validation remains required, especially PS/2 keyboard interaction and the already-known Gen6 display path.
