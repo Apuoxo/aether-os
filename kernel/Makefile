@@ -37,7 +37,7 @@ iso: $(KERNEL_BIN)
 	mkdir -p $(ISO_DIR)/boot/grub
 	cp $(KERNEL_BIN) $(ISO_DIR)/boot/aether.bin
 	printf 'set timeout=0\nset default=0\nmenuentry "Aether" {\n  multiboot2 /boot/aether.bin\n  boot\n}\n' > $(ISO_DIR)/boot/grub/grub.cfg
-	grub-mkrescue -o $(ISO) $(ISO_DIR) 2>/dev/null
+	grub-mkrescue -o $(ISO) $(ISO_DIR)
 	@ls -lh $(ISO)
 
 run: iso
