@@ -2,101 +2,75 @@
 
 Last reviewed: 2026-09-23
 
-## Purpose
+## 1. Verified target
 
-This document separates the identity of the motherboard from the identity of the PDF currently stored in the repository. This prevents a misleading filename from becoming a hardware fact.
+The correct schematic family for the target machine is independently identified as:
 
-## 1. Board identity
+- Fujitsu LIFEBOOK AH532 / A532
+- Quanta FH6 / FH6C
+- motherboard marking DA0FH6MB6E0
+- Rev E
+- schematic filename: `Fujitsu_FH6C_FH6_hm70_r0c_mb_0522.pdf`
 
-The motherboard identifier **DA0FH6MB6E0 Rev E** is independently associated with the Fujitsu LIFEBOOK AH532 / Quanta FH6 platform by multiple repair-documentation sources. These sources also associate the FH6/FH6C schematic family with AH532/A532. 
+Independent repair-documentation sources associate this exact schematic family with AH532/FH6 and DA0FH6MB6E0. The sources also report a 45-page schematic variant.
 
-- RepairLap explicitly labels DA0FH6MB6E0 Rev E as Fujitsu LIFEBOOK AH532 / Quanta FH6.
-- RealSchematic associates AH532/A532 with Quanta FH6/FH6C and DA0FH6MB6E0.
-- Vinafix identifies the FH6/FH6C schematic family and DA0FH6MB6E0 Rev E with Fujitsu AH532.
+## 2. The PDF currently in our repository
 
-## 2. What is actually inside our archive
+The PDF extracted from our uploaded RAR is **not the verified FH6/HM70 document**.
 
-The RAR was extracted by GitHub Actions.
+Repository file:
 
-Current extracted PDF:
+`docs/AH532-SERVICE-MANUAL/DA0FH6MB6E0 rev E PDF .pdf`
 
-- filename: `DA0FH6MB6E0 rev E PDF .pdf`
-- size: 663333 bytes
-- pages: 34
-- searchable text: extracted successfully
+Observed properties:
+
+- 34 pages
+- 663333 bytes
 - metadata title: `FH2_MB_A_1221_1(FINAL)`
-- extracted text contains platform terminology including **Arrandale**, **HM55**, and **IBEX PEAK-M**.
+- extracted text contains Arrandale / HM55 / IBEX PEAK-M terminology
 
-Those internal identifiers conflict with the AH532/FH6 target. Consequently the PDF is currently classified:
+This is inconsistent with the independently identified AH532/FH6 target. It remains classified:
 
-**REFERENCE-MISMATCH — DO NOT USE AS AH532 SCHEMATIC SOURCE OF TRUTH.**
+**REFERENCE-MISMATCH**
 
-## 3. Why the distinction matters
+The existing technical index is therefore only an index of that mismatched PDF and must not be treated as an AH532 signal database.
 
-The extracted text contains apparently real electrical-design information such as LVDS, DDI, FDI, SATA, USB, PCH and power-rail names. Those details may be useful as generic historical reference, but they cannot safely be mapped onto the user's AH532.
+## 3. Important correction
 
-In particular, do not derive from this PDF:
+The filename `DA0FH6MB6E0 rev E PDF` was not enough to establish that the PDF content itself was the AH532 schematic.
 
-- Sandy Bridge HD Graphics 3000 register assumptions;
-- HM76/Panther Point signal routing;
-- AH532 LVDS/eDP/HDMI wiring;
-- AH532 GMBUS/EDID routing;
-- GPIO ownership;
-- USB controller wiring;
-- exact power/reset sequencing;
-- exact component designators on the AH532 board.
+The stronger identification is:
 
-## 4. Repository extraction products
+**AH532 target → Quanta FH6/FH6C → DA0FH6MB6E0 Rev E → FH6C/FH6 HM70 r0c_mb_0522 schematic family.**
 
-The repository retains:
+The repository's current 34-page PDF does not match that chain internally.
 
-- original RAR;
-- extracted PDF;
-- `manual-text.txt`;
-- `first-pages.txt`;
-- `pdfinfo.txt`;
-- `manual-identity-report.md`;
-- `schematic-pages.txt`;
-- `schematic-technical-index.md`.
+## 4. Next required artifact
 
-The technical index is explicitly a navigation aid for the extracted PDF, not proof of AH532 relevance.
+The next documentation artifact should be the actual **FH6/FH6C HM70 r0c_mb_0522** schematic, preferably the 45-page variant, with internal project/board identifiers verified before ingestion.
 
-## 5. Current Aether evidence hierarchy
+Verification checklist:
 
-For AH532 hardware development use this order:
+1. project name FH6/FH6C;
+2. DA0FH6MB6E0 / related FH6 board identifier;
+3. HM70 platform terminology;
+4. internal schematic page count/structure;
+5. display/GPU topology;
+6. USB topology;
+7. SATA/AHCI;
+8. LAN/WLAN;
+9. audio;
+10. power/reset/EC/GPIO.
 
-1. **AETHER:** measurements and runtime diagnostics from the actual AH532.
-2. **Verified AH532/FH6 documentation:** documents whose internal identifiers match the target board.
-3. **Intel documentation:** GPU/PCH specifications and register documentation.
-4. **Reference material:** generic or mismatched schematics, clearly marked as such.
+Only after these checks pass should signal-level data be promoted into the AH532 hardware profile.
 
-No reference-mismatch document may override a real-AH532 observation.
+## 5. Driver-development rule
 
-## 6. Next required document
+Until the matching schematic is obtained:
 
-The next useful artifact is the **actual FH6/FH6C DA0FH6MB6E0 Rev E schematic** whose internal project/board identifiers match the AH532 target.
+- actual AH532 runtime observations remain authoritative;
+- Intel Sandy Bridge/HD Graphics 3000 documentation remains authoritative for GPU architecture;
+- the current mismatched PDF remains reference-only;
+- no AH532 GMBUS/EDID, GPIO, power-sequencing or display-routing claim may be based solely on the 34-page PDF.
 
-Once obtained, it should be compared against:
-
-- board identifier;
-- project name;
-- chipset/PCH;
-- CPU family;
-- GPU/display topology;
-- USB topology;
-- LAN/WLAN controllers;
-- audio codec;
-- page count and schematic structure.
-
-Only after that verification should its signal-level information be promoted into the AH532 hardware profile.
-
-## 7. Driver impact
-
-For the current graphics driver, this audit means:
-
-- the real-AH532 PCI result `8086:0116` remains authoritative;
-- the working KMS/MMIO/VBlank observations remain authoritative;
-- the unsafe GGTT/GSM result remains authoritative;
-- the extracted mismatched PDF must not be used to justify a new GMBUS/EDID or display-memory access path.
-
-This deliberately prevents a documentation error from turning into a hardware-driver regression.
+This protects the working video driver from a schematic provenance error.
