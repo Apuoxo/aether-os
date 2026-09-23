@@ -11,9 +11,7 @@ $(BUILD_DIR):
 $(BUILD_DIR)/boot.o: src/arch/x86_64/boot.s | $(BUILD_DIR)
 	nasm -f elf64 $< -o $@
 
-RUST_SRCS = src/main.rs src/serial.rs src/mm/mod.rs src/capability/mod.rs \
-            src/personality/mod.rs src/process.rs src/sched.rs \
-            src/graphics.rs src/ui.rs src/personalities/linux.rs src/personalities/windows.rs src/personalities/android.rs
+RUST_SRCS := $(shell find src -type f -name '*.rs')
 
 $(BUILD_DIR)/kernel.o: $(RUST_SRCS) | $(BUILD_DIR)
 	rustc --edition 2021 \
