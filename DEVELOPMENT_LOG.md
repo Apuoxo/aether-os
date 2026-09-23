@@ -90,3 +90,12 @@ Every significant change should be followed by:
 - QEMU smoke test passed: Calculator ELF loaded from the bundled package, PID=2 entered with USER_CR3 different from KERNEL_CR3, and syscalls 12 (rectangle), 11 (text), 10 (keyboard poll), and 13 (yield) were observed from CPL=3.
 - No PANIC or user page-fault kill was observed in the smoke test.
 - This is QEMU evidence only; AH532 hardware validation remains required, especially PS/2 keyboard interaction and the already-known Gen6 display path.
+
+
+### 2026-09-24 — AH532 boot failure: GRUB video mode
+- Real-hardware validation of build #139 on Fujitsu AH532 failed before Aether OS kernel startup with the reported message: "Error: no suitable video mode found".
+- This is currently classified as a bootloader/GRUB video-mode failure, not evidence of a Ring3 or userspace failure.
+- The published ISO was built successfully and its QEMU native-app smoke test passed; therefore the AH532 failure is a separate real-hardware boot-path issue.
+- Source inspection shows kernel/Makefile generates a minimal GRUB config containing only the Multiboot2 entry and no explicit gfxmode/video mode.
+- No code or graphics-driver changes were made in response to this report yet.
+- Next controlled step: inspect the GRUB/Multiboot boot path and make the smallest change that allows AH532 to enter the kernel without assuming a firmware-supported graphics mode; then rebuild and retest QEMU before another AH532 run.
