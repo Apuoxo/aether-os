@@ -27,8 +27,8 @@ These two items remain unchecked below until runtime evidence exists.
 
 - [ ] Syscall ABI mismatch: source mismatch repaired; regression evidence pending.
 - [ ] 64-bit TSS descriptor: descriptor repaired; runtime evidence pending.
-- [ ] Process to Personality ownership: Process currently has no real Personality association; count_by_personality() does not actually filter ownership.
-- [ ] Capability enforcement: capability structures exist, but resource/syscall access is not actually capability-gated.
+- [x] Process to Personality ownership: Process now stores PersonalityId, explicit creation can bind a personality, lifecycle attach/detach hooks are called, and count_by_personality() filters by owner.
+- [~] Capability enforcement: per-process CapTable, rights primitives, derive/revoke/check, and syscall checks are present. Runtime allow/deny proof and a global object-authority model remain pending.
 
 ## P1 — kernel correctness / safety
 
@@ -55,13 +55,13 @@ These two items remain unchecked below until runtime evidence exists.
 ## Documentation contradictions already identified
 
 1. Architecture describes a capability/polymorphic microvisor, while current code is still a monolithic native kernel with integrated drivers/desktop and stub personalities.
-2. Everything through capabilities is not true of current syscalls.
-3. Personality ownership is documented architecturally but absent from Process.
+2. Capability checks now exist on exposed syscall paths, but this is not yet a complete object-authority system.
+3. Personality ownership is now represented in Process and lifecycle hooks, but full unloadable module semantics remain absent.
 4. Personality unload is currently a state toggle, not actual module code/data unloading.
 5. Disk-write code conflicts with the current hardware-validation safety policy.
 6. README status is stale relative to docs/STATUS.md.
 7. Current PS/2 source may retain the old fixed 800x600 clamp despite dynamic geometry work elsewhere.
-8. QEMU CPL3/syscall smoke evidence must not be interpreted as proof of correct syscall argument semantics.
+8. QEMU CPL3/syscall smoke evidence must not be interpreted as proof of correct syscall argument semantics or capability denial; the packaged calculator ABI has been corrected, but runtime proof is still pending.
 
 ## Development rule
 
