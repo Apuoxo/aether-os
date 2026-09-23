@@ -24,6 +24,9 @@ pub fn width() -> usize {
 pub fn height() -> usize {
     unsafe { FB_H }
 }
+pub fn address() -> usize { unsafe { FB_ADDR } }
+pub fn pitch() -> usize { unsafe { FB_PITCH } }
+pub fn bpp() -> u8 { unsafe { FB_BPP } }
 
 fn vga_fb_mark(col: usize, a: u8, b: u8) {
     // write two chars at row 1

@@ -12,6 +12,7 @@
 //! driver enough hardware knowledge for the next active display stage.
 
 use crate::graphics;
+use crate::fb;
 use crate::mm::paging;
 use crate::serial;
 
@@ -71,6 +72,9 @@ static mut GPU: Gpu = Gpu {
 
 static mut GPU_READY: bool = false;
 static mut TARGET_FOUND: bool = false;
+static mut SCANOUT_READY: bool = false;
+static mut SCANOUT_PIPE: u8 = 0;
+static mut SCANOUT_SURFACE: u64 = 0;
 
 unsafe fn pci_addr(bus: u8, dev: u8, func: u8, off: u8) -> u32 {
     0x8000_0000 | ((bus as u32) << 16) | ((dev as u32) << 11)
@@ -167,6 +171,56 @@ unsafe fn map_mmio(phys: u64, len: usize) -> bool {
 
 unsafe fn mmio_read32(off: usize) -> u32 {
     core::ptr::read_volatile((GPU.mmio + off) as *const u32)
+}
+
+fn detect_existing_scanout() {
+    unsafe {
+        SCANOUT_READY = false;
+        if !GPU_READY || !fb::is_ready() { return; }
+        let w = fb::width() as u32;
+        let h = fb::height() as u32;
+        let addr = fb::address() as u64;
+        let pitch = fb::pitch() as u32;
+        let bpp = fb::bpp();
+        let pa = mmio_read32(PIPEACONF);
+        let pb = mmio_read32(PIPEBCONF);
+        let mut pipe = 0u8;
+        let mut surf = mmio_read32(DSPASURF) as u64;
+        let mut stride = mmio_read32(DSPASTRIDE);
+        if pa & (1 << 31) != 0 {
+            pipe = 0;
+        } else if pb & (1 << 31) != 0 {
+            pipe = 1;
+            surf = mmio_read32(DSPBSURF) as u64;
+            stride = mmio_read32(DSPBSTRIDE);
+        } else {
+            serial::write_str("[VIDEO/SCANOUT] no active pipe
+");
+            return;
+        }
+        let plane = if pipe == 0 { mmio_read32(DSPACNTR) } else { mmio_read32(DSPBCNTR) };
+        if plane & (1 << 31) == 0 {
+            serial::write_str("[VIDEO/SCANOUT] active pipe but primary plane disabled
+");
+            return;
+        }
+        let expected_stride = if bpp == 32 { w.saturating_mul(4) } else { w.saturating_mul(3) };
+        if stride != pitch || pitch < expected_stride || addr == 0 || surf != addr {
+            serial::write_str("[VIDEO/SCANOUT] existing surface does not match Multiboot FB
+");
+            return;
+        }
+        let _ = h;
+        SCANOUT_PIPE = pipe;
+        SCANOUT_SURFACE = surf;
+        SCANOUT_READY = true;
+        serial::write_str("[VIDEO/SCANOUT] existing hardware scanout attached read-only pipe=");
+        serial::write_usize(pipe as usize);
+        serial::write_str(" surface=");
+        log_hex64(surf);
+        serial::write_str("
+");
+    }
 }
 
 fn log_reg(name: &str, off: usize) {
@@ -298,6 +352,7 @@ fn discover() -> bool {
                             GPU_READY = true;
                             serial::write_str("[VIDEO/MMIO] mapping PASS (1 MiB guarded window)\n");
                             snapshot_display();
+                            detect_existing_scanout();
                         } else {
                             serial::write_str("[VIDEO/MMIO] mapping FAIL — no register access\n");
                         }
@@ -331,6 +386,9 @@ pub fn height() -> u32 { graphics::height() as u32 }
 pub fn hardware_ready() -> bool {
     unsafe { GPU_READY }
 }
+pub fn scanout_ready() -> bool { unsafe { SCANOUT_READY } }
+pub fn scanout_pipe() -> u8 { unsafe { SCANOUT_PIPE } }
+pub fn scanout_surface() -> u64 { unsafe { SCANOUT_SURFACE } }
 
 /// Explicitly requested hardware snapshot; no PCI/GPU writes are performed.
 pub fn snapshot() {
