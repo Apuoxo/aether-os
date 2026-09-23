@@ -257,7 +257,7 @@ fn run_cmd(line: &[u8], len: usize) {
         i += 1;
     }
     if eq_cmd(&cmd, ci, b"help") {
-        term_write_str("help ls cat touch rm mem uname clear 1 beep\n");
+        term_write_str("help ls cat touch rm mem uname clear dsk 1 beep\n");
         term_write_str("1 = full PCI+USB hardware diag\n");
     } else if eq_cmd(&cmd, ci, b"1") || eq_cmd(&cmd, ci, b"diag") || eq_cmd(&cmd, ci, b"storage") {
         term_write_str("--- STORAGE HW DIAG (on-screen) ---\n");
@@ -334,6 +334,104 @@ fn run_cmd(line: &[u8], len: usize) {
         term_write_str("DIAG done. Check serial:\n");
         term_write_str(" FULL PCI / USB-HC / PORT\n");
         term_write_str(" PORT-CHANGE lines = plug\n");
+        unsafe { DIRTY_FULL = true; }
+    } else if eq_cmd(&cmd, ci, b"dsk") {
+        term_write_str("======== DSK: real storage probe (READ-ONLY) ========\n");
+        let snap = crate::storage_hw_diag::snapshot();
+        term_write_str("PCI mass-storage controllers: ");
+        term_write_hex(snap.mass_n);
+        term_write_str("  AHCI=");
+        term_write_hex(snap.ahci_n);
+        term_write_str(" IDE=");
+        term_write_hex(snap.ide_n);
+        term_write_str(" NVMe=");
+        term_write_hex(snap.nvme_n);
+        term_write_str("\n");
+
+        let nd = crate::drivers::ahci::disk_count();
+        term_write_str("AHCI runtime disks: ");
+        term_write_hex(nd);
+        term_write_str("\n");
+        let mut di = 0usize;
+        while di < nd {
+            let mut model = [0u8; 40];
+            let ml = crate::drivers::ahci::disk_model(di, &mut model);
+            term_write_str("  disk");
+            term_write_hex(di);
+            term_write_str(" model=");
+            let mut j = 0usize;
+            while j < ml {
+                term_putc(model[j]);
+                j += 1;
+            }
+            term_write_str(" sectors=");
+            term_write_hex(crate::drivers::ahci::disk_sectors(di) as usize);
+            term_write_str("\n");
+
+            let mut sec0 = [0u8; 512];
+            let ok = crate::drivers::ahci::read_sectors(di, 0, 1, &mut sec0);
+            term_write_str("    LBA0 READ=");
+            term_write_str(if ok { "OK" } else { "FAIL" });
+            if ok {
+                term_write_str(" sig=");
+                if sec0[510] == 0x55 && sec0[511] == 0xAA {
+                    term_write_str("MBR");
+                } else {
+                    term_write_str("no-55AA");
+                }
+            }
+            term_write_str("\n");
+            di += 1;
+        }
+
+        let np = crate::part::count();
+        term_write_str("Partitions parsed from READ data: ");
+        term_write_hex(np);
+        term_write_str("\n");
+        let mut pi = 0usize;
+        while pi < np {
+            if let Some(p) = crate::part::get(pi) {
+                term_write_str("  #");
+                term_write_hex(pi);
+                term_write_str(" disk=");
+                term_write_hex(p.disk as usize);
+                term_write_str(" idx=");
+                term_write_hex(p.index as usize);
+                term_write_str(" type=");
+                term_write_str(crate::part::type_name(p.ptype));
+                term_write_str(" LBA=");
+                term_write_hex(p.lba_start as usize);
+                term_write_str(" sectors=");
+                term_write_hex(p.sectors as usize);
+
+                let mut sec = [0u8; 512];
+                let ok = crate::block::read(p.disk, p.lba_start, 1, &mut sec);
+                term_write_str(" read=");
+                term_write_str(if ok { "OK" } else { "FAIL" });
+                if ok {
+                    term_write_str(" fs=");
+                    if sec[3] == b'N' && sec[4] == b'T' && sec[5] == b'F' && sec[6] == b'S' {
+                        term_write_str("NTFS");
+                    } else if sec[54] == b'F' && sec[55] == b'A' && sec[56] == b'T' {
+                        term_write_str("FAT");
+                    } else {
+                        term_write_str("unknown");
+                    }
+                }
+                term_write_str("\n");
+            }
+            pi += 1;
+        }
+
+        term_write_str("NTFS mounted: ");
+        term_write_str(if crate::fs_ntfs::is_mounted() { "YES" } else { "NO" });
+        term_write_str("\n");
+        if crate::fs_ntfs::is_mounted() {
+            term_write_str("NTFS root entries: ");
+            term_write_hex(crate::fs_ntfs::entry_count());
+            term_write_str("\n");
+        }
+        term_write_str("======== END DSK ========\n");
         unsafe { DIRTY_FULL = true; }
     } else if eq_cmd(&cmd, ci, b"ls") {
         if !fs::is_mounted() {
