@@ -26,3 +26,16 @@ The ABI must be implemented and tested before aether-apps/apps/calculator/src/ma
 ## Calculator target
 
 Calculator remains split into a pure no_std arithmetic engine, a thin Aether ABI adapter, and a GUI/input layer. This keeps arithmetic testable and prevents the app from depending on kernel internals.
+
+
+## Implemented syscall surface (experimental)
+The kernel now exposes the first native-app calls on `int 0x80`:
+- `10` — poll keyboard event
+- `11` — draw NUL-terminated text
+- `12` — fill rectangle
+- `13` — yield
+- `60` — process exit
+
+The display calls remain kernel-mediated: applications do not receive direct framebuffer/MMIO access. The framebuffer is prepared before Ring3 using the existing Multiboot surface path; the Intel display driver remains read-only and no GGTT/GSM mapping is introduced.
+
+Calculator is packaged as a separate native ELF from Apuoxo/aether-apps and is launched as an independent process after `/bin/init`.
