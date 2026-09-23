@@ -278,6 +278,13 @@ fn launch_cap_test_process(name: &str, revoke_write: bool) -> bool {
     false
 }
 
+pub fn start_capability_ring3_test() -> bool {
+    unsafe {
+        CAP_TEST_STAGE = 1;
+    }
+    launch_cap_test_process("init", false)
+}
+
 /// Exit path from Ring 3: destroy process, then resume kernel boot/desktop
 #[no_mangle]
 pub extern "C" fn process_exit_dispatch() {
