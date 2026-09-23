@@ -1,8 +1,21 @@
-//! Capability system (minimal)
+//! Capability handles and rights primitives.
+//!
+//! This layer deliberately contains no global object table yet.  It provides
+//! the kernel-side handle/rights invariants that syscall code can use without
+//! treating a numeric capability as proof of authority.
+
+pub const CAP_READ: u32 = 1 << 0;
+pub const CAP_WRITE: u32 = 1 << 1;
+pub const CAP_EXEC: u32 = 1 << 2;
+pub const CAP_MAP: u32 = 1 << 3;
+pub const CAP_GRANT: u32 = 1 << 4;
+pub const CAP_ADMIN: u32 = 1 << 5;
 
 #[derive(Clone, Copy)]
 pub struct Cap {
+    /// Stable object/handle identifier. Zero is always the null capability.
     pub id: u64,
+    /// Rights are a subset of the rights originally granted to this handle.
     pub rights: u32,
 }
 
@@ -11,8 +24,25 @@ impl Cap {
         Cap { id: 0, rights: 0 }
     }
 
+    pub const fn new(id: u64, rights: u32) -> Self {
+        Cap { id, rights }
+    }
+
     pub fn is_valid(&self) -> bool {
         self.id != 0
+    }
+
+    pub fn permits(&self, required: u32) -> bool {
+        self.is_valid() && (self.rights & required) == required
+    }
+
+    /// Derive a weaker handle; rights can never be increased by derivation.
+    pub fn derive(&self, requested: u32) -> Option<Cap> {
+        if !self.is_valid() || (requested & !self.rights) != 0 {
+            None
+        } else {
+            Some(Cap::new(self.id, requested))
+        }
     }
 }
 
@@ -28,5 +58,40 @@ impl CapTable {
             entries: [Cap::null(); 16],
             used: 0,
         }
+    }
+
+    /// Install a capability and return its local slot/handle.
+    pub fn insert(&mut self, cap: Cap) -> Option<usize> {
+        if !cap.is_valid() { return None; }
+        let mut i = 0usize;
+        while i < self.entries.len() {
+            if !self.entries[i].is_valid() {
+                self.entries[i] = cap;
+                self.used += 1;
+                return Some(i);
+            }
+            i += 1;
+        }
+        None
+    }
+
+    pub fn get(&self, slot: usize) -> Option<Cap> {
+        if slot >= self.entries.len() { return None; }
+        let cap = self.entries[slot];
+        if cap.is_valid() { Some(cap) } else { None }
+    }
+
+    pub fn check(&self, slot: usize, required: u32) -> bool {
+        self.get(slot).map(|c| c.permits(required)).unwrap_or(false)
+    }
+
+    /// Revoke the local handle. Future lookups of this slot fail.
+    pub fn revoke(&mut self, slot: usize) -> bool {
+        if slot >= self.entries.len() || !self.entries[slot].is_valid() {
+            return false;
+        }
+        self.entries[slot] = Cap::null();
+        if self.used > 0 { self.used -= 1; }
+        true
     }
 }
