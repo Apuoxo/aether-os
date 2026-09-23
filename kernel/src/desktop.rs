@@ -914,13 +914,13 @@ fn handle_mouse_buttons(buttons: u8) {
                 } else if WINS[idx].kind == WinKind::MyComputer
                     && my >= WINS[idx].y + TITLE_H
                 {
-                    if my >= WINS[idx].y + WINS[idx].h - 40
-                        && mx >= WINS[idx].x + WINS[idx].w - 100
-                    {
-                        open_win(8); // System Properties
-                    } else if my >= WINS[idx].y + 108 && my < WINS[idx].y + 160 {
-                        open_win(5); // open Files for Local Disk
-                    }
+                    // My Computer and the Files icon must share one Explorer
+                    // implementation. This removes the legacy click path.
+                    let right = (buttons & 2) != 0;
+                    let _ = crate::files_mgr::on_click(
+                        WINS[idx].x, WINS[idx].y, WINS[idx].w, WINS[idx].h,
+                        TITLE_H, mx, my, right,
+                    );
                     DIRTY_FULL = true;
                 } else if WINS[idx].kind == WinKind::Files
                     && my >= WINS[idx].y + TITLE_H
@@ -1204,114 +1204,10 @@ fn draw_window(idx: usize) {
                 graphics::draw_str(wx + 16, wy + 92, "Source: CMOS 0x70", COL_TEXT_DIM);
             }
             WinKind::MyComputer => {
-                let client_y = wy + TITLE_H as usize;
-                graphics::fill_rect(wx + 3, client_y, ww - 6, wh - TITLE_H as usize - 3, COL_CLIENT);
-                graphics::draw_str(wx + 12, client_y + 6, "Computer - storage (READ-ONLY)", COL_TEXT);
-                let mut row = client_y + 24;
-                let nd = crate::block::count();
-                if nd == 0 {
-                    graphics::draw_str(wx + 12, row, "No AHCI/ATA disk ready", 0x00800000);
-                    graphics::draw_str(wx + 12, row + 16, "Run Terminal: 1 for HW diag", COL_TEXT_DIM);
-                    row += 40;
-                } else {
-                    let mut di = 0usize;
-                    while di < nd {
-                        if let Some(d) = crate::block::get(di) {
-                            crate::gui::icon::blit(crate::gui::icon::IconId::MyComputer, wx + 12, row, false);
-                            // name
-                            let mut k = 0usize;
-                            while k < d.name_len && k < 28 {
-                                graphics::draw_char(wx + 52 + k * 8, row + 4, d.name[k], COL_TEXT);
-                                k += 1;
-                            }
-                            let mb = (d.sectors as u64 * 512) / (1024 * 1024);
-                            graphics::draw_str(wx + 52, row + 20, if d.is_ahci { "AHCI" } else { "ATA" }, COL_TEXT_DIM);
-                            // size MB
-                            let mut v = mb as usize;
-                            let mut digits = [0u8; 12];
-                            let mut c = 0usize;
-                            if v == 0 { digits[0] = b'0'; c = 1; }
-                            else {
-                                while v > 0 && c < 12 {
-                                    digits[c] = b'0' + (v % 10) as u8;
-                                    v /= 10;
-                                    c += 1;
-                                }
-                            }
-                            let mut x = wx + 100;
-                            graphics::draw_str(x, row + 20, "MB:", COL_TEXT_DIM);
-                            x += 32;
-                            while c > 0 {
-                                c -= 1;
-                                graphics::draw_char(x, row + 20, digits[c], COL_TEXT);
-                                x += 8;
-                            }
-                            row += 44;
-                        }
-                        di += 1;
-                    }
-                }
-                // partitions
-                let np = crate::part::count();
-                graphics::draw_str(wx + 12, row, "Partitions:", COL_TEXT);
-                row += 16;
-                if np == 0 {
-                    graphics::draw_str(wx + 20, row, "(none yet)", COL_TEXT_DIM);
-                    row += 16;
-                } else {
-                    let mut pi = 0usize;
-                    while pi < np && row + 20 < wy + wh - 40 {
-                        if let Some(p) = crate::part::get(pi) {
-                            graphics::draw_str(wx + 20, row, crate::part::type_name(p.ptype), COL_TEXT);
-                            let mb = (p.sectors as u64 * 512) / (1024 * 1024);
-                            let mut v = mb as usize;
-                            let mut d = [0u8; 8];
-                            let mut c = 0usize;
-                            if v == 0 { d[0]=b'0'; c=1; }
-                            else { while v>0 && c<8 { d[c]=b'0'+(v%10) as u8; v/=10; c+=1; } }
-                            let mut x = wx + 140;
-                            while c > 0 { c-=1; graphics::draw_char(x, row, d[c], COL_TEXT_DIM); x+=8; }
-                            graphics::draw_str(x + 4, row, "MB", COL_TEXT_DIM);
-                            row += 16;
-                        }
-                        pi += 1;
-                    }
-                }
-                if crate::fs_ntfs::is_mounted() {
-                    graphics::draw_str(wx + 12, row + 4, "NTFS root (READ-ONLY):", COL_TEXT);
-                    row += 18;
-                    let n = crate::fs_ntfs::entry_count();
-                    let mut i = 0usize;
-                    while i < n && row + 14 < wy + wh - 40 {
-                        if let Some(e) = crate::fs_ntfs::entry(i) {
-                            if e.is_dir {
-                                graphics::draw_str(wx + 16, row, "[DIR]", 0x00000080);
-                            } else {
-                                graphics::draw_str(wx + 16, row, "[FILE]", COL_TEXT_DIM);
-                            }
-                            let mut k = 0usize;
-                            while k < e.name_len && k < 20 {
-                                graphics::draw_char(wx + 60 + k * 8, row, e.name[k], COL_TEXT);
-                                k += 1;
-                            }
-                            row += 14;
-                        }
-                        i += 1;
-                    }
-                    if n == 0 {
-                        graphics::draw_str(wx + 16, row, "(empty or parse limit)", COL_TEXT_DIM);
-                        row += 14;
-                    }
-                } else if crate::fs_fat::is_mounted() {
-                    graphics::draw_str(wx + 12, row + 4, "FAT volume RO", COL_TEXT);
-                    row += 16;
-                } else {
-                    graphics::draw_str(wx + 12, row + 4, "NTFS/FAT: not listed yet", COL_TEXT_DIM);
-                    row += 14;
-                }
-
-                // AetherFS always
-                graphics::draw_str(wx + 12, wy + wh - 36, "A: AetherFS RAM (system)", COL_TEXT_DIM);
+                // My Computer is the Explorer entry point. Do not render the
+                // legacy storage window here: route this window through the
+                // single native Windows-7-style Explorer implementation.
+                crate::files_mgr::draw(wx, wy, ww, wh, TITLE_H as usize);
             }
             WinKind::SysProps => {
                                 graphics::fill_rect(wx + 3, wy + TITLE_H as usize, ww - 6, wh - TITLE_H as usize - 3, COL_CLIENT);
