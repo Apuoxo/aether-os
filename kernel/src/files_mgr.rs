@@ -26,6 +26,8 @@ pub const VIEW_ROOT:u8=1;
 pub const VIEW_PROPS:u8=2;
 pub const VIEW_TEXT:u8=3;
 pub const VIEW_DISK:u8=4;
+pub const VIEW_FAT:u8=5;
+pub const VIEW_NTFS:u8=6;
 
 static mut VIEW:u8=VIEW_COMPUTER;
 static mut SEL:i32=-1;
@@ -154,6 +156,40 @@ fn draw_disk(wx:usize,y:usize,ww:usize,h:usize){
         }
     }
 }
+fn draw_fat(wx:usize,y:usize,ww:usize,h:usize){
+    graphics::fill_rect(wx,y,ww,h,WHITE);
+    graphics::draw_str(wx+8,y+8,"FAT volume — read-only",TEXT);
+    let n=fs_fat::entry_count();
+    if n==0{graphics::draw_str(wx+10,y+34,"This volume is empty or unreadable.",DIM);return;}
+    let mut i=0usize;
+    while i<n&&i<32{
+        if let Some(e)=fs_fat::entry(i){
+            let ry=y+28+i*20;
+            unsafe{if SEL==i as i32{graphics::fill_rect(wx,ry,ww,20,SELECT);}}
+            if e.is_dir{icon::blit(icon::IconId::Folder,wx+4,ry-6,false);}else{icon::blit(icon::IconId::File,wx+4,ry-6,false);}
+            let mut k=0;while k<e.name_len&&k<13{graphics::draw_char(wx+38+k*8,ry+6,e.name[k],TEXT);k+=1;}
+            if !e.is_dir{draw_num(wx+210,ry+6,e.size);}
+        }
+        i+=1;
+    }
+}
+fn draw_ntfs(wx:usize,y:usize,ww:usize,h:usize){
+    graphics::fill_rect(wx,y,ww,h,WHITE);
+    graphics::draw_str(wx+8,y+8,"NTFS volume — read-only",TEXT);
+    let n=fs_ntfs::entry_count();
+    if n==0{graphics::draw_str(wx+10,y+34,"Root directory is empty or unavailable.",DIM);return;}
+    let mut i=0usize;
+    while i<n&&i<32{
+        if let Some(e)=fs_ntfs::entry(i){
+            let ry=y+28+i*20;
+            unsafe{if SEL==i as i32{graphics::fill_rect(wx,ry,ww,20,SELECT);}}
+            if e.is_dir{icon::blit(icon::IconId::Folder,wx+4,ry-6,false);}else{icon::blit(icon::IconId::File,wx+4,ry-6,false);}
+            let mut k=0;while k<e.name_len&&k<28{graphics::draw_char(wx+38+k*8,ry+6,e.name[k],TEXT);k+=1;}
+            if !e.is_dir{draw_num(wx+300,ry+6,if e.size>0xFFFF_FFFF{0xFFFF_FFFF}else{e.size as u32});}
+        }
+        i+=1;
+    }
+}
 fn draw_list(wx:usize,y:usize,ww:usize,h:usize){
     if !fs::is_mounted(){graphics::draw_str(wx+10,y+10,"AetherFS is not mounted.",RED);return;}
     let mut a=[fs::ListItem{name:[0;24],name_len:0,size:0,is_dir:false};16];
@@ -207,7 +243,7 @@ pub fn draw(wx:usize,wy:usize,ww:usize,wh:usize,title_h:usize){
     let side=150usize.min(ww/3);
     draw_sidebar(wx,sy,side,sh);
     let cx=wx+side+8;let cw=ww.saturating_sub(side+16);
-    match unsafe{VIEW}{VIEW_COMPUTER=>draw_computer(cx,sy,cw,sh),VIEW_ROOT=>draw_list(cx,sy,cw,sh),VIEW_DISK=>draw_disk(cx,sy,cw,sh),VIEW_TEXT=>draw_text(cx,sy,cw,sh),VIEW_PROPS=>draw_props(cx,sy,cw,sh),_=>{}}
+    match unsafe{VIEW}{VIEW_COMPUTER=>draw_computer(cx,sy,cw,sh),VIEW_ROOT=>draw_list(cx,sy,cw,sh),VIEW_DISK=>draw_disk(cx,sy,cw,sh),VIEW_FAT=>draw_fat(cx,sy,cw,sh),VIEW_NTFS=>draw_ntfs(cx,sy,cw,sh),VIEW_TEXT=>draw_text(cx,sy,cw,sh),VIEW_PROPS=>draw_props(cx,sy,cw,sh),_=>{}}
     if unsafe{CTX}{draw_context();}
     if unsafe{CONFIRM_DEL}{draw_confirm(wx,wy,ww,wh);}
     let status_y=wy+wh-18;graphics::fill_rect(wx+3,status_y,ww-6,16,TOOL);graphics::border_rect(wx+3,status_y,ww-6,16,BORDER);unsafe{let mut i=0;while i<STATUS_LEN{graphics::draw_char(wx+9+i*8,status_y+4,STATUS[i],DIM);i+=1;}}
@@ -271,11 +307,17 @@ pub fn on_click(wx:i32,wy:i32,ww:i32,wh:i32,title_h:i32,mx:i32,my:i32,right:bool
                         if let Some(p)=part::get(row as usize){
                             log(b"partition open requested");
                             if p.ptype==0x07{
-                                status(b"NTFS/exFAT partition detected - filesystem browser next");
+                                if fs_ntfs::mount_partition(row as usize){
+                                    VIEW=VIEW_NTFS;SEL=-1;
+                                    status(b"NTFS root opened read-only");
+                                }else{status(b"NTFS mount failed - read-only");}
                             }else if p.ptype==0x0B||p.ptype==0x0C||p.ptype==0x06||p.ptype==0x0E||p.ptype==0x04{
-                                status(b"FAT partition detected - filesystem browser next");
+                                if fs_fat::mount_partition(row as usize){
+                                    VIEW=VIEW_FAT;SEL=-1;
+                                    status(b"FAT root opened read-only");
+                                }else{status(b"FAT mount failed - read-only");}
                             }else{
-                                status(b"Partition is read-only metadata only");
+                                status(b"Partition filesystem not implemented");
                             }
                         }
                     }else{
