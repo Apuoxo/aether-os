@@ -336,7 +336,57 @@ pub fn load_firmware() -> bool {
             let (dst, seen) = match tlv_type {
                 1 if !inst_seen => {
                     inst_seen = true;
-                    inst_size = tl/// Release the Intel 2000/2030 runtime uCode from host reset after its
+                    inst_size = tlv_len;
+                    (IWLAGN_RTC_INST_LOWER_BOUND, true)
+                }
+                2 if !data_seen => {
+                    data_seen = true;
+                    data_size = tlv_len;
+                    (IWLAGN_RTC_DATA_LOWER_BOUND, true)
+                }
+                _ => (0, false),
+            };
+
+            if seen {
+                let mut off = 0usize;
+                while off < tlv_len {
+                    let chunk = core::cmp::min(FH_MEM_TB_MAX_LENGTH, tlv_len - off) & !3usize;
+                    if chunk == 0 || !load_chunk(
+                        dst + off as u32,
+                        &IWL2030_FW[data_start + off..data_start + off + chunk]
+                    ) {
+                        serial::write_str("[WIFI] FW SERVICE-DMA=TIMEOUT dst=");
+                        serial::write_hex((dst + off) as usize);
+                        serial::write_str("\n");
+                        return false;
+                    }
+                    off += chunk;
+                }
+                serial::write_str("[WIFI] FW SERVICE-DMA section dst=");
+                serial::write_hex(dst as usize);
+                serial::write_str(" bytes=");
+                serial::write_usize(tlv_len);
+                serial::write_str(" OK\n");
+            }
+
+            pos = next;
+        }
+
+        if !inst_seen || !data_seen {
+            serial::write_str("[WIFI] FW TLV=RUNTIME_SECTIONS_MISSING\n");
+            return false;
+        }
+
+        FW_INST_SIZE = inst_size as u32;
+        FW_DATA_SIZE = data_size as u32;
+        FW_LOADED = true;
+        NEEDS_FW = false;
+        serial::write_str("[WIFI] FW LOAD=OK via Intel FH service DMA\n");
+        true
+    }
+}
+
+/// Release the Intel 2000/2030 runtime uCode from host reset after its
 /// runtime instruction/data sections have been written to device SRAM.
 /// This is deliberately a boot-only step: Aether does not claim ALIVE until
 /// the firmware notification is received through the future RX/interrupt path.
