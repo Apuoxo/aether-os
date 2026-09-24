@@ -197,10 +197,90 @@ fn eq(line: &[u8], s: usize, clen: usize, b: &[u8]) -> bool {
 }
 
 // COMMANDS INTENTIONALLY REMOVED FOR TERMINAL NULL TEST.
-// No command implementation is kept in this build.
+// WiFi implementation command only. All unrelated terminal commands remain removed.
 
-fn run_line(_line: &[u8], _len: usize) {
-    write_str("NO COMMANDS REGISTERED — NULL COMMAND TEST\n");
+fn cmd_wf() {
+    write_str("======== WF NETWORK SURVEY ========\n");
+    write_str("PURPOSE: collect native network hardware facts for the WiFi bring-up plan\n");
+    write_str("MODE: native PCI probe; no firmware load, association, TX/RX, or disk write\n");
+    write_str("PROBE: fresh read-only Intel WLAN PCI discovery is executed now\n");
+    crate::drivers::wifi::survey();
+
+    let wifi = crate::drivers::wifi::found();
+    let wifi_ready = crate::drivers::wifi::ready();
+    let wifi_fw = crate::drivers::wifi::needs_firmware();
+    write_str("WIFI: ");
+    write_str(if wifi { "FOUND" } else { "NOT-FOUND" });
+    write_str(" PHASE1=");
+    write_str(if wifi_ready { "READY" } else { "NOT-READY" });
+    write_str(" FIRMWARE=");
+    write_str(if wifi_fw { "REQUIRED" } else { "NOT-REQUIRED" });
+    write_str("\n");
+
+    if wifi {
+        let (bus, dev, func) = crate::drivers::wifi::bus_dev_func();
+        write_str("  INTEL WLAN PCI=");
+        write_usize(bus as usize);
+        write_str(":");
+        write_usize(dev as usize);
+        write_str(".");
+        write_usize(func as usize);
+        write_str(" VID:DID=8086:0887 SUB=4062\n");
+        write_str("  BAR0=");
+        write_hex(crate::drivers::wifi::bar0() as usize);
+        write_str(" MMIO=");
+        write_str(if crate::drivers::wifi::mmio_ready() { "MAPPED" } else { "NOT-MAPPED" });
+        write_str("\n");
+        write_str("  FW-CONTRACT=");
+        write_str(crate::drivers::wifi::firmware_prefix());
+        write_str(" API=5..6\n");
+    }
+    crate::drivers::wifi::probe_prerequisites();
+
+    let eth = crate::drivers::net::eth_found();
+    write_str("ETHERNET: ");
+    write_str(if eth { "FOUND" } else { "NOT-FOUND" });
+    write_str(" RTL8168=");
+    write_str(if crate::drivers::net::eth_is_rtl() { "YES" } else { "NO" });
+    write_str(" MAC=");
+    write_str(if crate::drivers::net::eth_mac_ok() { "VALID" } else { "NOT-READ" });
+    write_str(" LINK=");
+    write_str(if crate::drivers::net::link_up() { "UP" } else { "NOT-CONFIRMED" });
+    write_str("\n");
+
+    if eth {
+        write_str("  VID:DID=");
+        write_hex(crate::drivers::net::eth_vid() as usize);
+        write_str(":");
+        write_hex(crate::drivers::net::eth_did() as usize);
+        write_str(" BAR0=");
+        write_hex(crate::drivers::net::eth_bar0() as usize);
+        write_str("\n");
+    }
+
+    write_str("PLAN:\n");
+    write_str("  1. Preserve exact PCI identity/BAR/MMIO evidence.\n");
+    write_str("  2. Validate Intel 2230 reset/interrupt/firmware-loader prerequisites.\n");
+    write_str("  3. Add native iwlwifi-2030 firmware loading from Aether storage.\n");
+    write_str("  4. Initialize RX/TX rings and interrupt path; keep read-only diagnostics available.\n");
+    write_str("  5. Only after hardware init, implement scan/auth/association and IP networking.\n");
+    write_str("  6. Test each stage on AH532; do not claim WiFi until real packets pass.\n");
+    crate::ai_agent::record_network_probe(if wifi { 1 } else { 0 }, if wifi_ready { 1 } else { 0 });
+    write_str("AI-AGENT: network observation recorded for future native planning/state model\n");
+    write_str("======== WF END ========\n");
+}
+
+fn run_line(line: &[u8], len: usize) {
+    let mut s = 0usize;
+    while s < len && line[s] == b' ' { s += 1; }
+    let mut e = len;
+    while e > s && (line[e - 1] == b' ' || line[e - 1] == b'\\r') { e -= 1; }
+    let clen = e.saturating_sub(s);
+    if eq(line, s, clen, b"WF") || eq(line, s, clen, b"wf") {
+        cmd_wf();
+    } else {
+        write_str("unknown — WF only (WiFi implementation test)\\n");
+    }
 }
 
 pub fn run_command_from_gui(line: &[u8], len: usize) {
