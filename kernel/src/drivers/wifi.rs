@@ -385,8 +385,11 @@ pub fn send_command(cmd: u8, payload: &[u8]) -> bool {
         let tfd = (&mut CMD_TFD_QUEUE.0[slot * FH_TFD_SIZE]) as *mut u8;
         cmd_tfd_set(tfd, (&FW_DMA_BUF.0[0] as *const u8) as u64, len);
         let next = (slot + 1) & (FH_TFD_CMD_SLOTS - 1);
-        // DVM publishes a queued TFD through the SCD scheduler write pointer.
-        prph_write(SCD_QUEUE_WRPTR, next as u32);
+        // The DVM PCIe transport publishes the host TFD through
+        // HBUS_TARG_WRPTR (MMIO + 0x60). SCD_QUEUE_WRPTR is scheduler state,
+        // not the host doorbell used to submit the command.
+        core::ptr::write_volatile((MMIO + 0x60) as *mut u32,
+            (next as u32 & 0xFF) | ((IWL_DEFAULT_CMD_QUEUE_NUM as u32) << 8));
         CMD_WRITE_PTR = next;
         CMD_SEQ = CMD_SEQ.wrapping_add(1);
         serial::write_str("[WIFI] CMD TX id=");
@@ -473,31 +476,20 @@ pub fn scan_24ghz() -> bool {
             return false;
         }
         serial::write_str("[WIFI] SCAN24 CMD=SUBMITTED\n");
-        serial::write_str("[WIFI] SCAN24 CMD=SUBMITTED\\n");
-        let mut spins = 0usize;
-        while spins < 5_000_000 {
-            irq_handler();
-            if scan_notification_seen() { break; }
-            core::hint::spin_loop();
-            spins += 1;
-        }
-        if scan_notification_seen() {
-            serial::write_str("[WIFI] SCAN24 NOTIFY=SEEN spins=");
-            serial::write_usize(spins);
-            serial::write_str("\\n");
-        } else {
-            serial::write_str("[WIFI] SCAN24 TIMEOUT spins=");
-            serial::write_usize(spins);
-            serial::write_str(" CSR_INT=");
-            serial::write_hex(core::ptr::read_volatile((MMIO + CSR_INT) as *const u32) as usize);
-            serial::write_str(" FH_INT=");
-            serial::write_hex(core::ptr::read_volatile((MMIO + CSR_FH_INT_STATUS) as *const u32) as usize);
-            serial::write_str(" SCD_WRPTR=");
-            serial::write_hex(prph_read(SCD_QUEUE_WRPTR) as usize);
-            serial::write_str(" SCD_RDPTR=");
-            serial::write_hex(prph_read(SCD_QUEUE_RDPTR) as usize);
-            serial::write_str("\\n");
-        }
+        serial::write_str("[WIFI] SCAN24 CMD=SUBMITTED\n");
+        // Do one non-blocking RX poll only. If the firmware responds later,
+        // the next WF invocation will observe it. This keeps the shell alive
+        // while we validate command transport on real hardware.
+        irq_handler();
+        serial::write_str("[WIFI] SCAN24 POST CSR_INT=");
+        serial::write_hex(core::ptr::read_volatile((MMIO + CSR_INT) as *const u32) as usize);
+        serial::write_str(" FH_INT=");
+        serial::write_hex(core::ptr::read_volatile((MMIO + CSR_FH_INT_STATUS) as *const u32) as usize);
+        serial::write_str(" SCD_WRPTR=");
+        serial::write_hex(prph_read(SCD_QUEUE_WRPTR) as usize);
+        serial::write_str(" SCD_RDPTR=");
+        serial::write_hex(prph_read(SCD_QUEUE_RDPTR) as usize);
+        serial::write_str("\n");
         true
     }
 }
