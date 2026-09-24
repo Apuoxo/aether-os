@@ -48,6 +48,11 @@ static mut CWD_LEN:usize=1;
 static mut NTFS_CWD_REF:u32=5;
 static mut NTFS_PARENT:[u32;8]=[0;8];
 static mut NTFS_DEPTH:usize=0;
+static mut NTFS_VIEW_IDX:[u8;256]=[0;256];
+static mut NTFS_VIEW_COUNT:usize=0;
+static mut NTFS_SCROLL:usize=0;
+static mut NTFS_VIEW_DIRTY:bool=true;
+static mut NTFS_VISIBLE_ROWS:usize=1;
 static mut PREVIEW:[u8;512]=[0;512];
 static mut PREVIEW_LEN:usize=0;
 static mut STATUS:[u8;64]=[0;64];
@@ -59,15 +64,22 @@ fn put_str(b:&mut [u8;64],p:&mut usize,s:&[u8]){let mut i=0;while i<s.len()&&*p<
 fn put_num(b:&mut [u8;64],p:&mut usize,mut n:usize){let mut d=[0u8;10];let mut c=0;if n==0{d[0]=b'0';c=1;}while n>0&&c<10{d[c]=(n%10)as u8+b'0';n/=10;c+=1;}while c>0&&*p<63{c-=1;b[*p]=d[c];*p+=1;}}
 fn trace_ntfs(tag:&[u8]){let n=fs_ntfs::entry_count();let mut b=[0u8;64];let mut p=0usize;put_str(&mut b,&mut p,tag);put_str(&mut b,&mut p,b" n=");put_num(&mut b,&mut p,n);let mut i=0usize;while i<3&&i<n{if let Some(e)=fs_ntfs::entry(i){put_str(&mut b,&mut p,b" ");put_num(&mut b,&mut p,i);put_str(&mut b,&mut p,b"=");let mut k=0;while k<e.name_len&&k<12&&p<62{put_str(&mut b,&mut p,&e.name[k..k+1]);k+=1;}}i+=1;}status(&b[..p]);}
 fn trace_partition_click(mx:i32,my:i32,row:i32,part_no:i32){let mut b=[0u8;64];let mut p=0usize;put_str(&mut b,&mut p,b"PCLICK mx=");put_num(&mut b,&mut p,mx.max(0) as usize);put_str(&mut b,&mut p,b" my=");put_num(&mut b,&mut p,my.max(0) as usize);put_str(&mut b,&mut p,b" row=");put_num(&mut b,&mut p,row.max(0) as usize);put_str(&mut b,&mut p,b" part=");put_num(&mut b,&mut p,part_no.max(0) as usize);status(&b[..p]);}
-const ROW_H:i32=24;
+const ROW_H:i32=32;
 const ROW_TOP:i32=30;
 fn hit_row(list_top:i32,my:i32)->i32{if my<list_top+ROW_TOP{-1}else{(my-list_top-ROW_TOP)/ROW_H}}
+fn ntfs_visible(e:&fs_ntfs::NtfsEntry)->bool{if e.name_len==0{return false;}if e.name[0]==b'.'||e.name[0]==b'$'{return false;}true}
+fn ntfs_cmp(a:usize,b:usize)->core::cmp::Ordering{let ea=match fs_ntfs::entry(a){Some(v)=>v,None=>return core::cmp::Ordering::Equal};let eb=match fs_ntfs::entry(b){Some(v)=>v,None=>return core::cmp::Ordering::Equal};if ea.is_dir!=eb.is_dir{return if ea.is_dir{core::cmp::Ordering::Less}else{core::cmp::Ordering::Greater};}let mut i=0usize;while i<ea.name_len&&i<eb.name_len{let mut ca=ea.name[i];let mut cb=eb.name[i];if ca>=b'a'&&ca<=b'z'{ca-=32;}if cb>=b'a'&&cb<=b'z'{cb-=32;}if ca<cb{return core::cmp::Ordering::Less;}if ca>cb{return core::cmp::Ordering::Greater;}i+=1;}ea.name_len.cmp(&eb.name_len)}
+fn rebuild_ntfs_view(){unsafe{let n=fs_ntfs::entry_count();NTFS_VIEW_COUNT=0;let mut i=0usize;while i<n&&NTFS_VIEW_COUNT<256{if let Some(e)=fs_ntfs::entry(i){if ntfs_visible(&e){NTFS_VIEW_IDX[NTFS_VIEW_COUNT]=i as u8;NTFS_VIEW_COUNT+=1;}}i+=1;}let mut i=1usize;while i<NTFS_VIEW_COUNT{let key=NTFS_VIEW_IDX[i];let mut j=i;while j>0{let prev=NTFS_VIEW_IDX[j-1]as usize;if ntfs_cmp(key as usize,prev)!=core::cmp::Ordering::Less{break;}NTFS_VIEW_IDX[j]=NTFS_VIEW_IDX[j-1];j-=1;}NTFS_VIEW_IDX[j]=key;i+=1;}NTFS_SCROLL=0;NTFS_VIEW_DIRTY=false;}}
+fn ntfs_row_index(row:usize)->Option<usize>{unsafe{if NTFS_VIEW_DIRTY{rebuild_ntfs_view();}if row<NTFS_VIEW_COUNT{Some(NTFS_VIEW_IDX[row]as usize)}else{None}}}
+fn row_h(_view:u8)->i32{32}
+fn visible_rows(h:usize)->usize{h.saturating_sub(48)/row_h(VIEW_NTFS) as usize}
+pub fn on_nav_key(sc:u8)->bool{unsafe{if VIEW!=VIEW_NTFS{return false;}if NTFS_VIEW_DIRTY{rebuild_ntfs_view();}let rows=unsafe{NTFS_VISIBLE_ROWS};if sc==0x48{if SEL>0{SEL-=1;}else if NTFS_SCROLL>0{NTFS_SCROLL-=1;}return true;}if sc==0x50{if SEL>=0&&(SEL as usize)+1<rows&&NTFS_SCROLL+(SEL as usize)+1<NTFS_VIEW_COUNT{SEL+=1;}else if NTFS_SCROLL+rows<NTFS_VIEW_COUNT{NTFS_SCROLL+=1;SEL=if rows>0{(rows-1)as i32}else{-1};}return true;}}false}
 fn set_root(){unsafe{CWD[0]=b'/';CWD_LEN=1;VIEW=VIEW_ROOT;SEL=-1;}}
 fn push_hist(){unsafe{if HIST_N<8{let mut i=0;while i<32{HIST[HIST_N][i]=CWD[i];i+=1;}HIST_LEN[HIST_N]=CWD_LEN;HIST_N+=1;HIST_I=HIST_N;}}}
 fn draw_num(x:usize,y:usize,mut n:u32){if n==0{graphics::draw_char(x,y,b'0',TEXT);return;}let mut d=[0u8;10];let mut c=0;while n>0{d[c]=(n%10)as u8+b'0';n/=10;c+=1;}let start=c;while c>0{c-=1;graphics::draw_char(x+(start-1-c)*8,y,d[c],TEXT);}}
 fn btn(x:usize,y:usize,w:usize,label:&str,hot:bool){graphics::fill_rect(x,y,w,24,if hot{BLUE2}else{TOOL});graphics::border_rect(x,y,w,24,BORDER);graphics::draw_str(x+8,y+8,label,if hot{BLUE}else{TEXT});}
 
-pub fn reset(){unsafe{VIEW=VIEW_COMPUTER;SEL=-1;HOVER=-1;FOCUS_ADDR=false;CTX=false;CONFIRM_DEL=false;HIST_N=0;HIST_I=0;CWD[0]=b'/';CWD_LEN=1;NTFS_CWD_REF=5;NTFS_DEPTH=0;PREVIEW_LEN=0;}status(b"Ready");}
+pub fn reset(){unsafe{VIEW=VIEW_COMPUTER;SEL=-1;HOVER=-1;FOCUS_ADDR=false;CTX=false;CONFIRM_DEL=false;HIST_N=0;HIST_I=0;CWD[0]=b'/';CWD_LEN=1;NTFS_CWD_REF=5;NTFS_DEPTH=0;NTFS_VIEW_COUNT=0;NTFS_SCROLL=0;NTFS_VISIBLE_ROWS=1;NTFS_VIEW_DIRTY=true;PREVIEW_LEN=0;}status(b"Ready");}
 
 fn draw_header(wx:usize,wy:usize,ww:usize,body_y:usize){
     // Modern, compact Aether Explorer chrome. Designed for the real 800x600 target.
@@ -120,24 +132,24 @@ fn draw_sidebar(wx:usize,y:usize,w:usize,h:usize){
     graphics::draw_str(wx+14,y+14,"QUICK ACCESS",DIM);
     icon::blit(icon::IconId::Folder,wx+10,y+28,false);
     graphics::draw_str(wx+40,y+36,"Desktop",TEXT);
-    icon::blit(icon::IconId::Folder,wx+10,y+48,false);
-    graphics::draw_str(wx+40,y+56,"Documents",TEXT);
-    icon::blit(icon::IconId::Folder,wx+10,y+68,false);
-    graphics::draw_str(wx+40,y+76,"Downloads",TEXT);
+    icon::blit(icon::IconId::Folder,wx+10,y+60,false);
+    graphics::draw_str(wx+40,y+68,"Documents",TEXT);
+    icon::blit(icon::IconId::Folder,wx+10,y+92,false);
+    graphics::draw_str(wx+40,y+100,"Downloads",TEXT);
 
-    graphics::draw_str(wx+14,y+106,"THIS PC",DIM);
-    icon::blit(icon::IconId::MyComputer,wx+10,y+121,false);
-    graphics::draw_str(wx+40,y+129,"Computer",TEXT);
-    icon::blit(icon::IconId::MyComputer,wx+10,y+141,false);
-    graphics::draw_str(wx+40,y+149,"Local Disk (C:)",TEXT);
-    icon::blit(icon::IconId::MyComputer,wx+10,y+161,false);
-    graphics::draw_str(wx+40,y+169,"AetherFS (A:)",TEXT);
+    graphics::draw_str(wx+14,y+122,"THIS PC",DIM);
+    icon::blit(icon::IconId::MyComputer,wx+10,y+137,false);
+    graphics::draw_str(wx+40,y+145,"Computer",TEXT);
+    icon::blit(icon::IconId::MyComputer,wx+10,y+169,false);
+    graphics::draw_str(wx+40,y+177,"Local Disk (C:)",TEXT);
+    icon::blit(icon::IconId::MyComputer,wx+10,y+201,false);
+    graphics::draw_str(wx+40,y+209,"AetherFS (A:)",TEXT);
 
-    graphics::draw_str(wx+14,y+200,"SYSTEM",DIM);
-    icon::blit(icon::IconId::MyComputer,wx+10,y+215,false);
-    graphics::draw_str(wx+40,y+223,"Network",TEXT);
-    icon::blit(icon::IconId::MyComputer,wx+10,y+235,false);
-    graphics::draw_str(wx+40,y+243,"Devices",TEXT);
+    graphics::draw_str(wx+14,y+246,"SYSTEM",DIM);
+    icon::blit(icon::IconId::MyComputer,wx+10,y+261,false);
+    graphics::draw_str(wx+40,y+269,"Network",TEXT);
+    icon::blit(icon::IconId::MyComputer,wx+10,y+293,false);
+    graphics::draw_str(wx+40,y+301,"Devices",TEXT);
     let _=h;
 }
 fn draw_drive(wx:usize,y:usize,name:&str,sub:&str,sel:bool){
@@ -235,9 +247,9 @@ fn draw_disk(wx:usize,y:usize,ww:usize,h:usize){
         let mut i=0usize;
         while i<n&&row<18{
             if let Some(p)=part::get(i){
-                let ry=y+52+row*24;
-                if SEL==row as i32{graphics::fill_rect(wx,ry,ww,24,SELECT);}
-                icon::blit(icon::IconId::MyComputer,wx+4,ry-1,false);
+                let ry=y+52+row*32;
+                if SEL==row as i32{graphics::fill_rect(wx,ry,ww,32,SELECT);}
+                icon::blit(icon::IconId::MyComputer,wx+4,ry,false);
                 draw_num(wx+44,ry+7,p.disk as u32);
                 draw_num(wx+108,ry+7,p.index as u32);
                 graphics::draw_str(wx+140,ry+7,part::type_name(p.ptype),DIM);
@@ -271,29 +283,28 @@ fn draw_fat(wx:usize,y:usize,ww:usize,h:usize){
     }
 }
 fn draw_ntfs(wx:usize,y:usize,ww:usize,h:usize){
+    if unsafe{NTFS_VIEW_DIRTY}{rebuild_ntfs_view();}
     graphics::fill_rect(wx,y,ww,h,WHITE);
     graphics::fill_rect(wx,y,ww,28,TOOL2);
     graphics::draw_str(wx+10,y+9,"Name",TEXT);
     graphics::draw_str(wx+250,y+9,"Type",TEXT);
     graphics::draw_str(wx+350,y+9,"Size",TEXT);
-    let n=fs_ntfs::entry_count();
-    if n==0{
-        graphics::draw_str(wx+16,y+52,"This folder is empty or unavailable.",DIM);
-        graphics::draw_str(wx+16,y+70,"NTFS is currently mounted read-only.",DIM);
-        return;
-    }
-    let mut i=0usize;
-    while i<n&&i<32&&y+ROW_TOP as usize+i*ROW_H as usize+24<=y+h{
-        if let Some(e)=fs_ntfs::entry(i){
-            let ry=y+ROW_TOP as usize+i*ROW_H as usize;
-            unsafe{if SEL==i as i32{graphics::fill_rect(wx,ry,ww,24,SELECT);}if HOVER==i as i32{graphics::border_rect(wx,ry,ww,24,BLUE);}}
-            if e.is_dir{icon::blit(icon::IconId::Folder,wx+7,ry-2,false);}else{icon::blit(icon::IconId::File,wx+7,ry-2,false);}
-            let col=unsafe{if SEL==i as i32{BLUE}else{TEXT}};
-            let mut k=0;while k<e.name_len&&k<27{graphics::draw_char(wx+42+k*8,ry+8,e.name[k],col);k+=1;}
-            graphics::draw_str(wx+250,ry+8,if e.is_dir{"Folder"}else{"File"},DIM);
-            if !e.is_dir{draw_num(wx+350,ry+8,if e.size>0xFFFF_FFFF{0xFFFF_FFFF}else{e.size as u32});}
+    if unsafe{NTFS_VIEW_COUNT==0}{graphics::draw_str(wx+16,y+52,"This folder is empty or unavailable.",DIM);graphics::draw_str(wx+16,y+70,"NTFS is currently mounted read-only.",DIM);return;}
+    let rows=visible_rows(h);unsafe{NTFS_VISIBLE_ROWS=if rows==0{1}else{rows};if NTFS_SCROLL+NTFS_VISIBLE_ROWS>NTFS_VIEW_COUNT{NTFS_SCROLL=NTFS_VIEW_COUNT.saturating_sub(NTFS_VISIBLE_ROWS);}}
+    let mut r=0usize;
+    while r<rows{
+        let vi=unsafe{NTFS_SCROLL+r};
+        let idx=match ntfs_row_index(vi){Some(v)=>v,None=>break};
+        if let Some(e)=fs_ntfs::entry(idx){
+            let ry=y+ROW_TOP as usize+r*32;
+            unsafe{if SEL==r as i32{graphics::fill_rect(wx,ry,ww,32,SELECT);}if HOVER==r as i32{graphics::border_rect(wx,ry,ww,32,BLUE);}}
+            if e.is_dir{icon::blit(icon::IconId::Folder,wx+7,ry,false);}else{icon::blit(icon::IconId::File,wx+7,ry,false);}
+            let col=unsafe{if SEL==r as i32{BLUE}else{TEXT}};
+            let mut k=0;while k<e.name_len&&k<27{graphics::draw_char(wx+42+k*8,ry+10,e.name[k],col);k+=1;}
+            graphics::draw_str(wx+250,ry+10,if e.is_dir{"Folder"}else{"File"},DIM);
+            if !e.is_dir{draw_num(wx+350,ry+10,if e.size>0xFFFF_FFFF{0xFFFF_FFFF}else{e.size as u32});}
         }
-        i+=1;
+        r+=1;
     }
 }
 fn draw_list(wx:usize,y:usize,ww:usize,h:usize){
@@ -412,7 +423,7 @@ pub fn on_click(wx:i32,wy:i32,ww:i32,wh:i32,title_h:i32,mx:i32,my:i32,right:bool
                     4=>status(b"Rename unavailable on read-only volume"),
                     5=>status(b"Delete unavailable on read-only volume"),
                     6=>{VIEW=VIEW_PROPS;status(b"Properties");},
-                    7=>{if VIEW==VIEW_NTFS{if fs_ntfs::list_directory(NTFS_CWD_REF){trace_ntfs(b"DIR");}}else{let _=fs::list_ex_path(core::str::from_utf8_unchecked(&CWD[..CWD_LEN]),&mut [fs::ListItem{name:[0;24],name_len:0,size:0,is_dir:false};16]);}SEL=-1;status(b"Refreshed");},
+                    7=>{if VIEW==VIEW_NTFS{if fs_ntfs::list_directory(NTFS_CWD_REF){NTFS_VIEW_DIRTY=true;NTFS_SCROLL=0;trace_ntfs(b"DIR");}}else{let _=fs::list_ex_path(core::str::from_utf8_unchecked(&CWD[..CWD_LEN]),&mut [fs::ListItem{name:[0;24],name_len:0,size:0,is_dir:false};16]);}SEL=-1;status(b"Refreshed");},
                     8=>status(b"New folder unavailable on read-only volume"),
                     9=>status(b"New file unavailable on read-only volume"),
                     _=>{}
@@ -428,7 +439,8 @@ pub fn on_click(wx:i32,wy:i32,ww:i32,wh:i32,title_h:i32,mx:i32,my:i32,right:bool
             let list_top=by+40;
             if mx>=wx+side+8&&my>=list_top{
                 if VIEW==VIEW_NTFS{
-                    let n=fs_ntfs::entry_count();
+                    if unsafe{NTFS_VIEW_DIRTY}{rebuild_ntfs_view();}
+                    let n=unsafe{NTFS_VIEW_COUNT};
                     if my>=list_top+ROW_TOP{
                         let row=hit_row(list_top,my);
                         if row>=0&&row<n as i32{SEL=row;}
@@ -503,7 +515,7 @@ pub fn on_click(wx:i32,wy:i32,ww:i32,wh:i32,title_h:i32,mx:i32,my:i32,right:bool
             else if VIEW==VIEW_DISK{
                 let n=part::count();
                 if my<list_top+52{return false;}
-                let row=((my-list_top-52)/24)as i32;
+                let row=((my-list_top-52)/ROW_H)as i32;
                 if row>=0&&row<n as i32{
                     SEL=row;
                     if let Some(p)=part::get(row as usize){
@@ -511,7 +523,7 @@ pub fn on_click(wx:i32,wy:i32,ww:i32,wh:i32,title_h:i32,mx:i32,my:i32,right:bool
                         log(b"partition open requested");
                         if p.ptype==0x07{
                             if fs_ntfs::mount_partition(row as usize){
-                                VIEW=VIEW_NTFS;SEL=-1;NTFS_CWD_REF=5;NTFS_DEPTH=0;
+                                VIEW=VIEW_NTFS;SEL=-1;NTFS_CWD_REF=5;NTFS_DEPTH=0;NTFS_VIEW_DIRTY=true;NTFS_SCROLL=0;
                                 trace_ntfs(b"OPEN");
                             }else{status(b"NTFS mount failed - read-only");}
                         }else if p.ptype==0x0B||p.ptype==0x0C||p.ptype==0x06||p.ptype==0x0E||p.ptype==0x04{
@@ -528,14 +540,17 @@ pub fn on_click(wx:i32,wy:i32,ww:i32,wh:i32,title_h:i32,mx:i32,my:i32,right:bool
                 return false;
             }
             else if VIEW==VIEW_NTFS{
-                let n=fs_ntfs::entry_count();
+                if unsafe{NTFS_VIEW_DIRTY}{rebuild_ntfs_view();}
+                let n=unsafe{NTFS_VIEW_COUNT};
                 if my<list_top+ROW_TOP{return false;}
                 let row=hit_row(list_top,my);
                 if row>=0&&row<n as i32{
                     SEL=row;
-                    if let Some(e)=fs_ntfs::entry(row as usize){
+                    let idx=match ntfs_row_index((unsafe{NTFS_SCROLL})+row as usize){Some(v)=>v,None=>return false};
+                    if let Some(e)=fs_ntfs::entry(idx){
                         if e.is_dir{
                             if fs_ntfs::list_directory(e.mft_ref){
+                                NTFS_VIEW_DIRTY=true;NTFS_SCROLL=0;
                                 if NTFS_DEPTH<8{
                                     NTFS_PARENT[NTFS_DEPTH]=NTFS_CWD_REF;
                                     NTFS_DEPTH+=1;
@@ -577,20 +592,22 @@ pub fn on_click(wx:i32,wy:i32,ww:i32,wh:i32,title_h:i32,mx:i32,my:i32,right:bool
         }
         if my>=list_top&&my<list_top+330&&mx<wx+side{
             // Sidebar hit boxes match the labels/icons drawn above.
-            if my>=list_top+132&&my<list_top+156{
+            if my>=list_top+160&&my<list_top+192{
                 if fs_ntfs::mount_first(){
                     trace_ntfs(b"SIDEBAR");
                     VIEW=VIEW_NTFS;
                     SEL=-1;
                     NTFS_CWD_REF=5;
                     NTFS_DEPTH=0;
+                    NTFS_VIEW_DIRTY=true;
+                    NTFS_SCROLL=0;
                     status(b"Local Disk (C:) opened");
                 }else{
                     status(b"Local Disk (C:) mount failed");
                 }
                 return true;
             }
-            if my>=list_top+156&&my<list_top+182{
+            if my>=list_top+192&&my<list_top+224{
                 push_hist();
                 set_root();
                 status(b"AetherFS (A:) opened");
@@ -611,7 +628,7 @@ fn go_up(){
                 NTFS_DEPTH-=1;
                 NTFS_CWD_REF=NTFS_PARENT[NTFS_DEPTH];
                 if fs_ntfs::list_directory(NTFS_CWD_REF){
-                    SEL=-1;
+                    NTFS_VIEW_DIRTY=true;NTFS_SCROLL=0;SEL=-1;
                     trace_ntfs(b"DIR");
                 }else{
                     status(b"NTFS parent read failed");

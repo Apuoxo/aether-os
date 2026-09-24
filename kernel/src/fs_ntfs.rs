@@ -37,9 +37,10 @@ static mut INDEX_ROOT_DIAG_START: usize = 0;
 static mut INDEX_ROOT_DIAG_END: usize = 0;
 static mut INDEX_ALLOC_DIAG_START: usize = 0;
 static mut INDEX_ALLOC_DIAG_END: usize = 0;
-static mut ENTRIES: [NtfsEntry; 32] = [NtfsEntry {
+const STORAGE_LIMIT: usize = 256;
+static mut ENTRIES: [NtfsEntry; STORAGE_LIMIT] = [NtfsEntry {
     name: [0; 48], name_len: 0, size: 0, is_dir: false, mft_ref: 0,
-}; 32];
+}; STORAGE_LIMIT];
 static mut NENT: usize = 0;
 
 fn read_lba(disk: u8, lba: u32, buf: &mut [u8; 512]) -> bool {
@@ -689,7 +690,7 @@ fn parse_index_entries(rec: &[u8], mut off: usize, end: usize) -> usize {
                 let is_dir = (flags_fn & 0x1000_0000) != 0;
                 unsafe {
                     parsed += 1;
-                    if NENT < 32 {
+                    if NENT < STORAGE_LIMIT {
                         ENTRIES[NENT] = NtfsEntry {
                             name,
                             name_len: nl,
@@ -837,7 +838,7 @@ pub fn diagnostic() {
                                     unsafe { diag_usize(INDEX_TOTAL_PARSED); }
                                     diag_str(" TOTAL_STORED=");
                                     diag_usize(entry_count());
-                                    diag_str(" STORAGE_LIMIT=32\n");
+                                    diag_str(" STORAGE_LIMIT=256\n");
                                     diag_str("[NTFSDIAG] NAMES_BEGIN\n");
                                     let mut ni = 0usize;
                                     while ni < entry_count() {

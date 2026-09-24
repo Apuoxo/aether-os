@@ -2051,14 +2051,24 @@ fn render() {
 
 fn handle_special_key(hid_code: u8) -> bool {
     unsafe {
-        if FOCUS >= MAX_WIN || !WINS[FOCUS].visible || WINS[FOCUS].kind != WinKind::Terminal {
+        if FOCUS >= MAX_WIN || !WINS[FOCUS].visible {
             return false;
         }
-    }
-    match hid_code {
-        0x52 | 0x4B => { term_scroll_up(); true }   // Up / PageUp
-        0x51 | 0x4E => { term_scroll_down(); true } // Down / PageDown
-        _ => false,
+        if WINS[FOCUS].kind == WinKind::Files {
+            match hid_code {
+                0x52 => { crate::files_mgr::on_nav_key(0x48) }
+                0x51 => { crate::files_mgr::on_nav_key(0x50) }
+                _ => false,
+            }
+        } else if WINS[FOCUS].kind == WinKind::Terminal {
+            match hid_code {
+                0x52 | 0x4B => { term_scroll_up(); true }
+                0x51 | 0x4E => { term_scroll_down(); true }
+                _ => false,
+            }
+        } else {
+            false
+        }
     }
 }
 
@@ -2178,13 +2188,20 @@ pub fn run() -> ! {
         if sc != 0 {
             let ext = ps2::last_scancode_extended();
             if ext {
-                match sc {
-                    0x48 | 0x49 => { term_scroll_up(); }
-                    0x50 | 0x51 => { term_scroll_down(); }
-                    _ => {
-                        ps2::scancode_to_ascii(0xE0);
-                        if let Some(ch) = ps2::scancode_to_ascii(sc) {
-                            handle_key(ch);
+                let files_focused = unsafe {
+                    FOCUS < MAX_WIN && WINS[FOCUS].visible && WINS[FOCUS].kind == WinKind::Files
+                };
+                if files_focused && (sc == 0x48 || sc == 0x50) {
+                    crate::files_mgr::on_nav_key(sc);
+                } else {
+                    match sc {
+                        0x48 | 0x49 => { term_scroll_up(); }
+                        0x50 | 0x51 => { term_scroll_down(); }
+                        _ => {
+                            ps2::scancode_to_ascii(0xE0);
+                            if let Some(ch) = ps2::scancode_to_ascii(sc) {
+                                handle_key(ch);
+                            }
                         }
                     }
                 }
