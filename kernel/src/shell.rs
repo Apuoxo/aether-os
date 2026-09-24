@@ -595,6 +595,8 @@ fn run_line(line: &[u8], len: usize) {
         cmd_mem();
     } else if eq(line, s, clen, b"dsk") {
         cmd_dsk();
+    } else if eq(line, s, clen, b"77") {
+        cmd_77();
     } else if eq(line, s, clen, b"vdiag") {
         cmd_vdiag();
     } else if eq(line, s, clen, b"vedid") {
