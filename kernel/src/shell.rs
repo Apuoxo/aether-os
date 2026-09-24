@@ -202,7 +202,7 @@ fn eq(line: &[u8], s: usize, clen: usize, b: &[u8]) -> bool {
 fn cmd_wf() {
     write_str("======== WF NETWORK SURVEY ========\n");
     write_str("PURPOSE: collect native network hardware facts for the WiFi bring-up plan\n");
-    write_str("MODE: native PCI probe; no firmware load, association, TX/RX, or disk write\n");
+    write_str("MODE: native Intel 2230 bring-up; firmware -> ALIVE -> scan -> auth/association\n");
     write_str("PROBE: fresh read-only Intel WLAN PCI discovery is executed now\n");
     crate::drivers::wifi::survey();
 
@@ -342,8 +342,10 @@ fn cmd_wf() {
     write_str("  2. Validate Intel 2230 reset/interrupt/firmware-loader prerequisites.\n");
     write_str("  3. Add native iwlwifi-2030 firmware loading from Aether storage.\n");
     write_str("  4. Initialize RX/TX rings and interrupt path; keep read-only diagnostics available.\n");
-    write_str("  5. Only after hardware init, implement scan/auth/association and IP networking.\n");
-    write_str("  6. Test each stage on AH532; do not claim WiFi until real packets pass.\n");
+    write_str("  5. After firmware ALIVE, implement native 802.11 scan and report SSID/BSSID/channel/security.\n");
+    write_str("  6. Implement open-network association and WPA/WPA2-PSK password association; never print the password.\n");
+    write_str("  7. After association, implement DHCP/IP and real packet TX/RX.\n");
+    write_str("  8. Test each stage on AH532; do not claim WiFi until real packets pass.\n");
     crate::ai_agent::record_network_probe(if wifi { 1 } else { 0 }, if wifi_ready { 1 } else { 0 });
     write_str("AI-AGENT: network observation recorded for future native planning/state model\n");
     write_str("======== WF END ========\n");
