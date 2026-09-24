@@ -277,6 +277,11 @@ fn cmd_wf() {
     write_str(" DATA=");
     write_usize(crate::drivers::wifi::firmware_data_size() as usize);
     write_str("\n");
+    let fw_exec_ok = crate::drivers::wifi::start_firmware();
+    write_str("  FIRMWARE_EXECUTION=");
+    write_str(if fw_exec_ok { "STARTED" } else { "FAILED/NOT-ATTEMPTED" });
+    write_str(" ALIVE=NOT-YET RX_IRQ=NOT-STARTED");
+    write_str("\n");
     write_str("  PCIE_LINK SPEED=");
     write_hex(crate::drivers::wifi::pcie_link_speed() as usize);
     write_str(" WIDTH=");
