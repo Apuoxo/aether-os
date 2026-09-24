@@ -905,6 +905,38 @@ fn apply_mouse_delta(dx: i32, dy: i32) {
     }
 }
 
+fn handle_terminal_scroll_click(mx: i32, my: i32) -> bool {
+    unsafe {
+        if FOCUS >= MAX_WIN || !WINS[FOCUS].visible || WINS[FOCUS].kind != WinKind::Terminal {
+            return false;
+        }
+        let w = &WINS[FOCUS];
+        let bar_x = w.x + w.w - 18;
+        let bar_top = w.y + TITLE_H as i32 + 4;
+        let bar_bottom = w.y + w.h - 6;
+        if mx < bar_x || mx >= bar_x + 14 || my < bar_top || my >= bar_bottom {
+            return false;
+        }
+        let total = TERM_ROW + 1;
+        let max_view = if total > TERM_VIEW_ROWS { total - TERM_VIEW_ROWS } else { 0 };
+        if my < bar_top + 14 {
+            term_scroll_up();
+        } else if my >= bar_bottom - 14 {
+            term_scroll_down();
+        } else if max_view > 0 {
+            let track_top = bar_top + 14;
+            let track_bottom = bar_bottom - 14;
+            if my < track_top + (track_bottom - track_top) / 2 {
+                term_scroll_up();
+            } else {
+                term_scroll_down();
+            }
+        }
+        DIRTY_FULL = true;
+        true
+    }
+}
+
 fn handle_mouse_buttons(buttons: u8) {
     unsafe {
         let left = buttons & 1;
@@ -979,6 +1011,12 @@ fn handle_mouse_buttons(buttons: u8) {
             }
         }
         if left != 0 && prev_left == 0 {
+            // Terminal scrollbar is a real clickable control, independent of keyboard input.
+            if handle_terminal_scroll_click(mx, my) {
+                PREV_MB = buttons;
+                MB = buttons;
+                return;
+            }
             // XP Start button (bottom-left)
             let sh = graphics::height() as i32;
             if my >= sh - (TASKBAR_H as i32) && mx < 74 {
@@ -1272,6 +1310,33 @@ fn draw_window(idx: usize) {
                         }
                     }
                     r += 1;
+                }
+                // Visible terminal scrollbar: up/down buttons + proportional thumb.
+                let bar_x = wx + ww - 18;
+                let bar_top = wy + TITLE_H as usize + 4;
+                let bar_bottom = wy + wh - 6;
+                if bar_bottom > bar_top + 24 {
+                    graphics::fill_rect(bar_x, bar_top, 14, bar_bottom - bar_top, 0x00303030);
+                    graphics::fill_rect(bar_x + 2, bar_top + 2, 10, 10, 0x00606060);
+                    graphics::draw_str(bar_x + 3, bar_top + 3, "^", COL_TERM_FG);
+                    graphics::fill_rect(bar_x + 2, bar_bottom - 12, 10, 10, 0x00606060);
+                    graphics::draw_str(bar_x + 3, bar_bottom - 11, "v", COL_TERM_FG);
+                    let track_top = bar_top + 14;
+                    let track_bottom = bar_bottom - 14;
+                    if track_bottom > track_top {
+                        let track_h = track_bottom - track_top;
+                        let thumb_h = if max_start == 0 { track_h } else {
+                            let h = (track_h * TERM_VIEW_ROWS) / total.max(TERM_VIEW_ROWS);
+                            if h < 12 { 12 } else if h > track_h { track_h } else { h }
+                        };
+                        let travel = track_h - thumb_h;
+                        let thumb_y = if max_start == 0 || travel == 0 {
+                            track_top
+                        } else {
+                            track_top + (travel * view) / max_start
+                        };
+                        graphics::fill_rect(bar_x + 2, thumb_y, 10, thumb_h, COL_ACCENT);
+                    }
                 }
                 let y = wy + TITLE_H as usize + 6 + TERM_VIEW_ROWS * 10;
                 if y + 8 < wy + wh && focused {
