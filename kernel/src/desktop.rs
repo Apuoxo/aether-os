@@ -1694,7 +1694,7 @@ fn draw_settings(wx: usize, wy: usize, ww: usize, wh: usize) {
             let names: [&str; 5] = ["White", "Black", "Red", "Green", "Blue"];
             let mut i = 0usize;
             while i < 5 {
-                let bx = wx + 28 + (i as i32) * 88;
+                let bx = wx + 28 + i * 88;
                 let by = wy + 112;
                 let selected = CURSOR_PENDING == i as u8;
                 graphics::fill_rect(bx, by, 68, 82, if selected { 0x00DCEBFA } else { 0x00FFFFFF });
