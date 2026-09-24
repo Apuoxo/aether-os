@@ -305,7 +305,7 @@ fn cmd_dsk() {
                         write_str(" SECTORS=");
                         serial::write_usize((last - first + 1) as usize);
                         write_str("\n");
-                        crate::shell_dsk_probe_partition(d, first);
+                        shell_dsk_probe_partition(d, first);
                         found += 1;
                     }
                 }
@@ -339,7 +339,7 @@ fn cmd_dsk() {
                     write_str(" TYPE=");
                     serial::write_hex(ptype as usize);
                     write_str("\n");
-                    crate::shell_dsk_probe_partition(d, start_lba);
+                    shell_dsk_probe_partition(d, start_lba);
                     found += 1;
                 }
                 pe2 += 1;
