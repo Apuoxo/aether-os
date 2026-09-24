@@ -23,6 +23,30 @@ const SIDE:u32=0x00F7F7F7;
 const GREEN:u32=0x003B8D3B;
 const RED:u32=0x00B03030;
 
+const W7_BAR_T:u32=0x00FAFBFD; const W7_BAR_B:u32=0x00E5EAF3;
+const W7_HDR_T:u32=0x00FFFFFF; const W7_HDR_B:u32=0x00F1F3F7;
+const W7_SEP:u32=0x00D5D5D5;
+const W7_NAV:u32=0x001E395B;
+
+fn lerp(a:u32,b:u32,t:usize,n:usize)->u32{
+    let mut o=0u32;let mut s=0;
+    while s<=16{
+        let ca=((a>>s)&0xFF) as i32;let cb=((b>>s)&0xFF) as i32;
+        o|=((ca+(cb-ca)*(t as i32)/(n as i32)) as u32)<<s;s+=8;
+    }
+    o
+}
+fn vgrad(x:usize,y:usize,w:usize,h:usize,top:u32,bot:u32){
+    let mut i=0;while i<h{graphics::fill_rect(x,y+i,w,1,lerp(top,bot,i,h.max(1)));i+=1;}
+}
+fn sel_row(x:usize,y:usize,w:usize,h:usize,hot:bool){
+    let (t,b,br)=if hot{(0x00FAFBFD,0x00EBF3FD,0x00B8D6FB)}else{(0x00F5FAFF,0x00DCEBFC,0x007DA2CE)};
+    vgrad(x+1,y+1,w-2,h-2,t,b);
+    graphics::border_rect(x,y,w,h,br);
+    graphics::fill_rect(x,y,1,1,WHITE);graphics::fill_rect(x+w-1,y,1,1,WHITE);
+    graphics::fill_rect(x,y+h-1,1,1,WHITE);graphics::fill_rect(x+w-1,y+h-1,1,1,WHITE);
+}
+
 pub const VIEW_COMPUTER:u8=0;
 pub const VIEW_ROOT:u8=1;
 pub const VIEW_PROPS:u8=2;
@@ -77,14 +101,18 @@ pub fn on_nav_key(sc:u8)->bool{unsafe{if VIEW!=VIEW_NTFS{return false;}if NTFS_V
 fn set_root(){unsafe{CWD[0]=b'/';CWD_LEN=1;VIEW=VIEW_ROOT;SEL=-1;}}
 fn push_hist(){unsafe{if HIST_N<8{let mut i=0;while i<32{HIST[HIST_N][i]=CWD[i];i+=1;}HIST_LEN[HIST_N]=CWD_LEN;HIST_N+=1;HIST_I=HIST_N;}}}
 fn draw_num(x:usize,y:usize,mut n:u32){if n==0{graphics::draw_char(x,y,b'0',TEXT);return;}let mut d=[0u8;10];let mut c=0;while n>0{d[c]=(n%10)as u8+b'0';n/=10;c+=1;}let start=c;while c>0{c-=1;graphics::draw_char(x+(start-1-c)*8,y,d[c],TEXT);}}
-fn btn(x:usize,y:usize,w:usize,label:&str,hot:bool){graphics::fill_rect(x,y,w,24,if hot{BLUE2}else{TOOL});graphics::border_rect(x,y,w,24,BORDER);graphics::draw_str(x+8,y+8,label,if hot{BLUE}else{TEXT});}
+fn btn(x:usize,y:usize,w:usize,label:&str,hot:bool){
+    if hot{vgrad(x,y,w,24,0x00EAF6FD,0x00A7D9F5);}else{vgrad(x,y,w,24,0x00F6F7F9,0x00E3E8EF);}
+    graphics::border_rect(x,y,w,24,if hot{0x003C7FB1}else{0x00A0A8B4});
+    graphics::draw_str(x+8,y+8,label,TEXT);
+}
 
 pub fn reset(){unsafe{VIEW=VIEW_COMPUTER;SEL=-1;HOVER=-1;FOCUS_ADDR=false;CTX=false;CONFIRM_DEL=false;HIST_N=0;HIST_I=0;CWD[0]=b'/';CWD_LEN=1;NTFS_CWD_REF=5;NTFS_DEPTH=0;NTFS_VIEW_COUNT=0;NTFS_SCROLL=0;NTFS_VISIBLE_ROWS=1;NTFS_VIEW_DIRTY=true;PREVIEW_LEN=0;}status(b"Ready");}
 
 fn draw_header(wx:usize,wy:usize,ww:usize,body_y:usize){
     // Modern, compact Aether Explorer chrome. Designed for the real 800x600 target.
-    graphics::fill_rect(wx+3,body_y,ww-6,34,TOOL);
-    graphics::fill_rect(wx+3,body_y,ww-6,1,BLUE);
+    vgrad(wx+3,body_y,ww-6,34,W7_BAR_T,W7_BAR_B);
+    graphics::fill_rect(wx+3,body_y+33,ww-6,1,0x00C5CDD8);
 
     btn(wx+8,body_y+5,28,"<",false);
     btn(wx+38,body_y+5,28,">",false);
@@ -126,10 +154,10 @@ fn draw_header(wx:usize,wy:usize,ww:usize,body_y:usize){
     let _=wy;
 }
 fn draw_sidebar(wx:usize,y:usize,w:usize,h:usize){
-    graphics::fill_rect(wx+3,y,w,h,GLASS);
+    graphics::fill_rect(wx+3,y,w,h,WHITE);
     graphics::border_rect(wx+3,y,w,h,BORDER);
 
-    graphics::draw_str(wx+14,y+14,"QUICK ACCESS",DIM);
+    graphics::draw_str(wx+14,y+14,"QUICK ACCESS",W7_NAV);
     icon::blit(icon::IconId::Folder,wx+10,y+28,false);
     graphics::draw_str(wx+40,y+36,"Desktop",TEXT);
     icon::blit(icon::IconId::Folder,wx+10,y+60,false);
@@ -137,7 +165,7 @@ fn draw_sidebar(wx:usize,y:usize,w:usize,h:usize){
     icon::blit(icon::IconId::Folder,wx+10,y+92,false);
     graphics::draw_str(wx+40,y+100,"Downloads",TEXT);
 
-    graphics::draw_str(wx+14,y+122,"THIS PC",DIM);
+    graphics::draw_str(wx+14,y+122,"THIS PC",W7_NAV);
     icon::blit(icon::IconId::MyComputer,wx+10,y+137,false);
     graphics::draw_str(wx+40,y+145,"Computer",TEXT);
     icon::blit(icon::IconId::MyComputer,wx+10,y+169,false);
@@ -145,7 +173,7 @@ fn draw_sidebar(wx:usize,y:usize,w:usize,h:usize){
     icon::blit(icon::IconId::MyComputer,wx+10,y+201,false);
     graphics::draw_str(wx+40,y+209,"AetherFS (A:)",TEXT);
 
-    graphics::draw_str(wx+14,y+246,"SYSTEM",DIM);
+    graphics::draw_str(wx+14,y+246,"SYSTEM",W7_NAV);
     icon::blit(icon::IconId::MyComputer,wx+10,y+261,false);
     graphics::draw_str(wx+40,y+269,"Network",TEXT);
     icon::blit(icon::IconId::MyComputer,wx+10,y+293,false);
@@ -237,18 +265,24 @@ fn draw_disk(wx:usize,y:usize,ww:usize,h:usize){
         graphics::draw_str(wx+10,y+34,"No partitions detected.",RED);
         return;
     }
-    graphics::fill_rect(wx,y+26,ww,24,TOOL2);
-    graphics::draw_str(wx+8,y+34,"Disk",TEXT);
-    graphics::draw_str(wx+76,y+34,"Partition",TEXT);
-    graphics::draw_str(wx+140,y+34,"Filesystem",TEXT);
-    graphics::draw_str(wx+280,y+34,"Size MB",TEXT);
+    vgrad(wx,y,ww,28,W7_HDR_T,W7_HDR_B);
+    graphics::fill_rect(wx,y+27,ww,1,W7_SEP);
+    graphics::fill_rect(wx+244,y+3,1,22,W7_SEP);
+    graphics::fill_rect(wx+344,y+3,1,22,W7_SEP);
+    graphics::draw_str(wx+8,y+9,"Disk",TEXT);
+    graphics::draw_str(wx+76,y+9,"Partition",TEXT);
+    graphics::draw_str(wx+140,y+9,"Filesystem",TEXT);
+    graphics::draw_str(wx+280,y+9,"Size MB",TEXT);
     unsafe{
         let mut row=0usize;
         let mut i=0usize;
         while i<n&&row<18{
             if let Some(p)=part::get(i){
                 let ry=y+52+row*32;
-                if SEL==row as i32{graphics::fill_rect(wx,ry,ww,32,SELECT);}
+                unsafe{
+                    if SEL==row as i32{sel_row(wx+2,ry,ww-4,ROW_H as usize,false);}
+                    else if HOVER==row as i32{sel_row(wx+2,ry,ww-4,ROW_H as usize,true);}
+                }
                 icon::blit(icon::IconId::MyComputer,wx+4,ry,false);
                 draw_num(wx+44,ry+7,p.disk as u32);
                 draw_num(wx+108,ry+7,p.index as u32);
@@ -263,7 +297,10 @@ fn draw_disk(wx:usize,y:usize,ww:usize,h:usize){
 }
 fn draw_fat(wx:usize,y:usize,ww:usize,h:usize){
     graphics::fill_rect(wx,y,ww,h,WHITE);
-    graphics::fill_rect(wx,y,ww,28,TOOL2);
+    vgrad(wx,y,ww,28,W7_HDR_T,W7_HDR_B);
+    graphics::fill_rect(wx,y+27,ww,1,W7_SEP);
+    graphics::fill_rect(wx+244,y+3,1,22,W7_SEP);
+    graphics::fill_rect(wx+344,y+3,1,22,W7_SEP);
     graphics::draw_str(wx+10,y+9,"Name",TEXT);
     graphics::draw_str(wx+250,y+9,"Type",TEXT);
     graphics::draw_str(wx+350,y+9,"Size",TEXT);
@@ -273,9 +310,13 @@ fn draw_fat(wx:usize,y:usize,ww:usize,h:usize){
     while i<n&&i<32&&y+ROW_TOP as usize+i*ROW_H as usize+24<=y+h{
         if let Some(e)=fs_fat::entry(i){
             let ry=y+ROW_TOP as usize+i*ROW_H as usize;
-            unsafe{if SEL==i as i32{graphics::fill_rect(wx,ry,ww,24,SELECT);}}
-            if e.is_dir{icon::blit(icon::IconId::Folder,wx+7,ry-2,false);}else{icon::blit(icon::IconId::File,wx+7,ry-2,false);}
-            let mut k=0;while k<e.name_len&&k<27{graphics::draw_char(wx+42+k*8,ry+8,e.name[k],TEXT);k+=1;}
+            unsafe{
+                if SEL==i as i32{sel_row(wx+2,ry,ww-4,ROW_H as usize,false);}
+                else if HOVER==i as i32{sel_row(wx+2,ry,ww-4,ROW_H as usize,true);}
+            }
+            if e.is_dir{icon::blit(icon::IconId::Folder,wx+7,ry,false);}else{icon::blit(icon::IconId::File,wx+7,ry,false);}
+            let col=TEXT;
+            let mut k=0;while k<e.name_len&&k<27{graphics::draw_char(wx+42+k*8,ry+10,e.name[k],col);k+=1;}
             graphics::draw_str(wx+250,ry+8,if e.is_dir{"Folder"}else{"File"},DIM);
             if !e.is_dir{draw_num(wx+350,ry+8,e.size);}
         }
@@ -297,9 +338,12 @@ fn draw_ntfs(wx:usize,y:usize,ww:usize,h:usize){
         let idx=match ntfs_row_index(vi){Some(v)=>v,None=>break};
         if let Some(e)=fs_ntfs::entry(idx){
             let ry=y+ROW_TOP as usize+r*32;
-            unsafe{if SEL==r as i32{graphics::fill_rect(wx,ry,ww,32,SELECT);}if HOVER==r as i32{graphics::border_rect(wx,ry,ww,32,BLUE);}}
+            unsafe{
+                if SEL==r as i32{sel_row(wx+2,ry,ww-4,ROW_H as usize,false);}
+                else if HOVER==r as i32{sel_row(wx+2,ry,ww-4,ROW_H as usize,true);}
+            }
             if e.is_dir{icon::blit(icon::IconId::Folder,wx+7,ry,false);}else{icon::blit(icon::IconId::File,wx+7,ry,false);}
-            let col=unsafe{if SEL==r as i32{BLUE}else{TEXT}};
+            let col=TEXT;
             let mut k=0;while k<e.name_len&&k<27{graphics::draw_char(wx+42+k*8,ry+10,e.name[k],col);k+=1;}
             graphics::draw_str(wx+250,ry+10,if e.is_dir{"Folder"}else{"File"},DIM);
             if !e.is_dir{draw_num(wx+350,ry+10,if e.size>0xFFFF_FFFF{0xFFFF_FFFF}else{e.size as u32});}
@@ -312,7 +356,10 @@ fn draw_list(wx:usize,y:usize,ww:usize,h:usize){
     let mut a=[fs::ListItem{name:[0;24],name_len:0,size:0,is_dir:false};16];
     let n=unsafe{fs::list_ex_path(core::str::from_utf8_unchecked(&CWD[..CWD_LEN]),&mut a)};
     graphics::fill_rect(wx,y,ww,h,WHITE);
-    graphics::fill_rect(wx,y,ww,28,TOOL2);
+    vgrad(wx,y,ww,28,W7_HDR_T,W7_HDR_B);
+    graphics::fill_rect(wx,y+27,ww,1,W7_SEP);
+    graphics::fill_rect(wx+214,y+3,1,22,W7_SEP);
+    graphics::fill_rect(wx+304,y+3,1,22,W7_SEP);
     graphics::draw_str(wx+10,y+9,"Name",TEXT);
     graphics::draw_str(wx+220,y+9,"Type",TEXT);
     graphics::draw_str(wx+310,y+9,"Size",TEXT);
@@ -325,10 +372,10 @@ fn draw_list(wx:usize,y:usize,ww:usize,h:usize){
         let mut i=0;
         while i<n{
             let ry=y+ROW_TOP as usize+i*ROW_H as usize;
-            if SEL==i as i32{graphics::fill_rect(wx,ry,ww,24,SELECT);}
-            if HOVER==i as i32{graphics::border_rect(wx,ry,ww,24,BLUE);}
-            if a[i].is_dir{icon::blit(icon::IconId::Folder,wx+7,ry-2,false);}else{icon::blit(icon::IconId::File,wx+7,ry-2,false);}
-            let col=if SEL==i as i32{BLUE}else{TEXT};
+            if SEL==i as i32{sel_row(wx+2,ry,ww-4,ROW_H as usize,false);}
+            else if HOVER==i as i32{sel_row(wx+2,ry,ww-4,ROW_H as usize,true);}
+            if a[i].is_dir{icon::blit(icon::IconId::Folder,wx+7,ry,false);}else{icon::blit(icon::IconId::File,wx+7,ry,false);}
+            let col=TEXT;
             let mut k=0;while k<a[i].name_len&&k<22{graphics::draw_char(wx+42+k*8,ry+8,a[i].name[k],col);k+=1;}
             graphics::draw_str(wx+220,ry+8,if a[i].is_dir{"Folder"}else{"File"},DIM);
             if !a[i].is_dir{draw_num(wx+310,ry+8,a[i].size);}
