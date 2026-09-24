@@ -228,8 +228,8 @@ pub fn load_firmware() -> bool {
 
         // iwlwifi-2030-6 is a TLV-format image. Linux distinguishes this
         // format by zero at offset 0 and IWL_TLV_UCODE_MAGIC at offset 4.
-        // The TLV header is 76 bytes: zero, magic, 64-byte human string,
-        // version, build and 64-bit reserved field.
+        // Linux iwlwifi defines the TLV header as 8 + 64 + 4 + 4 + 8 = 88 bytes.
+        // The version/build fields therefore start at offsets 72/76 and TLVs at 88.
         let magic = fw_le32(IWL2030_FW, 4);
         const IWL_TLV_UCODE_MAGIC: u32 = 0x0A4C5749;
         let tlv_format = fw_le32(IWL2030_FW, 0) == 0 && magic == IWL_TLV_UCODE_MAGIC;
@@ -240,8 +240,8 @@ pub fn load_firmware() -> bool {
             return false;
         }
 
-        let ver = fw_le32(IWL2030_FW, 68);
-        let build = fw_le32(IWL2030_FW, 72);
+        let ver = fw_le32(IWL2030_FW, 72);
+        let build = fw_le32(IWL2030_FW, 76);
         let api = (ver >> 8) & 0xFF;
         FW_VER = ver;
         FW_INST_SIZE = 0;
@@ -257,7 +257,7 @@ pub fn load_firmware() -> bool {
         serial::write_usize(build as usize);
         serial::write_str("\n");
 
-        let mut pos = 76usize;
+        let mut pos = 88usize;
         let mut inst_seen = false;
         let mut data_seen = false;
         let mut inst_size = 0usize;
