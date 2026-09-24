@@ -281,7 +281,10 @@ fn cmd_wf() {
     write_str("  RX-RING="); write_str(if crate::drivers::wifi::rx_ready() { "READY" } else { "NOT-READY" }); write_str(" IRQ_COUNT="); write_usize(crate::drivers::wifi::rx_irq_count() as usize); write_str(" ALIVE="); write_str(if crate::drivers::wifi::alive_seen() { "SEEN" } else { "NOT-SEEN" }); write_str(" VALID="); write_hex(crate::drivers::wifi::alive_valid() as usize); write_str(" SUBTYPE="); write_usize(crate::drivers::wifi::alive_subtype() as usize); write_str("\n");
     write_str("  FIRMWARE_EXECUTION=");
     write_str(if fw_exec_ok { "STARTED" } else { "FAILED/NOT-ATTEMPTED" });
-    write_str(" ALIVE=");\n    write_str(if crate::drivers::wifi::alive_seen() { "SEEN" } else { "NOT-SEEN" });\n    write_str(" RX_IRQ_COUNT=");\n    write_usize(crate::drivers::wifi::rx_irq_count() as usize);
+    write_str(" ALIVE=");
+    write_str(if crate::drivers::wifi::alive_seen() { "SEEN" } else { "NOT-SEEN" });
+    write_str(" RX_IRQ_COUNT=");
+    write_usize(crate::drivers::wifi::rx_irq_count() as usize);
     write_str("\n");
     write_str("  PCIE_LINK SPEED=");
     write_hex(crate::drivers::wifi::pcie_link_speed() as usize);
