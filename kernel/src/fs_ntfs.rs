@@ -33,6 +33,10 @@ static mut INDEX_BUFFERS_READ: usize = 0;
 static mut INDEX_ROOT_ENTRIES: usize = 0;
 static mut INDEX_ALLOCATION_ENTRIES: usize = 0;
 static mut INDEX_TOTAL_PARSED: usize = 0;
+static mut INDEX_ROOT_DIAG_START: usize = 0;
+static mut INDEX_ROOT_DIAG_END: usize = 0;
+static mut INDEX_ALLOC_DIAG_START: usize = 0;
+static mut INDEX_ALLOC_DIAG_END: usize = 0;
 static mut ENTRIES: [NtfsEntry; 32] = [NtfsEntry {
     name: [0; 48], name_len: 0, size: 0, is_dir: false, mft_ref: 0,
 }; 32];
@@ -519,6 +523,10 @@ pub fn list_directory(mft_ref: u32) -> bool {
         INDEX_ROOT_ENTRIES = 0;
         INDEX_ALLOCATION_ENTRIES = 0;
         INDEX_TOTAL_PARSED = 0;
+        INDEX_ROOT_DIAG_START = 0;
+        INDEX_ROOT_DIAG_END = 0;
+        INDEX_ALLOC_DIAG_START = 0;
+        INDEX_ALLOC_DIAG_END = 0;
     }
     let mut rec = [0u8; 1024];
     let rec_size = unsafe { MFT_REC_SIZE as usize };
@@ -562,10 +570,13 @@ pub fn list_directory(mft_ref: u32) -> bool {
                     }
                 }
                 if val_len > 32 {
+                    let before = unsafe { NENT };
                     let n = parse_index_entries(&rec, base + 32, base + val_len);
                     unsafe {
                         INDEX_ROOT_ENTRIES += n;
                         INDEX_TOTAL_PARSED += n;
+                        INDEX_ROOT_DIAG_START = before;
+                        INDEX_ROOT_DIAG_END = NENT;
                     }
                 }
             }
@@ -596,10 +607,15 @@ pub fn list_directory(mft_ref: u32) -> bool {
                 }
                 if apply_index_fixup(&mut buf[..block_size], block_size) {
                     unsafe { INDEX_BUFFERS_READ += 1; }
+                    let before = unsafe { NENT };
                     let n = parse_index_buffer(&buf[..block_size], block_size);
                     unsafe {
                         INDEX_ALLOCATION_ENTRIES += n;
                         INDEX_TOTAL_PARSED += n;
+                        if n > 0 && INDEX_ALLOC_DIAG_END == INDEX_ALLOC_DIAG_START {
+                            INDEX_ALLOC_DIAG_START = before;
+                        }
+                        INDEX_ALLOC_DIAG_END = NENT;
                     }
                 }
                 off += block_size;
@@ -822,6 +838,31 @@ pub fn diagnostic() {
                                     diag_str(" TOTAL_STORED=");
                                     diag_usize(entry_count());
                                     diag_str(" STORAGE_LIMIT=32\n");
+                                    diag_str("[NTFSDIAG] NAMES_BEGIN\n");
+                                    let mut ni = 0usize;
+                                    while ni < entry_count() {
+                                        if let Some(e) = entry(ni) {
+                                            diag_str("[NTFSDIAG] NAME[");
+                                            diag_usize(ni);
+                                            diag_str("] MFT=");
+                                            diag_usize(e.mft_ref as usize);
+                                            diag_str(" DIR=");
+                                            diag_usize(if e.is_dir { 1 } else { 0 });
+                                            diag_str(" SIZE=");
+                                            diag_usize(e.size as usize);
+                                            diag_str(" ");
+                                            let mut ci = 0usize;
+                                            while ci < e.name_len {
+                                                let ch = [e.name[ci]];
+                                                let cs = unsafe { core::str::from_utf8_unchecked(&ch) };
+                                                diag_str(cs);
+                                                ci += 1;
+                                            }
+                                            diag_str("\n");
+                                        }
+                                        ni += 1;
+                                    }
+                                    diag_str("[NTFSDIAG] NAMES_END\n");
                                     // Inspect MFT#5 attributes to determine whether the directory
                                     // needs non-resident $INDEX_ALLOCATION traversal.
                                     let mut aoff = u16::from_le_bytes([r5[20], r5[21]]) as usize;
