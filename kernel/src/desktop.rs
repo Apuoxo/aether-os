@@ -336,7 +336,32 @@ fn run_cmd(line: &[u8], len: usize) {
         term_write_str(" FULL PCI / USB-HC / PORT\n");
         term_write_str(" PORT-CHANGE lines = plug\n");
         unsafe { DIRTY_FULL = true; }
-    } else if eq_cmd(&cmd, ci, b"77") || eq_cmd(&cmd, ci, b"dsk") {
+    } else if eq_cmd(&cmd, ci, b"77") {
+        // Terminal-capacity test: this GUI terminal has a finite 16-row buffer.
+        term_write_str("===== 77-BEGIN =====\n");
+        term_write_str("77-TEST-01\n");
+        term_write_str("77-TEST-02\n");
+        term_write_str("77-TEST-03\n");
+        term_write_str("77-TEST-04\n");
+        term_write_str("77-TEST-05\n");
+        term_write_str("77-TEST-06\n");
+        term_write_str("77-TEST-07\n");
+        term_write_str("77-TEST-08\n");
+        term_write_str("77-TEST-09\n");
+        term_write_str("77-TEST-10\n");
+        term_write_str("77-TEST-11\n");
+        term_write_str("77-TEST-12\n");
+        term_write_str("77-TEST-13\n");
+        term_write_str("77-TEST-14\n");
+        term_write_str("77-TEST-15\n");
+        term_write_str("77-TEST-16\n");
+        term_write_str("77-TEST-17\n");
+        term_write_str("77-TEST-18\n");
+        term_write_str("77-TEST-19\n");
+        term_write_str("77-TEST-20\n");
+        term_write_str("===== 77-END =====\n");
+        unsafe { DIRTY_FULL = true; }
+    } else if eq_cmd(&cmd, ci, b"dsk") {
         // GUI terminal DSK must use the same raw-only AHCI path as the kernel shell.
         // Do not use part.rs, block.rs, or VFS here: this command is the storage truth probe.
         term_write_str("DIAG... DSK RAW-ONLY DISK DIAGNOSTIC\n");
