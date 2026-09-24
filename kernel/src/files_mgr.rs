@@ -270,7 +270,8 @@ fn draw_props(wx:usize,y:usize,ww:usize,h:usize){
     unsafe{if SEL<0{graphics::draw_str(wx+14,y+40,"No item selected.",DIM);return;}let mut a=[fs::ListItem{name:[0;24],name_len:0,size:0,is_dir:false};16];let n=fs::list_ex_path(core::str::from_utf8_unchecked(&CWD[..CWD_LEN]),&mut a);let s=SEL as usize;if s>=n{return;}graphics::draw_str(wx+14,y+46,"Name:",DIM);let mut k=0;while k<a[s].name_len{graphics::draw_char(wx+66+k*8,y+46,a[s].name[k],TEXT);k+=1;}graphics::draw_str(wx+14,y+66,if a[s].is_dir{"Type: Folder"}else{"Type: File"},TEXT);if !a[s].is_dir{graphics::draw_str(wx+14,y+86,"Size:",DIM);draw_num(wx+56,y+86,a[s].size);}graphics::draw_str(wx+14,y+106,"Location: AetherFS (A:)",DIM);}
 }
 
-// Recreated Explorer shell: keep the visual layer self-contained and native to Aether.\nfn draw_context(){
+// Recreated Explorer shell: keep the visual layer self-contained and native to Aether.
+fn draw_context(){
     unsafe{
         // Windows 7-style light context menu with separators and disabled
         // read-only operations. The menu remains native Aether UI.
