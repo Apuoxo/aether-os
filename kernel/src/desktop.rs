@@ -1228,10 +1228,19 @@ fn draw_window(idx: usize) {
                     } else {
                         graphics::draw_str(wx + 18, wy + 150, "Reset: not attempted", COL_TEXT_DIM);
                     }
-                    if crate::drivers::wifi::needs_firmware() {
-                        graphics::draw_str(wx + 18, wy + 164, "Firmware required", 0x00800000);
+                    if crate::drivers::wifi::activate_attempted() {
+                        if crate::drivers::wifi::activate_ok() {
+                            graphics::draw_str(wx + 18, wy + 164, "MAC: clock ready", 0x00008000);
+                        } else {
+                            graphics::draw_str(wx + 18, wy + 164, "MAC: activation failed", 0x00800000);
+                        }
                     } else {
-                        graphics::draw_str(wx + 18, wy + 164, "Firmware loaded", 0x00008000);
+                        graphics::draw_str(wx + 18, wy + 164, "MAC: not activated", COL_TEXT_DIM);
+                    }
+                    if crate::drivers::wifi::needs_firmware() {
+                        graphics::draw_str(wx + 18, wy + 178, "Firmware required", 0x00800000);
+                    } else {
+                        graphics::draw_str(wx + 18, wy + 178, "Firmware loaded", 0x00008000);
                     }
                 } else {
                     graphics::draw_str(wx + 18, wy + 106, "Wi-Fi adapter not detected", COL_TEXT_DIM);
