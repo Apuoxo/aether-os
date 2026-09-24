@@ -177,7 +177,7 @@ fn print_hex16_fresh(buf: &[u8; 512]) {
 }
 
 fn cmd_dsk() {
-    write_str("======== DSK RAW-ONLY DISK DIAGNOSTIC ========\n");
+    write_str("DIAG... DSK RAW-ONLY DISK DIAGNOSTIC\n");
     write_str("SOURCE: AHCI IDENTIFY + RAW LBA (NO part.rs / NO block.rs / NO VFS)\n");
     write_str("READ-ONLY: partition table and filesystem metadata are parsed from fresh sectors\n");
 
