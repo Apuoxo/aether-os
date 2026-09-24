@@ -336,102 +336,117 @@ fn run_cmd(line: &[u8], len: usize) {
         term_write_str(" PORT-CHANGE lines = plug\n");
         unsafe { DIRTY_FULL = true; }
     } else if eq_cmd(&cmd, ci, b"dsk") {
-        term_write_str("======== DSK: real storage probe (READ-ONLY) ========\n");
-        let snap = crate::storage_hw_diag::snapshot();
-        term_write_str("PCI mass-storage controllers: ");
-        term_write_hex(snap.mass_n);
-        term_write_str("  AHCI=");
-        term_write_hex(snap.ahci_n);
-        term_write_str(" IDE=");
-        term_write_hex(snap.ide_n);
-        term_write_str(" NVMe=");
-        term_write_hex(snap.nvme_n);
-        term_write_str("\n");
+        // GUI terminal DSK must use the same raw-only AHCI path as the kernel shell.
+        // Do not use part.rs, block.rs, or VFS here: this command is the storage truth probe.
+        term_write_str("DIAG... DSK RAW-ONLY DISK DIAGNOSTIC\\n");
+        term_write_str("SOURCE: AHCI IDENTIFY + RAW LBA (NO part.rs / NO block.rs / NO VFS)\\n");
+        term_write_str("READ-ONLY: partition table is parsed directly from freshly-read sectors\\n");
 
         let nd = crate::drivers::ahci::disk_count();
-        term_write_str("AHCI runtime disks: ");
+        term_write_str("PHYSICAL DISKS=");
         term_write_hex(nd);
-        term_write_str("\n");
+        term_write_str("\\n");
+
         let mut di = 0usize;
         while di < nd {
+            term_write_str("DISK ");
+            term_write_hex(di);
+            term_write_str(" MODEL=");
             let mut model = [0u8; 40];
             let ml = crate::drivers::ahci::disk_model(di, &mut model);
-            term_write_str("  disk");
-            term_write_hex(di);
-            term_write_str(" model=");
             let mut j = 0usize;
-            while j < ml {
+            while j < ml && j < 40 {
                 term_putc(model[j]);
                 j += 1;
             }
-            term_write_str(" sectors=");
+            term_write_str(" SECTORS=");
             term_write_hex(crate::drivers::ahci::disk_sectors(di) as usize);
-            term_write_str("\n");
+            term_write_str("\\n");
 
-            let mut sec0 = [0u8; 512];
-            let ok = crate::drivers::ahci::read_sectors(di, 0, 1, &mut sec0);
-            term_write_str("    LBA0 READ=");
-            term_write_str(if ok { "OK" } else { "FAIL" });
-            if ok {
-                term_write_str(" sig=");
-                if sec0[510] == 0x55 && sec0[511] == 0xAA {
-                    term_write_str("MBR");
-                } else {
-                    term_write_str("no-55AA");
-                }
+            let mut lba0 = [0u8; 512];
+            let ok0 = crate::drivers::ahci::read_sectors(di, 0, 1, &mut lba0);
+            term_write_str("  RAW_LBA0=");
+            term_write_str(if ok0 { "OK" } else { "FAIL" });
+            if !ok0 {
+                term_write_str("\\n");
+                di += 1;
+                continue;
             }
-            term_write_str("\n");
+            term_write_str(" SIG=");
+            term_write_str(if lba0[510] == 0x55 && lba0[511] == 0xAA { "55AA" } else { "NO-55AA" });
+            term_write_str("\\n");
+
+            let mut protective_gpt = false;
+            let mut pe = 0usize;
+            while pe < 4 {
+                let off = 446 + pe * 16;
+                if lba0[off + 4] == 0xEE {
+                    protective_gpt = true;
+                }
+                pe += 1;
+            }
+
+            if protective_gpt {
+                term_write_str("  TABLE=GPT (protective MBR)\\n");
+                let mut gh = [0u8; 512];
+                let gpt_ok = crate::drivers::ahci::read_sectors(di, 1, 1, &mut gh)
+                    && gh[0] == b'E' && gh[1] == b'F' && gh[2] == b'I' && gh[3] == b' '
+                    && gh[4] == b'P' && gh[5] == b'A' && gh[6] == b'R' && gh[7] == b'T';
+                term_write_str("  GPT_HEADER=");
+                term_write_str(if gpt_ok { "OK" } else { "FAIL" });
+                term_write_str("\\n");
+
+                if gpt_ok {
+                    let entry_lba = u64::from_le_bytes([
+                        gh[72], gh[73], gh[74], gh[75], gh[76], gh[77], gh[78], gh[79]
+                    ]);
+                    let entry_count = u32::from_le_bytes([gh[80], gh[81], gh[82], gh[83]]);
+                    let entry_size = u32::from_le_bytes([gh[84], gh[85], gh[86], gh[87]]);
+                    term_write_str("  GPT ENTRY_LBA=");
+                    term_write_hex(entry_lba as usize);
+                    term_write_str(" COUNT=");
+                    term_write_hex(entry_count as usize);
+                    term_write_str(" SIZE=");
+                    term_write_hex(entry_size as usize);
+                    term_write_str("\\n");
+                }
+            } else {
+                term_write_str("  TABLE=MBR (directly from LBA0)\\n");
+                let mut found = 0usize;
+                let mut pe2 = 0usize;
+                while pe2 < 4 {
+                    let off = 446 + pe2 * 16;
+                    let ptype = lba0[off + 4];
+                    if ptype != 0 {
+                        let start_lba = u32::from_le_bytes([
+                            lba0[off + 8], lba0[off + 9], lba0[off + 10], lba0[off + 11]
+                        ]) as usize;
+                        let sectors = u32::from_le_bytes([
+                            lba0[off + 12], lba0[off + 13], lba0[off + 14], lba0[off + 15]
+                        ]) as usize;
+                        term_write_str("  PART ");
+                        term_write_hex(found);
+                        term_write_str(" MBR_IDX=");
+                        term_write_hex(pe2);
+                        term_write_str(" START_LBA=");
+                        term_write_hex(start_lba);
+                        term_write_str(" SECTORS=");
+                        term_write_hex(sectors);
+                        term_write_str(" TYPE=");
+                        term_write_hex(ptype as usize);
+                        term_write_str("\\n");
+                        found += 1;
+                    }
+                    pe2 += 1;
+                }
+                term_write_str("  MBR_PARTITIONS=");
+                term_write_hex(found);
+                term_write_str("\\n");
+            }
             di += 1;
         }
 
-        let np = crate::part::count();
-        term_write_str("Partitions parsed from READ data: ");
-        term_write_hex(np);
-        term_write_str("\n");
-        let mut pi = 0usize;
-        while pi < np {
-            if let Some(p) = crate::part::get(pi) {
-                term_write_str("  #");
-                term_write_hex(pi);
-                term_write_str(" disk=");
-                term_write_hex(p.disk as usize);
-                term_write_str(" idx=");
-                term_write_hex(p.index as usize);
-                term_write_str(" type=");
-                term_write_str(crate::part::type_name(p.ptype));
-                term_write_str(" LBA=");
-                term_write_hex(p.lba_start as usize);
-                term_write_str(" sectors=");
-                term_write_hex(p.sectors as usize);
-
-                let mut sec = [0u8; 512];
-                let ok = crate::block::read(p.disk, p.lba_start, 1, &mut sec);
-                term_write_str(" read=");
-                term_write_str(if ok { "OK" } else { "FAIL" });
-                if ok {
-                    term_write_str(" fs=");
-                    if sec[3] == b'N' && sec[4] == b'T' && sec[5] == b'F' && sec[6] == b'S' {
-                        term_write_str("NTFS");
-                    } else if sec[54] == b'F' && sec[55] == b'A' && sec[56] == b'T' {
-                        term_write_str("FAT");
-                    } else {
-                        term_write_str("unknown");
-                    }
-                }
-                term_write_str("\n");
-            }
-            pi += 1;
-        }
-
-        term_write_str("NTFS mounted: ");
-        term_write_str(if crate::fs_ntfs::is_mounted() { "YES" } else { "NO" });
-        term_write_str("\n");
-        if crate::fs_ntfs::is_mounted() {
-            term_write_str("NTFS root entries: ");
-            term_write_hex(crate::fs_ntfs::entry_count());
-            term_write_str("\n");
-        }
-        term_write_str("======== END DSK ========\n");
+        term_write_str("======== DSK RAW-ONLY END ========\\n");
         unsafe { DIRTY_FULL = true; }
     } else if eq_cmd(&cmd, ci, b"ls") {
         if !fs::is_mounted() {
