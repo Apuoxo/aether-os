@@ -148,7 +148,7 @@ fn eq(line: &[u8], s: usize, clen: usize, b: &[u8]) -> bool {
 }
 
 fn cmd_help() {
-    write_str("Commands: help ls cat mem dsk uname vdiag vedid echo halt\n");
+    write_str("Commands: help ls cat mem dsk dsk2 uname vdiag vedid echo halt\n");
 }
 
 fn write_u64_decimal(mut n: u64) {
@@ -313,6 +313,162 @@ fn cmd_dsk() {
     write_str("If BOOT READ=FAIL, the failure is below the filesystem layer.\n");
     write_str("If BOOT READ=OK but NTFS MFT READ=FAIL, the failure is in filesystem addressing/read path.\n");
     write_str("======== END DSK ========\n");
+}
+
+fn print_hex16(buf: &[u8; 512]) {
+    let mut i = 0usize;
+    while i < 16 {
+        serial::write_hex(buf[i] as usize);
+        if i != 15 { write_str(" "); }
+        i += 1;
+    }
+}
+
+fn cmd_dsk2() {
+    write_str("======== DSK2 DIRECT AHCI DIAGNOSTIC ========\n");
+    write_str("PATH: AHCI -> LBA -> BOOT -> NTFS MFT (NO block::read)\n");
+
+    let nd = crate::drivers::ahci::disk_count();
+    write_str("PHYSICAL DISKS: ");
+    serial::write_usize(nd);
+    write_str("\n");
+
+    let mut d = 0usize;
+    while d < nd {
+        write_str("\nDISK");
+        serial::write_usize(d);
+        write_str(" MODEL=");
+        let mut model = [0u8; 40];
+        let ml = crate::drivers::ahci::disk_model(d, &mut model);
+        let mut mi = 0usize;
+        while mi < ml && mi < 40 { putc(model[mi]); mi += 1; }
+        write_str(" SECTORS=");
+        serial::write_usize(crate::drivers::ahci::disk_sectors(d) as usize);
+        write_str("\n");
+
+        let mut lba0 = [0u8; 512];
+        let ok0 = crate::drivers::ahci::read_sectors(d, 0, 1, &mut lba0);
+        write_str("  DIRECT LBA0 READ=");
+        write_str(if ok0 { "OK" } else { "FAIL" });
+        if ok0 {
+            write_str(" SIG=");
+            write_str(if lba0[510] == 0x55 && lba0[511] == 0xAA { "55AA" } else { "NO-55AA" });
+        }
+        write_str("\n");
+        d += 1;
+    }
+
+    let np = crate::part::count();
+    write_str("\nPARTITIONS: ");
+    serial::write_usize(np);
+    write_str("\n");
+
+    let mut pidx = 0usize;
+    while pidx < np {
+        if let Some(p) = crate::part::get(pidx) {
+            let disk = p.disk as usize;
+            let start = p.lba_start as u64;
+            write_str("\nPART #");
+            serial::write_usize(pidx);
+            write_str(" DISK=");
+            serial::write_usize(disk);
+            write_str(" START_LBA=");
+            serial::write_usize(start as usize);
+            write_str(" SECTORS=");
+            serial::write_usize(p.sectors as usize);
+            write_str("\n");
+
+            let mut boot = [0u8; 512];
+            let rb = crate::drivers::ahci::read_sectors(disk, start, 1, &mut boot);
+            write_str("  DIRECT BOOT READ=");
+            write_str(if rb { "OK" } else { "FAIL" });
+            write_str("\n");
+            if !rb {
+                pidx += 1;
+                continue;
+            }
+
+            write_str("  BOOT[0..16]=");
+            print_hex16(&boot);
+            write_str("\n");
+            write_str("  BOOT SIG=");
+            write_str(if boot[510] == 0x55 && boot[511] == 0xAA { "55AA" } else { "NO-55AA" });
+            write_str("\n");
+
+            let is_ntfs = boot[3] == b'N' && boot[4] == b'T' && boot[5] == b'F'
+                && boot[6] == b'S' && boot[7] == b' ';
+            let is_fat = (boot[54] == b'F' && boot[55] == b'A' && boot[56] == b'T')
+                || (boot[82] == b'F' && boot[83] == b'A' && boot[84] == b'T');
+            let is_ext = p.ptype == 0x83;
+
+            if is_ntfs {
+                write_str("  FS=NTFS (BOOT DATA)\n");
+                let bps = u16::from_le_bytes([boot[11], boot[12]]);
+                let spc = boot[13];
+                let mft_lcn = u64::from_le_bytes([
+                    boot[48], boot[49], boot[50], boot[51],
+                    boot[52], boot[53], boot[54], boot[55]
+                ]);
+                write_str("  NTFS BPS=");
+                serial::write_usize(bps as usize);
+                write_str(" SPC=");
+                serial::write_usize(spc as usize);
+                write_str(" MFT_LCN=");
+                serial::write_usize(mft_lcn as usize);
+                write_str("\n");
+
+                if bps != 512 || spc == 0 {
+                    write_str("  NTFS PARAMS=INVALID\n");
+                } else {
+                    let mft_lba = start.saturating_add(mft_lcn.saturating_mul(spc as u64));
+                    write_str("  MFT_ABSOLUTE_LBA=");
+                    serial::write_usize(mft_lba as usize);
+                    write_str("\n");
+
+                    let mut mft = [0u8; 512];
+                    let rm = crate::drivers::ahci::read_sectors(disk, mft_lba, 1, &mut mft);
+                    write_str("  DIRECT MFT READ=");
+                    write_str(if rm { "OK" } else { "FAIL" });
+                    if rm {
+                        write_str(" SIGNATURE=");
+                        write_str(if mft[0] == b'F' && mft[1] == b'I' && mft[2] == b'L' && mft[3] == b'E'
+                            { "FILE" } else { "NOT-FILE" });
+                        write_str("\n");
+                        write_str("  MFT[0..16]=");
+                        print_hex16(&mft);
+                        write_str("\n");
+                    } else {
+                        write_str("\n");
+                    }
+
+                    let mut seq = [0u8; 512];
+                    let mut n = 0u8;
+                    write_str("  SEQUENTIAL READ MFT+1..+3: ");
+                    while n < 3 {
+                        let ok = crate::drivers::ahci::read_sectors(disk, mft_lba + 1 + n as u64, 1, &mut seq);
+                        if ok { write_str("OK "); } else { write_str("FAIL "); }
+                        n += 1;
+                    }
+                    write_str("\n");
+                }
+            } else if is_fat {
+                write_str("  FS=FAT (BOOT DATA)\n");
+            } else if is_ext {
+                write_str("  FS=EXT CANDIDATE (PARTITION TYPE 0x83)\n");
+            } else {
+                write_str("  FS=UNKNOWN FROM BOOT DATA\n");
+            }
+        }
+        pidx += 1;
+    }
+
+    write_str("\n======== DSK2 RESULT ========\n");
+    write_str("DIRECT LBA0 FAIL -> AHCI/device access problem.\n");
+    write_str("BOOT READ FAIL -> direct partition LBA access problem.\n");
+    write_str("BOOT OK + NTFS + MFT FAIL -> NTFS addressing or AHCI read problem.\n");
+    write_str("MFT OK + FILE -> physical NTFS metadata read path works.\n");
+    write_str("DSK2 NEVER CALLS block::read(), cmd_dsk(), or NTFS VFS mount code.\n");
+    write_str("======== END DSK2 ========\n");
 }
 
 fn cmd_vdiag() {
@@ -502,6 +658,8 @@ fn run_line(line: &[u8], len: usize) {
         cmd_mem();
     } else if eq(line, s, clen, b"dsk") {
         cmd_dsk();
+    } else if eq(line, s, clen, b"dsk2") {
+        cmd_dsk2();
     } else if eq(line, s, clen, b"vdiag") {
         cmd_vdiag();
     } else if eq(line, s, clen, b"vedid") {
