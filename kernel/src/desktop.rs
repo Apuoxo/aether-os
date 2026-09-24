@@ -399,6 +399,13 @@ fn run_cmd(line: &[u8], len: usize) {
         term_write_str("77-TEST-20\n");
         term_write_str("===== 77-END =====\n");
         unsafe { DIRTY_FULL = true; }
+    } else if eq_cmd(&cmd, ci, b"11") {
+        // Dedicated NTFS filesystem-path diagnostic. Not the DSK RAW/MBR probe.
+        term_write_str("NTFS... FILESYSTEM PATH DIAGNOSTIC\n");
+        term_write_str("SOURCE: part.rs + NTFS boot + MFT + INDEX_ROOT\n");
+        crate::fs_ntfs::diagnostic();
+        term_write_str("NTFS DIAG COMPLETE\n");
+        unsafe { DIRTY_FULL = true; }
     } else if eq_cmd(&cmd, ci, b"dsk") {
         // GUI terminal DSK must use the same raw-only AHCI path as the kernel shell.
         // Do not use part.rs, block.rs, or VFS here: this command is the storage truth probe.
