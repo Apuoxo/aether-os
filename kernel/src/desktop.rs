@@ -75,8 +75,8 @@ struct Window {
 }
 
 static mut WINS: [Window; MAX_WIN] = [
-    Window { x: 240, y: 36, w: 520, h: 340, kind: WinKind::Terminal, visible: true, z: 5,
-        minimized: false, maximized: false, rx: 240, ry: 36, rw: 520, rh: 340 },
+    Window { x: 20, y: 36, w: 760, h: 340, kind: WinKind::Terminal, visible: true, z: 5,
+        minimized: false, maximized: false, rx: 20, ry: 36, rw: 760, rh: 340 },
     Window { x: 20, y: 36, w: 220, h: 110, kind: WinKind::About, visible: false, z: 1,
         minimized: false, maximized: false, rx: 20, ry: 36, rw: 220, rh: 110 },
     Window { x: 40, y: 150, w: 300, h: 180, kind: WinKind::Network, visible: false, z: 2,
