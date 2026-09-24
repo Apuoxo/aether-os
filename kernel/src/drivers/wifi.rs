@@ -78,6 +78,8 @@ static mut FW_LOADED: bool = false;
 static mut FW_VER: u32 = 0;
 static mut FW_INST_SIZE: u32 = 0;
 static mut FW_DATA_SIZE: u32 = 0;
+static mut FW_EXEC_ATTEMPTED: bool = false;
+static mut FW_EXEC_STARTED: bool = false;
 
 
 
@@ -188,6 +190,8 @@ pub fn firmware_loaded() -> bool { unsafe { FW_LOADED } }
 pub fn firmware_version() -> u32 { unsafe { FW_VER } }
 pub fn firmware_inst_size() -> u32 { unsafe { FW_INST_SIZE } }
 pub fn firmware_data_size() -> u32 { unsafe { FW_DATA_SIZE } }
+pub fn firmware_exec_attempted() -> bool { unsafe { FW_EXEC_ATTEMPTED } }
+pub fn firmware_exec_started() -> bool { unsafe { FW_EXEC_STARTED } }
 
 fn fw_le32(b: &[u8], off: usize) -> u32 {
     (b[off] as u32) | ((b[off + 1] as u32) << 8) |
@@ -271,6 +275,34 @@ pub fn load_firmware() -> bool {
         serial::write_str("[WIFI] FW LOAD=OK runtime INST+DATA written to SRAM\n");
         serial::write_str("[WIFI] FW EXECUTION=NOT-YET IRQ/RX/TX=NOT-STARTED\n");
         true
+    }
+}
+
+/// Release the Intel 2000/2030 runtime uCode from host reset after its
+/// runtime instruction/data sections have been written to device SRAM.
+/// This is deliberately a boot-only step: Aether does not claim ALIVE until
+/// the firmware notification is received through the future RX/interrupt path.
+pub fn start_firmware() -> bool {
+    unsafe {
+        FW_EXEC_ATTEMPTED = false;
+        FW_EXEC_STARTED = false;
+        if !FW_LOADED || !ACTIVATE_OK || MMIO == 0 || !MMIO_MAPPED {
+            serial::write_str("[WIFI] FW EXEC=NOT-ATTEMPTED prerequisite missing\\n");
+            return false;
+        }
+        FW_EXEC_ATTEMPTED = true;
+        let gp1_clr = (MMIO + 0x05C) as *mut u32;
+        let csr = (MMIO + CSR_RESET) as *mut u32;
+        core::ptr::write_volatile(gp1_clr, 0x0000_0006);
+        core::ptr::write_volatile(csr, 0);
+        let after = core::ptr::read_volatile(csr);
+        FW_EXEC_STARTED = after == 0;
+        serial::write_str("[WIFI] FW EXEC RELEASE_RESET=0 READBACK=");
+        serial::write_hex(after as usize);
+        serial::write_str(" RESULT=");
+        serial::write_str(if FW_EXEC_STARTED { "STARTED" } else { "FAILED" });
+        serial::write_str(" ALIVE=NOT-YET RX/IRQ=NOT-STARTED\\n");
+        FW_EXEC_STARTED
     }
 }
 
