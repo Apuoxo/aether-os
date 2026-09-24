@@ -20,6 +20,11 @@ const SUBSYS_BGN: u16 = 0x4062;
 const IWL2030_FW_API_MIN: u32 = 5;
 const IWL2030_FW_API_MAX: u32 = 6;
 const IWL2030_FW_PREFIX: &str = "iwlwifi-2030-";
+const IWL2030_FW: &[u8] = include_bytes!("../../build/iwlwifi-2030-6.ucode");
+const IWLAGN_RTC_INST_LOWER_BOUND: u32 = 0x000000;
+const IWLAGN_RTC_DATA_LOWER_BOUND: u32 = 0x800000;
+const HBUS_TARG_MEM_WADDR: usize = 0x410;
+const HBUS_TARG_MEM_WDAT: usize = 0x418;
 
 static mut FOUND: bool = false;
 static mut READY: bool = false; // phase1 ready = found + mapped
@@ -68,6 +73,11 @@ static mut ACTIVATE_ATTEMPTED: bool = false;
 static mut ACTIVATE_OK: bool = false;
 static mut ACTIVATE_BEFORE: u32 = 0;
 static mut ACTIVATE_AFTER: u32 = 0;
+static mut FW_ATTEMPTED: bool = false;
+static mut FW_LOADED: bool = false;
+static mut FW_VER: u32 = 0;
+static mut FW_INST_SIZE: u32 = 0;
+static mut FW_DATA_SIZE: u32 = 0;
 
 
 
@@ -173,6 +183,96 @@ pub fn activate_attempted() -> bool { unsafe { ACTIVATE_ATTEMPTED } }
 pub fn activate_ok() -> bool { unsafe { ACTIVATE_OK } }
 pub fn activate_before() -> u32 { unsafe { ACTIVATE_BEFORE } }
 pub fn activate_after() -> u32 { unsafe { ACTIVATE_AFTER } }
+pub fn firmware_attempted() -> bool { unsafe { FW_ATTEMPTED } }
+pub fn firmware_loaded() -> bool { unsafe { FW_LOADED } }
+pub fn firmware_version() -> u32 { unsafe { FW_VER } }
+pub fn firmware_inst_size() -> u32 { unsafe { FW_INST_SIZE } }
+pub fn firmware_data_size() -> u32 { unsafe { FW_DATA_SIZE } }
+
+fn fw_le32(b: &[u8], off: usize) -> u32 {
+    (b[off] as u32) | ((b[off + 1] as u32) << 8) |
+    ((b[off + 2] as u32) << 16) | ((b[off + 3] as u32) << 24)
+}
+
+unsafe fn write_target_mem(addr: u32, data: &[u8]) -> bool {
+    if data.len() == 0 || (data.len() & 3) != 0 { return false; }
+    let wa = (MMIO + HBUS_TARG_MEM_WADDR) as *mut u32;
+    let wd = (MMIO + HBUS_TARG_MEM_WDAT) as *mut u32;
+    core::ptr::write_volatile(wa, addr);
+    let mut off = 0usize;
+    while off < data.len() {
+        core::ptr::write_volatile(wd, fw_le32(data, off));
+        off += 4;
+    }
+    true
+}
+
+/// Load Intel 2230 runtime uCode into device SRAM through the native HBUS
+/// target-memory window. No MSI, DMA rings, TX/RX or association are started.
+pub fn load_firmware() -> bool {
+    unsafe {
+        FW_ATTEMPTED = true;
+        FW_LOADED = false;
+        if !ACTIVATE_OK || MMIO == 0 || !MMIO_MAPPED {
+            serial::write_str("[WIFI] FW=NOT-ATTEMPTED activation prerequisite missing\n");
+            return false;
+        }
+        if IWL2030_FW.len() < 28 {
+            serial::write_str("[WIFI] FW=INVALID file too small\n");
+            return false;
+        }
+        let ver = fw_le32(IWL2030_FW, 0);
+        let api = (ver >> 8) & 0xFF;
+        let inst = fw_le32(IWL2030_FW, 8);
+        let data = fw_le32(IWL2030_FW, 12);
+        let init = fw_le32(IWL2030_FW, 16);
+        let init_data = fw_le32(IWL2030_FW, 20);
+        let boot = fw_le32(IWL2030_FW, 24);
+        let payload = inst as usize + data as usize + init as usize + init_data as usize + boot as usize;
+        FW_VER = ver;
+        FW_INST_SIZE = inst;
+        FW_DATA_SIZE = data;
+        serial::write_str("[WIFI] FW=iwlwifi-2030-6.ucode BYTES=");
+        serial::write_usize(IWL2030_FW.len());
+        serial::write_str(" API=");
+        serial::write_usize(api as usize);
+        serial::write_str(" INST=");
+        serial::write_usize(inst as usize);
+        serial::write_str(" DATA=");
+        serial::write_usize(data as usize);
+        serial::write_str(" INIT=");
+        serial::write_usize(init as usize);
+        serial::write_str(" INIT_DATA=");
+        serial::write_usize(init_data as usize);
+        serial::write_str(" BOOT=");
+        serial::write_usize(boot as usize);
+        serial::write_str("\n");
+        if api != 6 || payload != IWL2030_FW.len() - 28 || (inst & 3) != 0 || (data & 3) != 0 {
+            serial::write_str("[WIFI] FW=HEADER_INVALID\n");
+            return false;
+        }
+        let inst_start = 28usize;
+        let data_start = inst_start + inst as usize;
+        let data_end = data_start + data as usize;
+        if data_end > IWL2030_FW.len() {
+            serial::write_str("[WIFI] FW=BOUNDS_INVALID\n");
+            return false;
+        }
+        if !write_target_mem(IWLAGN_RTC_INST_LOWER_BOUND, &IWL2030_FW[inst_start..data_start]) {
+            serial::write_str("[WIFI] FW INST WRITE=FAIL\n");
+            return false;
+        }
+        if !write_target_mem(IWLAGN_RTC_DATA_LOWER_BOUND, &IWL2030_FW[data_start..data_end]) {
+            serial::write_str("[WIFI] FW DATA WRITE=FAIL\n");
+            return false;
+        }
+        FW_LOADED = true;
+        NEEDS_FW = false;
+        serial::write_str("[WIFI] FW LOAD=OK runtime INST+DATA written to SRAM\n");
+        serial::write_str("[WIFI] FW EXECUTION=NOT-YET IRQ/RX/TX=NOT-STARTED\n");
+        true
+    }
+}
 
 /// Wake the pre-8000 Intel MAC after reset, matching iwlwifi's gen1/gen2
 /// activate_nic stage: set INIT_DONE and wait for MAC_CLOCK_READY.
