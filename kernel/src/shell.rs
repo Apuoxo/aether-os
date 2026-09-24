@@ -148,7 +148,7 @@ fn eq(line: &[u8], s: usize, clen: usize, b: &[u8]) -> bool {
 }
 
 fn cmd_help() {
-    write_str("Commands: help ls cat dsk 77 uname vdiag vedid echo halt\n");
+    write_str("Commands: help ls cat dsk 77 WF uname vdiag vedid echo halt\n");
 }
 
 fn cmd_77() {
@@ -431,6 +431,75 @@ fn shell_dsk_probe_partition(disk: usize, start: u64) {
         write_str(" FS=UNKNOWN");
     }
     write_str("\n");
+}
+
+
+fn cmd_wf() {
+    write_str("======== WF NETWORK SURVEY ========\n");
+    write_str("PURPOSE: collect native network hardware facts for the WiFi bring-up plan\n");
+    write_str("MODE: READ-ONLY PCI/device survey; no firmware load, association, TX/RX, or disk write\n");
+
+    let wifi = crate::drivers::wifi::found();
+    let wifi_ready = crate::drivers::wifi::ready();
+    let wifi_fw = crate::drivers::wifi::needs_firmware();
+    write_str("WIFI: ");
+    write_str(if wifi { "FOUND" } else { "NOT-FOUND" });
+    write_str(" PHASE1=");
+    write_str(if wifi_ready { "READY" } else { "NOT-READY" });
+    write_str(" FIRMWARE=");
+    write_str(if wifi_fw { "REQUIRED" } else { "NOT-REQUIRED" });
+    write_str("\n");
+
+    if wifi {
+        let (bus, dev, func) = crate::drivers::wifi::bus_dev_func();
+        write_str("  INTEL WLAN PCI=");
+        serial::write_usize(bus as usize);
+        write_str(":");
+        serial::write_usize(dev as usize);
+        write_str(".");
+        serial::write_usize(func as usize);
+        write_str(" VID:DID=8086:0887 SUB=4062\n");
+        write_str("  BAR0=");
+        serial::write_hex(crate::drivers::wifi::bar0() as usize);
+        write_str(" MMIO=");
+        write_str(if crate::drivers::wifi::mmio_ready() { "MAPPED" } else { "NOT-MAPPED" });
+        write_str("\n");
+        write_str("  FW-CONTRACT=");
+        write_str(crate::drivers::wifi::firmware_prefix());
+        write_str(" API=5..6\n");
+    }
+
+    let eth = crate::drivers::net::eth_found();
+    write_str("ETHERNET: ");
+    write_str(if eth { "FOUND" } else { "NOT-FOUND" });
+    write_str(" RTL8168=");
+    write_str(if crate::drivers::net::eth_is_rtl() { "YES" } else { "NO" });
+    write_str(" MAC=");
+    write_str(if crate::drivers::net::eth_mac_ok() { "VALID" } else { "NOT-READ" });
+    write_str(" LINK=");
+    write_str(if crate::drivers::net::link_up() { "UP" } else { "NOT-CONFIRMED" });
+    write_str("\n");
+
+    if eth {
+        write_str("  VID:DID=");
+        serial::write_hex(crate::drivers::net::eth_vid() as usize);
+        write_str(":");
+        serial::write_hex(crate::drivers::net::eth_did() as usize);
+        write_str(" BAR0=");
+        serial::write_hex(crate::drivers::net::eth_bar0() as usize);
+        write_str("\n");
+    }
+
+    write_str("PLAN:\n");
+    write_str("  1. Preserve exact PCI identity/BAR/MMIO evidence.\n");
+    write_str("  2. Validate Intel 2230 reset/interrupt/firmware-loader prerequisites.\n");
+    write_str("  3. Add native iwlwifi-2030 firmware loading from Aether storage.\n");
+    write_str("  4. Initialize RX/TX rings and interrupt path; keep read-only diagnostics available.\n");
+    write_str("  5. Only after hardware init, implement scan/auth/association and IP networking.\n");
+    write_str("  6. Test each stage on AH532; do not claim WiFi until real packets pass.\n");
+    crate::ai_agent::record_network_probe(if wifi { 1 } else { 0 }, if wifi_ready { 1 } else { 0 });
+    write_str("AI-AGENT: network observation recorded for future native planning/state model\n");
+    write_str("======== WF END ========\n");
 }
 
 fn cmd_vdiag() {
