@@ -285,6 +285,12 @@ pub fn terminal_write(s: &str) {
         TERM_VIEW = 0; // new output follows live bottom
     }
 }
+/// Single-character output bridge for the unified kernel command executor.
+pub fn terminal_write_char(ch: u8) {
+    term_putc(ch);
+    unsafe { DIRTY_FULL = true; }
+}
+
 
 fn eq_cmd(cmd: &[u8], clen: usize, expect: &[u8]) -> bool {
     if clen != expect.len() {
@@ -300,322 +306,7 @@ fn eq_cmd(cmd: &[u8], clen: usize, expect: &[u8]) -> bool {
     true
 }
 
-fn run_cmd(line: &[u8], len: usize) {
-    let mut s = 0usize;
-    let mut e = len;
-    while s < e && line[s] == b' ' {
-        s += 1;
-    }
-    while e > s && line[e - 1] == b' ' {
-        e -= 1;
-    }
-    if s >= e {
-        return;
-    }
-    let mut cmd = [0u8; 32];
-    let mut ci = 0usize;
-    let mut i = s;
-    while i < e && line[i] != b' ' && ci < 32 {
-        cmd[ci] = line[i];
-        ci += 1;
-        i += 1;
-    }
-    if eq_cmd(&cmd, ci, b"help") {
-        terminal_write("help ls cat touch rm mem uname clear dsk 77 1 beep\n");
-        terminal_write("77 = CMD77 runtime-path diagnostic\n");
-        terminal_write("1 = full PCI+USB hardware diag\n");
-    } else if eq_cmd(&cmd, ci, b"1") || eq_cmd(&cmd, ci, b"diag") || eq_cmd(&cmd, ci, b"storage") {
-        terminal_write("--- STORAGE HW DIAG (on-screen) ---\n");
-        crate::storage_hw_diag::run();
-        let s = crate::storage_hw_diag::snapshot();
-        terminal_write("Legacy ATA 0x1F7=0x");
-        term_write_hex(s.legacy_status as usize);
-        if s.legacy_status == 0xFF {
-            terminal_write(" FLOAT (no IDE)\n");
-        } else {
-            terminal_write("\n");
-        }
-        terminal_write("PCI mass storage devices: ");
-        term_write_hex(s.mass_n);
-        terminal_write("\n");
-        let mut i = 0usize;
-        while i < s.mass_n {
-            let m = s.mass[i];
-            terminal_write(" ");
-            term_write_hex(m.bus as usize);
-            terminal_write(":");
-            term_write_hex(m.dev as usize);
-            terminal_write(".");
-            term_write_hex(m.func as usize);
-            terminal_write(" ");
-            term_write_hex(m.vid as usize);
-            terminal_write(":");
-            term_write_hex(m.did as usize);
-            terminal_write(" if=");
-            term_write_hex(m.progif as usize);
-            if m.is_ahci {
-                terminal_write(" AHCI\n");
-                terminal_write("  ABAR=0x");
-                term_write_hex(m.abar as usize);
-                terminal_write(" PI=0x");
-                term_write_hex(m.pi as usize);
-                terminal_write("\n");
-                terminal_write("  ports_present=0x");
-                term_write_hex(m.ports_present as usize);
-                terminal_write("\n");
-                if m.ports_present != 0 {
-                    terminal_write("  SSD/HDD DETECTED on AHCI port(s)\n");
-                } else {
-                    terminal_write("  AHCI OK but no DET=3 yet\n");
-                }
-            } else {
-                terminal_write(" (not AHCI)\n");
-            }
-            i += 1;
-        }
-        terminal_write("AHCI ctrl count=");
-        term_write_hex(s.ahci_n);
-        terminal_write(" IDE=");
-        term_write_hex(s.ide_n);
-        terminal_write(" NVMe=");
-        term_write_hex(s.nvme_n);
-        terminal_write("\n");
-        if s.ahci_n == 0 && s.ide_n == 0 {
-            terminal_write("NO mass-storage PCI found!\n");
-            terminal_write("Check PCI enum / BIOS\n");
-        } else if s.ahci_n > 0 {
-            terminal_write("NEXT: AHCI RO driver needed\n");
-            terminal_write("(ATA PIO will never see disks)\n");
-        }
-        terminal_write("--- end diag ---\n");
-        unsafe { DIRTY_FULL = true; }
-    } else if false && (eq_cmd(&cmd, ci, b"1_OLD")
- || eq_cmd(&cmd, ci, b"diag_old")) {
-        terminal_write("HW DIAG: PCI + USB ports\n");
-        terminal_write("See serial log for full dump.\n");
-        terminal_write("Plug/unplug mouse ~20s...\n");
-        // Full diagnostic on serial; terminal shows progress markers
-        crate::drivers::pci_usb_diag::run_hardware_diag();
-        terminal_write("DIAG done. Check serial:\n");
-        terminal_write(" FULL PCI / USB-HC / PORT\n");
-        terminal_write(" PORT-CHANGE lines = plug\n");
-        unsafe { DIRTY_FULL = true; }
-    } else if eq_cmd(&cmd, ci, b"77") {
-        // Terminal-capacity test for the scrollback/display buffer.
-        terminal_write("===== 77-BEGIN =====\n");
-        terminal_write("77-TEST-01\n");
-        terminal_write("77-TEST-02\n");
-        terminal_write("77-TEST-03\n");
-        terminal_write("77-TEST-04\n");
-        terminal_write("77-TEST-05\n");
-        terminal_write("77-TEST-06\n");
-        terminal_write("77-TEST-07\n");
-        terminal_write("77-TEST-08\n");
-        terminal_write("77-TEST-09\n");
-        terminal_write("77-TEST-10\n");
-        terminal_write("77-TEST-11\n");
-        terminal_write("77-TEST-12\n");
-        terminal_write("77-TEST-13\n");
-        terminal_write("77-TEST-14\n");
-        terminal_write("77-TEST-15\n");
-        terminal_write("77-TEST-16\n");
-        terminal_write("77-TEST-17\n");
-        terminal_write("77-TEST-18\n");
-        terminal_write("77-TEST-19\n");
-        terminal_write("77-TEST-20\n");
-        terminal_write("===== 77-END =====\n");
-        unsafe { DIRTY_FULL = true; }
-    } else if eq_cmd(&cmd, ci, b"11") {
-        // Dedicated NTFS filesystem-path diagnostic. Not the DSK RAW/MBR probe.
-        terminal_write("NTFS... FILESYSTEM PATH DIAGNOSTIC\n");
-        terminal_write("SOURCE: part.rs + NTFS boot + MFT + INDEX_ROOT\n");
-        crate::fs_ntfs::diagnostic();
-        terminal_write("NTFS DIAG COMPLETE\n");
-        unsafe { DIRTY_FULL = true; }
-    } else if eq_cmd(&cmd, ci, b"dsk") {
-        // GUI terminal DSK must use the same raw-only AHCI path as the kernel shell.
-        // Do not use part.rs, block.rs, or VFS here: this command is the storage truth probe.
-        terminal_write("DIAG... DSK RAW-ONLY DISK DIAGNOSTIC\n");
-        terminal_write("SOURCE: AHCI IDENTIFY + RAW LBA (NO part.rs / NO block.rs / NO VFS)\n");
-        terminal_write("READ-ONLY: partition table is parsed directly from freshly-read sectors\n");
 
-        let nd = crate::drivers::ahci::disk_count();
-        terminal_write("PHYSICAL DISKS=");
-        term_write_hex(nd);
-        terminal_write("\n");
-
-        let mut di = 0usize;
-        while di < nd {
-            terminal_write("DISK ");
-            term_write_hex(di);
-            terminal_write(" MODEL=");
-            let mut model = [0u8; 40];
-            let ml = crate::drivers::ahci::disk_model(di, &mut model);
-            let mut j = 0usize;
-            while j < ml && j < 40 {
-                term_putc(model[j]);
-                j += 1;
-            }
-            terminal_write(" SECTORS=");
-            term_write_hex(crate::drivers::ahci::disk_sectors(di) as usize);
-            terminal_write("\n");
-
-            let mut lba0 = [0u8; 512];
-            let ok0 = crate::drivers::ahci::read_sectors(di, 0, 1, &mut lba0);
-            terminal_write("  RAW_LBA0=");
-            terminal_write(if ok0 { "OK" } else { "FAIL" });
-            if !ok0 {
-                terminal_write("\n");
-                di += 1;
-                continue;
-            }
-            terminal_write(" SIG=");
-            terminal_write(if lba0[510] == 0x55 && lba0[511] == 0xAA { "55AA" } else { "NO-55AA" });
-            terminal_write("\n");
-
-            let mut protective_gpt = false;
-            let mut pe = 0usize;
-            while pe < 4 {
-                let off = 446 + pe * 16;
-                if lba0[off + 4] == 0xEE {
-                    protective_gpt = true;
-                }
-                pe += 1;
-            }
-
-            if protective_gpt {
-                terminal_write("  TABLE=GPT (protective MBR)\n");
-                let mut gh = [0u8; 512];
-                let gpt_ok = crate::drivers::ahci::read_sectors(di, 1, 1, &mut gh)
-                    && gh[0] == b'E' && gh[1] == b'F' && gh[2] == b'I' && gh[3] == b' '
-                    && gh[4] == b'P' && gh[5] == b'A' && gh[6] == b'R' && gh[7] == b'T';
-                terminal_write("  GPT_HEADER=");
-                terminal_write(if gpt_ok { "OK" } else { "FAIL" });
-                terminal_write("\n");
-
-                if gpt_ok {
-                    let entry_lba = u64::from_le_bytes([
-                        gh[72], gh[73], gh[74], gh[75], gh[76], gh[77], gh[78], gh[79]
-                    ]);
-                    let entry_count = u32::from_le_bytes([gh[80], gh[81], gh[82], gh[83]]);
-                    let entry_size = u32::from_le_bytes([gh[84], gh[85], gh[86], gh[87]]);
-                    terminal_write("  GPT ENTRY_LBA=");
-                    term_write_hex(entry_lba as usize);
-                    terminal_write(" COUNT=");
-                    term_write_hex(entry_count as usize);
-                    terminal_write(" SIZE=");
-                    term_write_hex(entry_size as usize);
-                    terminal_write("\n");
-                }
-            } else {
-                terminal_write("  TABLE=MBR (directly from LBA0)\n");
-                let mut found = 0usize;
-                let mut pe2 = 0usize;
-                while pe2 < 4 {
-                    let off = 446 + pe2 * 16;
-                    let ptype = lba0[off + 4];
-                    if ptype != 0 {
-                        let start_lba = u32::from_le_bytes([
-                            lba0[off + 8], lba0[off + 9], lba0[off + 10], lba0[off + 11]
-                        ]) as usize;
-                        let sectors = u32::from_le_bytes([
-                            lba0[off + 12], lba0[off + 13], lba0[off + 14], lba0[off + 15]
-                        ]) as usize;
-                        terminal_write("  PART ");
-                        term_write_hex(found);
-                        terminal_write(" MBR_IDX=");
-                        term_write_hex(pe2);
-                        terminal_write(" START_LBA=");
-                        term_write_hex(start_lba);
-                        terminal_write(" SECTORS=");
-                        term_write_hex(sectors);
-                        terminal_write(" TYPE=");
-                        term_write_hex(ptype as usize);
-                        terminal_write("\n");
-                        found += 1;
-                    }
-                    pe2 += 1;
-                }
-                terminal_write("  MBR_PARTITIONS=");
-                term_write_hex(found);
-                terminal_write("\n");
-            }
-            di += 1;
-        }
-
-        terminal_write("======== DSK RAW-ONLY END ========\n");
-        // The terminal has only 16 rows; the long probe scrolls its opening line away.
-        // Leave an unmistakable CMD77 proof at the end of the output.
-        if eq_cmd(&cmd, ci, b"77") {
-            terminal_write("DIAG... CMD77 COMPLETE (SAME RAW DISK PROBE)\n");
-        }
-        unsafe { DIRTY_FULL = true; }
-    } else if eq_cmd(&cmd, ci, b"ls") {
-        if !fs::is_mounted() {
-            terminal_write("(no filesystem)\n");
-        } else {
-            let mut names = [[0u8; 24]; 16];
-            let mut lens = [0usize; 16];
-            let n = fs::list(&mut names, &mut lens);
-            let mut j = 0usize;
-            while j < n {
-                term_putc(b' ');
-                term_putc(b' ');
-                let mut k = 0usize;
-                while k < lens[j] && k < 24 {
-                    term_putc(names[j][k]);
-                    k += 1;
-                }
-                term_putc(b'\n');
-                j += 1;
-            }
-            if n == 0 {
-                terminal_write("(empty)\n");
-            }
-        }
-    } else if eq_cmd(&cmd, ci, b"cat") {
-        let mut buf = [0u8; 64];
-        match fs::read("/test.txt", &mut buf) {
-            Some(n) => {
-                let mut k = 0usize;
-                while k < n {
-                    term_putc(buf[k]);
-                    k += 1;
-                }
-                term_putc(b'\n');
-            }
-            None => terminal_write("not found\n"),
-        }
-    } else if eq_cmd(&cmd, ci, b"mem") {
-        terminal_write("RAMDISK/AetherFS active\n");
-    } else if eq_cmd(&cmd, ci, b"uname") {
-        terminal_write("Aether Desktop v1.1 XP x86_64\n");
-    } else if eq_cmd(&cmd, ci, b"clear") {
-        term_clear();
-    } else if eq_cmd(&cmd, ci, b"beep") {
-        crate::drivers::audio::beep();
-        terminal_write("beep\n");
-    } else if eq_cmd(&cmd, ci, b"video") {
-        if crate::drivers::video::ready() {
-            terminal_write("VIDEO OK FB ");
-            // width height
-            terminal_write("software\n");
-        } else {
-            terminal_write("VIDEO FAIL\n");
-        }
-    } else if eq_cmd(&cmd, ci, b"audio") {
-        if crate::drivers::audio::speaker_ok() {
-            terminal_write("PC Speaker OK\n");
-        }
-        if crate::drivers::audio::hda_found() {
-            terminal_write("HDA detected (codec N/A)\n");
-        } else {
-            terminal_write("HDA not found\n");
-        }
-    } else {
-        terminal_write("unknown — try help\n");
-    }
-}
 
 fn bring_to_front(idx: usize) {
     unsafe {
@@ -2320,7 +2011,7 @@ fn handle_key(ch: u8) {
                 k += 1;
             }
             term_putc(b'\n');
-            run_cmd(&INPUT, INPUT_LEN);
+            crate::shell::run_command_from_gui(&INPUT, INPUT_LEN);
             INPUT_LEN = 0;
             DIRTY_FULL = true;
         } else if ch == 0x08 {
@@ -2362,9 +2053,9 @@ pub fn run() -> ! {
     terminal_write("AUTOSTART: PCI/USB diag on serial\n");
     terminal_write("Re-run: type 1  then plug mouse\n");
     terminal_write("aether> ls\n");
-    run_cmd(b"ls", 2);
+    crate::shell::run_command_from_gui(b"ls", 2);
     terminal_write("aether> cat test.txt\n");
-    run_cmd(b"cat", 3);
+    crate::shell::run_command_from_gui(b"cat", 3);
     terminal_write("aether> ");
     unsafe {
         DIRTY_FULL = true;

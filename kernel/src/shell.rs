@@ -12,6 +12,9 @@ const ROWS: usize = 25;
 static mut CUR_ROW: usize = 4;
 static mut CUR_COL: usize = 0;
 
+// True only while the GUI terminal invokes the single shared command executor.
+static mut GUI_OUTPUT: bool = false;
+
 fn vga_cell(row: usize, col: usize, ch: u8, attr: u8) {
     if row >= ROWS || col >= COLS {
         return;
@@ -94,6 +97,12 @@ fn vga_write_str(s: &str) {
 }
 
 fn putc(c: u8) {
+    unsafe {
+        if GUI_OUTPUT {
+            crate::desktop::terminal_write_char(c);
+            return;
+        }
+    }
     vga_putc(c);
     if c == 10 {
         serial::write_str("\n");
@@ -116,8 +125,42 @@ fn putc(c: u8) {
 }
 
 fn write_str(s: &str) {
+    unsafe {
+        if GUI_OUTPUT {
+            crate::desktop::terminal_write(s);
+            return;
+        }
+    }
     vga_write_str(s);
     serial::write_str(s);
+}
+
+fn write_usize(v: usize) {
+    unsafe {
+        if !GUI_OUTPUT {
+            serial::write_usize(v;
+            return;
+        }
+    }
+    if v == 0 { putc(b'0'); return; }
+    let mut n = v;
+    let mut d = [0u8; 20];
+    let mut k = 0usize;
+    while n > 0 { d[k] = b'0' + (n % 10) as u8; n /= 10; k += 1; }
+    while k > 0 { k -= 1; putc(d[k]); }
+}
+
+fn write_hex(mut v: usize) {
+    if v == 0 { putc(b'0'); return; }
+    let mut d = [0u8; 16];
+    let mut k = 0usize;
+    while v > 0 {
+        let x = (v & 0xF) as u8;
+        d[k] = if x < 10 { b'0' + x } else { b'a' + x - 10 };
+        v >>= 4;
+        k += 1;
+    }
+    while k > 0 { k -= 1; putc(d[k]); }
 }
 
 fn serial_read_byte() -> Option<u8> {
@@ -195,7 +238,7 @@ fn write_u64_decimal(mut n: u64) {
 fn print_hex16_fresh(buf: &[u8; 512]) {
     let mut i = 0usize;
     while i < 16 {
-        serial::write_hex(buf[i] as usize);
+        write_hex(buf[i] as usize);
         if i != 15 { write_str(" "); }
         i += 1;
     }
@@ -208,13 +251,13 @@ fn cmd_dsk() {
 
     let nd = crate::drivers::ahci::disk_count();
     write_str("PHYSICAL DISKS=");
-    serial::write_usize(nd);
+    write_usize(nd);
     write_str("\n");
 
     let mut d = 0usize;
     while d < nd {
         write_str("DISK ");
-        serial::write_usize(d);
+        write_usize(d);
         write_str(" MODEL=");
         let mut model = [0u8; 40];
         let ml = crate::drivers::ahci::disk_model(d, &mut model);
@@ -224,7 +267,7 @@ fn cmd_dsk() {
             i += 1;
         }
         write_str(" SECTORS=");
-        serial::write_usize(crate::drivers::ahci::disk_sectors(d) as usize);
+        write_usize(crate::drivers::ahci::disk_sectors(d) as usize);
         write_str("\n");
 
         let mut lba0 = [0u8; 512];
@@ -268,11 +311,11 @@ fn cmd_dsk() {
             let entry_count = u32::from_le_bytes([gh[80], gh[81], gh[82], gh[83]]);
             let entry_size = u32::from_le_bytes([gh[84], gh[85], gh[86], gh[87]]);
             write_str("  GPT_HEADER=OK ENTRY_LBA=");
-            serial::write_usize(entry_lba as usize);
+            write_usize(entry_lba as usize);
             write_str(" COUNT=");
-            serial::write_usize(entry_count as usize);
+            write_usize(entry_count as usize);
             write_str(" SIZE=");
-            serial::write_usize(entry_size as usize);
+            write_usize(entry_size as usize);
             write_str("\n");
 
             let es = if entry_size == 128 { 128usize } else { 0usize };
@@ -296,7 +339,7 @@ fn cmd_dsk() {
                 }
                 if !crate::drivers::ahci::read_sectors(d, sector, 1, &mut eb) {
                     write_str("  GPT_ENTRY_READ=FAIL IDX=");
-                    serial::write_usize(idx);
+                    write_usize(idx);
                     write_str("\n");
                     idx += 1;
                     continue;
@@ -322,13 +365,13 @@ fn cmd_dsk() {
                     ]);
                     if last >= first {
                         write_str("  PART ");
-                        serial::write_usize(found);
+                        write_usize(found);
                         write_str(" GPT_IDX=");
-                        serial::write_usize(idx);
+                        write_usize(idx);
                         write_str(" START_LBA=");
-                        serial::write_usize(first as usize);
+                        write_usize(first as usize);
                         write_str(" SECTORS=");
-                        serial::write_usize((last - first + 1) as usize);
+                        write_usize((last - first + 1) as usize);
                         write_str("\n");
                         shell_dsk_probe_partition(d, first);
                         found += 1;
@@ -337,7 +380,7 @@ fn cmd_dsk() {
                 idx += 1;
             }
             write_str("  GPT_PARTITIONS=");
-            serial::write_usize(found);
+            write_usize(found);
             write_str("\n");
         } else {
             write_str("  TABLE=MBR (parsed directly from LBA0)\n");
@@ -354,18 +397,18 @@ fn cmd_dsk() {
                         lba0[off + 12], lba0[off + 13], lba0[off + 14], lba0[off + 15]
                     ]) as u64;
                     write_str("  PART ");
-                    serial::write_usize(found);
+                    write_usize(found);
                     write_str(" MBR_IDX=");
-                    serial::write_usize(pe2);
+                    write_usize(pe2);
                     write_str("\n");
                     write_str("    TYPE=0x");
-                    serial::write_hex(ptype as usize);
+                    write_hex(ptype as usize);
                     write_str("\n");
                     write_str("    START_LBA=");
-                    serial::write_usize(start_lba as usize);
+                    write_usize(start_lba as usize);
                     write_str("\n");
                     write_str("    SECTORS=");
-                    serial::write_usize(sectors as usize);
+                    write_usize(sectors as usize);
                     write_str("\n");
                     shell_dsk_probe_partition(d, start_lba);
                     found += 1;
@@ -373,7 +416,7 @@ fn cmd_dsk() {
                 pe2 += 1;
             }
             write_str("  MBR_PARTITIONS=");
-            serial::write_usize(found);
+            write_usize(found);
             write_str("\n");
         }
 
@@ -405,15 +448,15 @@ fn shell_dsk_probe_partition(disk: usize, start: u64) {
             boot[52], boot[53], boot[54], boot[55]
         ]);
         write_str(" FS=NTFS BPS=");
-        serial::write_usize(bps as usize);
+        write_usize(bps as usize);
         write_str(" SPC=");
-        serial::write_usize(spc as usize);
+        write_usize(spc as usize);
         write_str(" MFT_LCN=");
-        serial::write_usize(mft_lcn as usize);
+        write_usize(mft_lcn as usize);
         if bps == 512 && spc != 0 {
             let mft_lba = start.saturating_add(mft_lcn.saturating_mul(spc as u64));
             write_str(" MFT_LBA=");
-            serial::write_usize(mft_lba as usize);
+            write_usize(mft_lba as usize);
             let mut mft = [0u8; 512];
             let rm = crate::drivers::ahci::read_sectors(disk, mft_lba, 1, &mut mft);
             write_str(" READ=");
@@ -455,14 +498,14 @@ fn cmd_wf() {
     if wifi {
         let (bus, dev, func) = crate::drivers::wifi::bus_dev_func();
         write_str("  INTEL WLAN PCI=");
-        serial::write_usize(bus as usize);
+        write_usize(bus as usize);
         write_str(":");
-        serial::write_usize(dev as usize);
+        write_usize(dev as usize);
         write_str(".");
-        serial::write_usize(func as usize);
+        write_usize(func as usize);
         write_str(" VID:DID=8086:0887 SUB=4062\n");
         write_str("  BAR0=");
-        serial::write_hex(crate::drivers::wifi::bar0() as usize);
+        write_hex(crate::drivers::wifi::bar0() as usize);
         write_str(" MMIO=");
         write_str(if crate::drivers::wifi::mmio_ready() { "MAPPED" } else { "NOT-MAPPED" });
         write_str("\n");
@@ -484,11 +527,11 @@ fn cmd_wf() {
 
     if eth {
         write_str("  VID:DID=");
-        serial::write_hex(crate::drivers::net::eth_vid() as usize);
+        write_hex(crate::drivers::net::eth_vid() as usize);
         write_str(":");
-        serial::write_hex(crate::drivers::net::eth_did() as usize);
+        write_hex(crate::drivers::net::eth_did() as usize);
         write_str(" BAR0=");
-        serial::write_hex(crate::drivers::net::eth_bar0() as usize);
+        write_hex(crate::drivers::net::eth_bar0() as usize);
         write_str("\n");
     }
 
@@ -514,10 +557,10 @@ fn cmd_vdiag() {
     write_str(if crate::drivers::video::scanout_ready() { "attached\n" } else { "not-attached\n" });
     if crate::drivers::video::scanout_ready() {
         write_str("pipe: ");
-        serial::write_usize(crate::drivers::video::scanout_pipe() as usize);
+        write_usize(crate::drivers::video::scanout_pipe() as usize);
         write_str("\n");
         write_str("surface: ");
-        serial::write_hex(crate::drivers::video::scanout_surface() as usize);
+        write_hex(crate::drivers::video::scanout_surface() as usize);
         write_str("\n");
     }
     crate::drivers::video::snapshot();
@@ -542,21 +585,21 @@ fn cmd_vedid() {
     let mut i = 0usize;
     while i < 128 {
         if i % 16 == 0 { serial::write_str(if i == 0 { " " } else { "\\n[VIDEO/EDID] " }); }
-        serial::write_hex(block[i] as usize);
+        write_hex(block[i] as usize);
         i += 1;
     }
     serial::write_str("\\n");
     if let Some(m) = crate::drivers::video::preferred_mode() {
         write_str("preferred mode: ");
-        serial::write_usize(m.width as usize);
+        write_usize(m.width as usize);
         write_str("x");
-        serial::write_usize(m.height as usize);
+        write_usize(m.height as usize);
         write_str(" clock_khz=");
-        serial::write_usize(m.pixel_clock_khz as usize);
+        write_usize(m.pixel_clock_khz as usize);
         write_str(" htotal=");
-        serial::write_usize(m.h_total as usize);
+        write_usize(m.h_total as usize);
         write_str(" vtotal=");
-        serial::write_usize(m.v_total as usize);
+        write_usize(m.v_total as usize);
         write_str("\\n");
     }
 }
@@ -571,7 +614,7 @@ fn cmd_ls() {
     let n = fs::list(&mut names, &mut lens);
     write_str("files: ");
     // write number via serial helper + vga
-    serial::write_usize(n);
+    write_usize(n);
     // also on VGA - simple digit
     if n == 0 {
         vga_write(b"0");
@@ -621,14 +664,14 @@ fn cmd_cat_test() {
 fn cmd_mem() {
     if crate::drivers::ata::is_ramdisk() {
         write_str("RAMDISK OK  sectors=");
-        serial::write_usize(crate::drivers::ata::total_sectors() as usize);
+        write_usize(crate::drivers::ata::total_sectors() as usize);
         write_str("\n");
     }
     write_str("FS mounted: ");
     write_str(if fs::is_mounted() { "yes" } else { "no" });
     write_str("\n");
     write_str("free pages: ");
-    serial::write_usize(mm::free_count());
+    write_usize(mm::free_count());
     // rough VGA copy of count
     let n = mm::free_count();
     let mut tmp = n;
@@ -718,6 +761,12 @@ fn run_line(line: &[u8], len: usize) {
     } else {
         write_str("unknown — try help\n");
     }
+}
+
+pub fn run_command_from_gui(line: &[u8], len: usize) {
+    unsafe { GUI_OUTPUT = true; }
+    run_line(line, len);
+    unsafe { GUI_OUTPUT = false; }
 }
 
 pub fn run() -> ! {
