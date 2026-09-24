@@ -1,10 +1,12 @@
 bits 64
 global isr_page_fault
 global isr_syscall
+global isr_wifi_irq
 global enter_user_mode
 global kernel_after_user
 extern page_fault_handler
 extern syscall_handler
+extern wifi_irq_handler
 extern rust_kernel_after_user
 extern process_exit_dispatch
 extern rust_ring3_done
@@ -103,3 +105,23 @@ kernel_after_user:
 .hang:
     hlt
     jmp .hang
+
+
+isr_wifi_irq:
+    push rax
+    push rcx
+    push rdx
+    push rsi
+    push rdi
+    call wifi_irq_handler
+    mov al, 0x20
+    mov dx, 0x20
+    out dx, al
+    mov dx, 0xA0
+    out dx, al
+    pop rdi
+    pop rsi
+    pop rdx
+    pop rcx
+    pop rax
+    iretq
