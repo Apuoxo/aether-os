@@ -712,61 +712,17 @@ fn cmd_uname() {
 
 fn run_line(line: &[u8], len: usize) {
     let mut s = 0usize;
+    while s < len && line[s] == b' ' { s += 1; }
     let mut e = len;
-    while s < e && line[s] == b' ' {
-        s += 1;
-    }
-    while e > s && (line[e - 1] == b' ' || line[e - 1] == b'\r') {
-        e -= 1;
-    }
-    if s >= e {
-        return;
-    }
-    let mut sp = s;
-    while sp < e && line[sp] != b' ' {
-        sp += 1;
-    }
-    let clen = sp - s;
-    let mut a = sp;
-    while a < e && line[a] == b' ' {
-        a += 1;
-    }
-    if eq(line, s, clen, b"help") || eq(line, s, clen, b"?") {
-        cmd_help();
-    } else if eq(line, s, clen, b"ls") {
-        cmd_ls();
-    } else if eq(line, s, clen, b"cat") {
-        cmd_cat_test();
-    } else if eq(line, s, clen, b"mem") {
-        cmd_mem();
-    } else if eq(line, s, clen, b"dsk") {
-        cmd_dsk();
-    } else if eq(line, s, clen, b"77") {
-        cmd_77();
-    } else if eq(line, s, clen, b"WF") || eq(line, s, clen, b"wf") {
+    while e > s && (line[e - 1] == b' ' || line[e - 1] == b'\\r') { e -= 1; }
+    let clen = e.saturating_sub(s);
+
+    // WF isolation experiment: every previous terminal command is intentionally
+    // unreachable. Only the existing WF command is registered for this build.
+    if eq(line, s, clen, b"WF") || eq(line, s, clen, b"wf") {
         cmd_wf();
-    } else if eq(line, s, clen, b"vdiag") {
-        cmd_vdiag();
-    } else if eq(line, s, clen, b"vedid") {
-        cmd_vedid();
-    } else if eq(line, s, clen, b"uname") {
-        cmd_uname();
-    } else if eq(line, s, clen, b"echo") {
-        let mut i = a;
-        while i < e {
-            putc(line[i]);
-            i += 1;
-        }
-        write_str("\n");
-    } else if eq(line, s, clen, b"halt") || eq(line, s, clen, b"exit") {
-        write_str("halt\n");
-        loop {
-            unsafe {
-                core::arch::asm!("hlt");
-            }
-        }
     } else {
-        write_str("unknown — try help\n");
+        write_str("unknown — WF only (terminal isolation test)\\n");
     }
 }
 

@@ -2054,10 +2054,6 @@ pub fn run() -> ! {
     terminal_write("Aether Desktop v1.1 XP\n");
     terminal_write("AUTOSTART: PCI/USB diag on serial\n");
     terminal_write("Re-run: type 1  then plug mouse\n");
-    terminal_write("aether> ls\n");
-    crate::shell::run_command_from_gui(b"ls", 2);
-    terminal_write("aether> cat test.txt\n");
-    crate::shell::run_command_from_gui(b"cat", 3);
     terminal_write("aether> ");
     unsafe {
         DIRTY_FULL = true;
