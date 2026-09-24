@@ -364,10 +364,13 @@ pub fn send_command(cmd: u8, payload: &[u8]) -> bool {
         let slot = CMD_WRITE_PTR & (FH_TFD_CMD_SLOTS - 1);
         let frame = (&mut FW_DMA_BUF.0[0]) as *mut u8;
         core::ptr::write_bytes(frame, 0, 512);
+        // DVM command header: cmd, flags, little-endian sequence.
+        // Sequence encodes command queue in bits 8..12 and TFD index in bits 0..7.
         *frame.add(0) = cmd;
-        *frame.add(1) = CMD_SEQ;
-        *frame.add(2) = 0;
-        *frame.add(3) = 0;
+        *frame.add(1) = 0;
+        let seq = ((IWL_DEFAULT_CMD_QUEUE_NUM as u16) << 8) | (slot as u16);
+        *frame.add(2) = seq as u8;
+        *frame.add(3) = (seq >> 8) as u8;
         let mut i = 0usize;
         while i < payload.len() {
             *frame.add(4 + i) = payload[i];
@@ -418,13 +421,15 @@ pub fn scan_24ghz() -> bool {
     unsafe {
         if !CMD_QUEUE_READY || !ALIVE_SEEN { return false; }
 
-        // iwl_scan_cmd fixed header (28), zero TX header (52),
-        // 20 direct-scan SSID IEs (34 each), then 11 channel entries (12 each).
+        // Legacy DVM iwl_scan_cmd for the 2030 firmware:
+        // fixed header 28 + zeroed iwl_tx_cmd 52 + 20 SSID IEs (34 each),
+        // followed by iwl_scan_channel entries of 16 bytes each.
         let fixed = 28usize + 52usize + 20usize * 34usize;
-        let channels = IWL_SCAN_CHANNEL_COUNT_24G * 12usize;
+        let channels = IWL_SCAN_CHANNEL_COUNT_24G * 16usize;
         let total = fixed + channels;
         let mut p = [0u8; 1024];
 
+        // scan.len excludes the common 4-byte iwl_cmd_header.
         put_le16(&mut p, 0, total as u16);
         p[2] = 0; // scan_flags
         p[3] = IWL_SCAN_CHANNEL_COUNT_24G as u8;
@@ -442,13 +447,16 @@ pub fn scan_24ghz() -> bool {
         let mut off = fixed;
         let mut ch = 1u16;
         while ch <= 11 {
-            put_le32(&mut p, off, 0); // passive channel
+            // iwl_scan_channel:
+            // type:u32, channel:u16, tx_gain:u8, dsp_atten:u8,
+            // active_dwell:u16, passive_dwell:u16.
+            put_le32(&mut p, off, 0); // passive; no directed SSID mask
             put_le16(&mut p, off + 4, ch);
-            p[off + 6] = 0;
-            p[off + 7] = 0;
+            p[off + 6] = 0; // automatic TX gain
+            p[off + 7] = 0; // automatic DSP attenuation
             put_le16(&mut p, off + 8, 0);   // active dwell
             put_le16(&mut p, off + 10, 100); // passive dwell, TU
-            off += 12;
+            off += 16;
             ch += 1;
         }
 
