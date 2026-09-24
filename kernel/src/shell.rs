@@ -177,133 +177,232 @@ fn print_hex16_fresh(buf: &[u8; 512]) {
 }
 
 fn cmd_dsk() {
-    write_str("======== DSK FRESH RAW DISK DIAGNOSTIC ========\n");
-    write_str("SOURCE PATH: AHCI -> RAW LBA -> BOOT -> NTFS MFT\n");
-    write_str("NO block::read / NO VFS / READ-ONLY\n");
+    write_str("======== DSK RAW-ONLY DISK DIAGNOSTIC ========\n");
+    write_str("SOURCE: AHCI IDENTIFY + RAW LBA (NO part.rs / NO block.rs / NO VFS)\n");
+    write_str("READ-ONLY: partition table and filesystem metadata are parsed from fresh sectors\n");
 
     let nd = crate::drivers::ahci::disk_count();
-    write_str("PHYSICAL DISKS="); serial::write_usize(nd); write_str("\n");
+    write_str("PHYSICAL DISKS=");
+    serial::write_usize(nd);
+    write_str("\n");
 
     let mut d = 0usize;
     while d < nd {
-        write_str("DISK "); serial::write_usize(d);
+        write_str("DISK ");
+        serial::write_usize(d);
         write_str(" MODEL=");
         let mut model = [0u8; 40];
         let ml = crate::drivers::ahci::disk_model(d, &mut model);
         let mut i = 0usize;
-        while i < ml && i < 40 { putc(model[i]); i += 1; }
+        while i < ml && i < 40 {
+            putc(model[i]);
+            i += 1;
+        }
         write_str(" SECTORS=");
         serial::write_usize(crate::drivers::ahci::disk_sectors(d) as usize);
         write_str("\n");
 
-        let mut raw = [0u8; 512];
-        let ok = crate::drivers::ahci::read_sectors(d, 0, 1, &mut raw);
+        let mut lba0 = [0u8; 512];
+        let ok0 = crate::drivers::ahci::read_sectors(d, 0, 1, &mut lba0);
         write_str("  RAW_LBA0=");
-        write_str(if ok { "OK" } else { "FAIL" });
-        if ok {
-            write_str(" SIG=");
-            write_str(if raw[510] == 0x55 && raw[511] == 0xAA { "55AA" } else { "NO-55AA" });
-            write_str(" HEX=");
-            print_hex16_fresh(&raw);
-        }
-        write_str("\n");
-        d += 1;
-    }
-
-    let np = crate::part::count();
-    write_str("PARTITIONS FROM CURRENT TABLE=");
-    serial::write_usize(np);
-    write_str("\n");
-
-    let mut p = 0usize;
-    while p < np {
-        if let Some(part) = crate::part::get(p) {
-            let disk = part.disk as usize;
-            let start = part.lba_start as u64;
-
-            write_str("PART "); serial::write_usize(p);
-            write_str(" DISK="); serial::write_usize(disk);
-            write_str(" START_LBA="); serial::write_usize(start as usize);
-            write_str(" TYPE="); write_str(crate::part::type_name(part.ptype));
+        write_str(if ok0 { "OK" } else { "FAIL" });
+        if !ok0 {
             write_str("\n");
+            d += 1;
+            continue;
+        }
+        write_str(" SIG=");
+        write_str(if lba0[510] == 0x55 && lba0[511] == 0xAA { "55AA" } else { "NO-55AA" });
+        write_str("\n");
 
-            let mut boot = [0u8; 512];
-            let rb = crate::drivers::ahci::read_sectors(disk, start, 1, &mut boot);
-            write_str("  RAW_BOOT=");
-            write_str(if rb { "OK" } else { "FAIL" });
-            if !rb {
-                write_str("\n");
-                p += 1;
+        // Parse the partition table directly from the freshly-read LBA0.
+        let mut protective_gpt = false;
+        let mut pe = 0usize;
+        while pe < 4 {
+            let off = 446 + pe * 16;
+            if lba0[off + 4] == 0xEE {
+                protective_gpt = true;
+            }
+            pe += 1;
+        }
+
+        if protective_gpt {
+            write_str("  TABLE=GPT (detected from protective MBR)\n");
+            let mut gh = [0u8; 512];
+            if !crate::drivers::ahci::read_sectors(d, 1, 1, &mut gh) ||
+               gh[0] != b'E' || gh[1] != b'F' || gh[2] != b'I' || gh[3] != b' ' ||
+               gh[4] != b'P' || gh[5] != b'A' || gh[6] != b'R' || gh[7] != b'T' {
+                write_str("  GPT_HEADER=FAIL\n");
+                d += 1;
                 continue;
             }
 
-            write_str(" HEX="); print_hex16_fresh(&boot);
-            write_str(" SIG=");
-            write_str(if boot[510] == 0x55 && boot[511] == 0xAA { "55AA" } else { "NO-55AA" });
+            let entry_lba = u64::from_le_bytes([
+                gh[72], gh[73], gh[74], gh[75], gh[76], gh[77], gh[78], gh[79]
+            ]);
+            let entry_count = u32::from_le_bytes([gh[80], gh[81], gh[82], gh[83]]);
+            let entry_size = u32::from_le_bytes([gh[84], gh[85], gh[86], gh[87]]);
+            write_str("  GPT_HEADER=OK ENTRY_LBA=");
+            serial::write_usize(entry_lba as usize);
+            write_str(" COUNT=");
+            serial::write_usize(entry_count as usize);
+            write_str(" SIZE=");
+            serial::write_usize(entry_size as usize);
             write_str("\n");
 
-            if boot[3] == b'N' && boot[4] == b'T' && boot[5] == b'F' &&
-               boot[6] == b'S' && boot[7] == b' ' {
-                let bps = u16::from_le_bytes([boot[11], boot[12]]);
-                let spc = boot[13];
-                let mft_lcn = u64::from_le_bytes([
-                    boot[48], boot[49], boot[50], boot[51],
-                    boot[52], boot[53], boot[54], boot[55]
-                ]);
-
-                write_str("  FS=NTFS BPS=");
-                serial::write_usize(bps as usize);
-                write_str(" SPC=");
-                serial::write_usize(spc as usize);
-                write_str(" MFT_LCN=");
-                serial::write_usize(mft_lcn as usize);
-                write_str("\n");
-
-                if bps == 512 && spc != 0 {
-                    let mft_lba = start.saturating_add(mft_lcn.saturating_mul(spc as u64));
-                    write_str("  RAW_MFT_LBA=");
-                    serial::write_usize(mft_lba as usize);
-
-                    let mut mft = [0u8; 512];
-                    let rm = crate::drivers::ahci::read_sectors(disk, mft_lba, 1, &mut mft);
-                    write_str(" READ=");
-                    write_str(if rm { "OK" } else { "FAIL" });
-                    if rm {
-                        write_str(" SIG=");
-                        write_str(if mft[0] == b'F' && mft[1] == b'I' &&
-                                  mft[2] == b'L' && mft[3] == b'E' {
-                            "FILE"
-                        } else { "NOT-FILE" });
-                        write_str(" HEX=");
-                        print_hex16_fresh(&mft);
-                    }
-                    write_str("\n");
-
-                    let mut n = 1u64;
-                    write_str("  RAW_MFT_NEXT=");
-                    while n <= 3 {
-                        let mut sec = [0u8; 512];
-                        let ok = crate::drivers::ahci::read_sectors(disk, mft_lba + n, 1, &mut sec);
-                        write_str(if ok { "OK " } else { "FAIL " });
-                        n += 1;
-                    }
-                    write_str("\n");
-                } else {
-                    write_str("  NTFS_PARAMS=INVALID\n");
-                }
-            } else if (boot[54] == b'F' && boot[55] == b'A' && boot[56] == b'T') ||
-                      (boot[82] == b'F' && boot[83] == b'A' && boot[84] == b'T') {
-                write_str("  FS=FAT\n");
-            } else if part.ptype == 0x83 {
-                write_str("  FS=TYPE_83_CANDIDATE\n");
-            } else {
-                write_str("  FS=UNKNOWN\n");
+            let es = if entry_size == 128 { 128usize } else { 0usize };
+            let max_entries = if entry_count > 128 { 128usize } else { entry_count as usize };
+            if es == 0 {
+                write_str("  GPT_ENTRIES=UNSUPPORTED_ENTRY_SIZE\n");
+                d += 1;
+                continue;
             }
+
+            let mut idx = 0usize;
+            let mut found = 0usize;
+            while idx < max_entries {
+                let byte_off = idx * es;
+                let sector = entry_lba + (byte_off / 512) as u64;
+                let within = byte_off % 512;
+                let mut eb = [0u8; 512];
+                if within + 128 > 512 {
+                    write_str("  GPT_ENTRY_READ=SKIP_CROSS_SECTOR\n");
+                    break;
+                }
+                if !crate::drivers::ahci::read_sectors(d, sector, 1, &mut eb) {
+                    write_str("  GPT_ENTRY_READ=FAIL IDX=");
+                    serial::write_usize(idx);
+                    write_str("\n");
+                    idx += 1;
+                    continue;
+                }
+
+                let mut nonzero = false;
+                let mut j = 0usize;
+                while j < 16 {
+                    if eb[within + j] != 0 {
+                        nonzero = true;
+                        break;
+                    }
+                    j += 1;
+                }
+                if nonzero {
+                    let first = u64::from_le_bytes([
+                        eb[within + 32], eb[within + 33], eb[within + 34], eb[within + 35],
+                        eb[within + 36], eb[within + 37], eb[within + 38], eb[within + 39]
+                    ]);
+                    let last = u64::from_le_bytes([
+                        eb[within + 40], eb[within + 41], eb[within + 42], eb[within + 43],
+                        eb[within + 44], eb[within + 45], eb[within + 46], eb[within + 47]
+                    ]);
+                    if last >= first {
+                        write_str("  PART ");
+                        serial::write_usize(found);
+                        write_str(" GPT_IDX=");
+                        serial::write_usize(idx);
+                        write_str(" START_LBA=");
+                        serial::write_usize(first as usize);
+                        write_str(" SECTORS=");
+                        serial::write_usize((last - first + 1) as usize);
+                        write_str("\n");
+                        crate::shell_dsk_probe_partition(d, first);
+                        found += 1;
+                    }
+                }
+                idx += 1;
+            }
+            write_str("  GPT_PARTITIONS=");
+            serial::write_usize(found);
+            write_str("\n");
+        } else {
+            write_str("  TABLE=MBR (parsed directly from LBA0)\n");
+            let mut found = 0usize;
+            let mut pe2 = 0usize;
+            while pe2 < 4 {
+                let off = 446 + pe2 * 16;
+                let ptype = lba0[off + 4];
+                if ptype != 0 {
+                    let start_lba = u32::from_le_bytes([
+                        lba0[off + 8], lba0[off + 9], lba0[off + 10], lba0[off + 11]
+                    ]) as u64;
+                    let sectors = u32::from_le_bytes([
+                        lba0[off + 12], lba0[off + 13], lba0[off + 14], lba0[off + 15]
+                    ]) as u64;
+                    write_str("  PART ");
+                    serial::write_usize(found);
+                    write_str(" MBR_IDX=");
+                    serial::write_usize(pe2);
+                    write_str(" START_LBA=");
+                    serial::write_usize(start_lba as usize);
+                    write_str(" SECTORS=");
+                    serial::write_usize(sectors as usize);
+                    write_str(" TYPE=");
+                    serial::write_hex(ptype as usize);
+                    write_str("\n");
+                    crate::shell_dsk_probe_partition(d, start_lba);
+                    found += 1;
+                }
+                pe2 += 1;
+            }
+            write_str("  MBR_PARTITIONS=");
+            serial::write_usize(found);
+            write_str("\n");
         }
-        p += 1;
+
+        d += 1;
     }
 
-    write_str("======== DSK FRESH END ========\n");
+    write_str("======== DSK RAW-ONLY END ========\n");
+}
+
+fn shell_dsk_probe_partition(disk: usize, start: u64) {
+    let mut boot = [0u8; 512];
+    let rb = crate::drivers::ahci::read_sectors(disk, start, 1, &mut boot);
+    write_str("    RAW_BOOT=");
+    write_str(if rb { "OK" } else { "FAIL" });
+    if !rb {
+        write_str("\n");
+        return;
+    }
+
+    write_str(" SIG=");
+    write_str(if boot[510] == 0x55 && boot[511] == 0xAA { "55AA" } else { "NO-55AA" });
+
+    if boot[3] == b'N' && boot[4] == b'T' && boot[5] == b'F' &&
+       boot[6] == b'S' && boot[7] == b' ' {
+        let bps = u16::from_le_bytes([boot[11], boot[12]]);
+        let spc = boot[13];
+        let mft_lcn = u64::from_le_bytes([
+            boot[48], boot[49], boot[50], boot[51],
+            boot[52], boot[53], boot[54], boot[55]
+        ]);
+        write_str(" FS=NTFS BPS=");
+        serial::write_usize(bps as usize);
+        write_str(" SPC=");
+        serial::write_usize(spc as usize);
+        write_str(" MFT_LCN=");
+        serial::write_usize(mft_lcn as usize);
+        if bps == 512 && spc != 0 {
+            let mft_lba = start.saturating_add(mft_lcn.saturating_mul(spc as u64));
+            write_str(" MFT_LBA=");
+            serial::write_usize(mft_lba as usize);
+            let mut mft = [0u8; 512];
+            let rm = crate::drivers::ahci::read_sectors(disk, mft_lba, 1, &mut mft);
+            write_str(" READ=");
+            write_str(if rm { "OK" } else { "FAIL" });
+            if rm {
+                write_str(" SIG=");
+                write_str(if mft[0] == b'F' && mft[1] == b'I' &&
+                          mft[2] == b'L' && mft[3] == b'E' { "FILE" } else { "NOT-FILE" });
+            }
+        }
+    } else if (boot[54] == b'F' && boot[55] == b'A' && boot[56] == b'T') ||
+              (boot[82] == b'F' && boot[83] == b'A' && boot[84] == b'T') {
+        write_str(" FS=FAT");
+    } else {
+        write_str(" FS=UNKNOWN");
+    }
+    write_str("\n");
 }
 
 fn cmd_vdiag() {
