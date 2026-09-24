@@ -1219,10 +1219,19 @@ fn draw_window(idx: usize) {
                     graphics::draw_str(wx + 18, wy + 106, "Intel Centrino-N-2230", 0x00008000);
                     graphics::draw_str(wx + 18, wy + 120, "PCI 8:0.0  8086:0887", COL_TEXT_DIM);
                     graphics::draw_str(wx + 18, wy + 134, "PCIe Gen1 x1  |  MSI ready", COL_TEXT_DIM);
-                    if crate::drivers::wifi::needs_firmware() {
-                        graphics::draw_str(wx + 18, wy + 150, "Firmware required", 0x00800000);
+                    if crate::drivers::wifi::reset_attempted() {
+                        if crate::drivers::wifi::reset_ok() {
+                            graphics::draw_str(wx + 18, wy + 150, "Reset: CSR SW reset OK", 0x00008000);
+                        } else {
+                            graphics::draw_str(wx + 18, wy + 150, "Reset: failed", 0x00800000);
+                        }
                     } else {
-                        graphics::draw_str(wx + 18, wy + 150, "Firmware loaded", 0x00008000);
+                        graphics::draw_str(wx + 18, wy + 150, "Reset: not attempted", COL_TEXT_DIM);
+                    }
+                    if crate::drivers::wifi::needs_firmware() {
+                        graphics::draw_str(wx + 18, wy + 164, "Firmware required", 0x00800000);
+                    } else {
+                        graphics::draw_str(wx + 18, wy + 164, "Firmware loaded", 0x00008000);
                     }
                 } else {
                     graphics::draw_str(wx + 18, wy + 106, "Wi-Fi adapter not detected", COL_TEXT_DIM);
