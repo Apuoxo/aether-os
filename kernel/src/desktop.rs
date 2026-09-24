@@ -2105,13 +2105,7 @@ fn handle_special_key(hid_code: u8) -> bool {
 fn handle_key(ch: u8) {
     unsafe {
         if ch == 0x1B {
-            // Esc: Explorer modal/context gets first refusal.
-            if FOCUS < MAX_WIN && WINS[FOCUS].visible && WINS[FOCUS].kind == WinKind::Files {
-                if crate::files_mgr::on_escape() {
-                    DIRTY_FULL = true;
-                    return;
-                }
-            }
+            // Esc
             START_MENU = false;
             DIRTY_FULL = true;
             return;
