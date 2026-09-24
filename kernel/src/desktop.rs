@@ -2004,13 +2004,15 @@ fn handle_key(ch: u8) {
             return;
         }
         if ch == b'\n' {
-            terminal_write("aether> ");
+            // Echo the exact byte buffer before dispatch so GUI command routing
+            // is directly observable during hardware diagnostics.
+            terminal_write("aether> CMD-IN=[");
             let mut k = 0usize;
             while k < INPUT_LEN {
                 term_putc(INPUT[k]);
                 k += 1;
             }
-            term_putc(b'\n');
+            terminal_write("]\n");
             crate::shell::run_command_from_gui(&INPUT, INPUT_LEN);
             INPUT_LEN = 0;
             DIRTY_FULL = true;
