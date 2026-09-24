@@ -432,3 +432,9 @@ pub extern "C" fn rust_ring3_done() -> ! {
     serial::write_str("\n======== RING3 STAGE COMPLETE ========\n");
     loop { crate::ring3_resume::continue_boot(); }
 }
+
+
+#[no_mangle]
+pub extern "C" fn wifi_irq_handler() {
+    unsafe { crate::drivers::wifi::irq_handler(); }
+}
