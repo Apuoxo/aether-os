@@ -112,6 +112,7 @@ static mut RX_IRQ_COUNT: u32 = 0;
 static mut ALIVE_SEEN: bool = false;
 static mut ALIVE_VALID: u32 = 0;
 static mut ALIVE_SUBTYPE: u8 = 0;
+static mut SCAN_NOTIFICATION_SEEN: bool = false;
 
 static mut FOUND: bool = false;
 static mut READY: bool = false; // phase1 ready = found + mapped
@@ -284,6 +285,7 @@ pub fn rx_irq_count() -> u32 { unsafe { RX_IRQ_COUNT } }
 pub fn alive_seen() -> bool { unsafe { ALIVE_SEEN } }
 pub fn alive_valid() -> u32 { unsafe { ALIVE_VALID } }
 pub fn alive_subtype() -> u8 { unsafe { ALIVE_SUBTYPE } }
+fn scan_notification_seen() -> bool { unsafe { SCAN_NOTIFICATION_SEEN } }
 
 fn prph_write(addr: u32, val: u32) {
     unsafe {
@@ -420,12 +422,13 @@ fn put_le32(buf: &mut [u8], off: usize, v: u32) {
 pub fn scan_24ghz() -> bool {
     unsafe {
         if !CMD_QUEUE_READY || !ALIVE_SEEN { return false; }
+        SCAN_NOTIFICATION_SEEN = false;
 
         // Legacy DVM iwl_scan_cmd for the 2030 firmware:
         // fixed header 28 + zeroed iwl_tx_cmd 52 + 20 SSID IEs (34 each),
-        // followed by iwl_scan_channel entries of 16 bytes each.
+        // followed by iwl_scan_channel entries of 12 bytes each.
         let fixed = 28usize + 52usize + 20usize * 34usize;
-        let channels = IWL_SCAN_CHANNEL_COUNT_24G * 16usize;
+        let channels = IWL_SCAN_CHANNEL_COUNT_24G * 12usize;
         let total = fixed + channels;
         let mut p = [0u8; 1024];
 
@@ -456,7 +459,7 @@ pub fn scan_24ghz() -> bool {
             p[off + 7] = 0; // automatic DSP attenuation
             put_le16(&mut p, off + 8, 0);   // active dwell
             put_le16(&mut p, off + 10, 100); // passive dwell, TU
-            off += 16;
+            off += 12;
             ch += 1;
         }
 
@@ -466,6 +469,14 @@ pub fn scan_24ghz() -> bool {
             return false;
         }
         serial::write_str("[WIFI] SCAN24 CMD=SUBMITTED\n");
+        serial::write_str("[WIFI] SCAN24 CMD=SUBMITTED\\n");
+        let mut spins = 0usize;
+        while spins < 100_000_000 {
+            irq_handler();
+            if scan_notification_seen() { break; }
+            core::hint::spin_loop();
+            spins += 1;
+        }
         true
     }
 }
@@ -535,6 +546,11 @@ pub unsafe fn irq_handler() {
                         serial::write_hex(valid as usize);
                         serial::write_str(if valid == 1 { " RESULT=VALID\n" } else { " RESULT=INVALID\n" });
                     } else {
+                        if cmd == SCAN_START_NOTIFICATION ||
+                           cmd == SCAN_RESULTS_NOTIFICATION ||
+                           cmd == SCAN_COMPLETE_NOTIFICATION {
+                            SCAN_NOTIFICATION_SEEN = true;
+                        }
                         serial::write_str("[WIFI] RX cmd=");
                         serial::write_hex(cmd as usize);
                         serial::write_str(" len=");
