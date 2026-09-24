@@ -138,7 +138,7 @@ fn write_str(s: &str) {
 fn write_usize(v: usize) {
     unsafe {
         if !GUI_OUTPUT {
-            serial::write_usize(v;
+            serial::write_usize(v);
             return;
         }
     }
