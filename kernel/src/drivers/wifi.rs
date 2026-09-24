@@ -46,6 +46,8 @@ static mut MSI_CTRL: u16 = 0;
 static mut PCIE_CAP: bool = false;
 static mut PCIE_LINK_STATUS: u16 = 0;
 static mut PCIE_DEVICE_STATUS: u16 = 0;
+static mut PCIE_LINK_SPEED: u8 = 0;
+static mut PCIE_LINK_WIDTH: u8 = 0;
 
 unsafe fn pci_r32(bus: u8, dev: u8, func: u8, off: u8) -> u32 {
     let a = 0x8000_0000u32
@@ -138,6 +140,8 @@ pub fn msi_ctrl() -> u16 { unsafe { MSI_CTRL } }
 pub fn pcie_cap() -> bool { unsafe { PCIE_CAP } }
 pub fn pcie_link_status() -> u16 { unsafe { PCIE_LINK_STATUS } }
 pub fn pcie_device_status() -> u16 { unsafe { PCIE_DEVICE_STATUS } }
+pub fn pcie_link_speed() -> u8 { unsafe { PCIE_LINK_SPEED } }
+pub fn pcie_link_width() -> u8 { unsafe { PCIE_LINK_WIDTH } }
 
 /// Read-only PCI capability-chain snapshot for the Intel 2230.
 /// No capability is modified and no interrupt mode is enabled.
@@ -152,6 +156,8 @@ pub fn probe_capabilities() {
         PCIE_CAP = false;
         PCIE_LINK_STATUS = 0;
         PCIE_DEVICE_STATUS = 0;
+        PCIE_LINK_SPEED = 0;
+        PCIE_LINK_WIDTH = 0;
         if !FOUND {
             serial::write_str("[WIFI] CAPS=NO-DEVICE\\n");
             return;
@@ -188,7 +194,9 @@ pub fn probe_capabilities() {
                 0x10 => {
                     PCIE_CAP = true;
                     let pcie = pci_r32(BUS, DEV, FUNC, off.wrapping_add(0x0C));
-                    PCIE_LINK_STATUS = ((pcie >> 16) & 0xFFFF) as u16;
+                    PCIE_LINK_STATUS = (pcie & 0xFFFF) as u16;
+                    PCIE_LINK_SPEED = (PCIE_LINK_STATUS & 0x000F) as u8;
+                    PCIE_LINK_WIDTH = ((PCIE_LINK_STATUS >> 4) & 0x003F) as u8;
                     let pcie2 = pci_r32(BUS, DEV, FUNC, off.wrapping_add(0x08));
                     PCIE_DEVICE_STATUS = ((pcie2 >> 16) & 0xFFFF) as u16;
                 }
