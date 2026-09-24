@@ -131,11 +131,13 @@ static mut CTX_Y: i32 = 0;
 static mut Z_TOP: i32 = 3;
 
 // Terminal buffer
-const TERM_ROWS: usize = 16;
+const TERM_ROWS: usize = 128;
 const TERM_COLS: usize = 52;
+const TERM_VIEW_ROWS: usize = 15; // 15 history rows + 1 prompt row
 static mut TERM_LINES: [[u8; TERM_COLS]; TERM_ROWS] = [[0; TERM_COLS]; TERM_ROWS];
 static mut TERM_LEN: [usize; TERM_ROWS] = [0; TERM_ROWS];
 static mut TERM_ROW: usize = 0;
+static mut TERM_VIEW: usize = 0; // 0 = live bottom, larger = scrolled up
 static mut INPUT: [u8; 64] = [0; 64];
 static mut INPUT_LEN: usize = 0;
 
@@ -152,6 +154,26 @@ fn term_clear() {
             r += 1;
         }
         TERM_ROW = 0;
+        TERM_VIEW = 0;
+    }
+}
+
+fn term_scroll_up() {
+    unsafe {
+        let max_view = if TERM_ROW + 1 > TERM_VIEW_ROWS { TERM_ROW + 1 - TERM_VIEW_ROWS } else { 0 };
+        if TERM_VIEW < max_view {
+            TERM_VIEW += 1;
+            DIRTY_FULL = true;
+        }
+    }
+}
+
+fn term_scroll_down() {
+    unsafe {
+        if TERM_VIEW > 0 {
+            TERM_VIEW -= 1;
+            DIRTY_FULL = true;
+        }
     }
 }
 
@@ -1227,20 +1249,28 @@ fn draw_window(idx: usize) {
                     wh - TITLE_H as usize - 3,
                     COL_TERM_BG,
                 );
+                let total = TERM_ROW + 1;
+                let max_start = if total > TERM_VIEW_ROWS { total - TERM_VIEW_ROWS } else { 0 };
+                let mut view = TERM_VIEW;
+                if view > max_start { view = max_start; }
+                let start = max_start - view;
                 let mut r = 0usize;
-                while r <= TERM_ROW && r < TERM_ROWS {
-                    let y = wy + TITLE_H as usize + 6 + r * 10;
-                    if y + 8 < wy + wh {
-                        let len = TERM_LEN[r];
-                        let mut k = 0usize;
-                        while k < len {
-                            graphics::draw_char(wx + 8 + k * 8, y, TERM_LINES[r][k], COL_TERM_FG);
-                            k += 1;
+                while r < TERM_VIEW_ROWS {
+                    let idx = start + r;
+                    if idx < total {
+                        let y = wy + TITLE_H as usize + 6 + r * 10;
+                        if y + 8 < wy + wh {
+                            let len = TERM_LEN[idx];
+                            let mut k = 0usize;
+                            while k < len {
+                                graphics::draw_char(wx + 8 + k * 8, y, TERM_LINES[idx][k], COL_TERM_FG);
+                                k += 1;
+                            }
                         }
                     }
                     r += 1;
                 }
-                let y = wy + TITLE_H as usize + 6 + (TERM_ROW + 1) * 10;
+                let y = wy + TITLE_H as usize + 6 + TERM_VIEW_ROWS * 10;
                 if y + 8 < wy + wh && focused {
                     graphics::draw_str(wx + 8, y, "aether> ", 0x0000FF00);
                     let mut k = 0usize;
@@ -1913,6 +1943,19 @@ fn render() {
 }
 
 
+fn handle_special_key(hid_code: u8) -> bool {
+    unsafe {
+        if FOCUS >= MAX_WIN || !WINS[FOCUS].visible || WINS[FOCUS].kind != WinKind::Terminal {
+            return false;
+        }
+    }
+    match hid_code {
+        0x52 | 0x4B => { term_scroll_up(); true }   // Up / PageUp
+        0x51 | 0x4E => { term_scroll_down(); true } // Down / PageDown
+        _ => false,
+    }
+}
+
 fn handle_key(ch: u8) {
     unsafe {
         if ch == 0x1B {
@@ -2032,8 +2075,13 @@ pub fn run() -> ! {
             }
         }
         while let Some(ev) = input::poll() {
-            if ev.pressed && ev.key != 0 {
-                handle_key(ev.key);
+            if ev.pressed {
+                if handle_special_key(ev.hid_code) {
+                    continue;
+                }
+                if ev.key != 0 {
+                    handle_key(ev.key);
+                }
             }
         }
 
