@@ -57,7 +57,7 @@ fn log(s:&[u8]){serial::write_str("[EXPLORER] ");if let Ok(v)=core::str::from_ut
 fn status(s:&[u8]){log(s);unsafe{let mut i=0;while i<64{STATUS[i]=0;i+=1;}i=0;while i<s.len()&&i<63{STATUS[i]=s[i];i+=1;}STATUS_LEN=i;}}
 fn set_root(){unsafe{CWD[0]=b'/';CWD_LEN=1;VIEW=VIEW_ROOT;SEL=-1;}}
 fn push_hist(){unsafe{if HIST_N<8{let mut i=0;while i<32{HIST[HIST_N][i]=CWD[i];i+=1;}HIST_LEN[HIST_N]=CWD_LEN;HIST_N+=1;HIST_I=HIST_N;}}}
-fn draw_num(x:usize,y:usize,mut n:u32){if n==0{graphics::draw_char(x,y,b'0',TEXT);return;}let mut d=[0u8;10];let mut c=0;while n>0{d[c]=(n%10)as u8+b'0';n/=10;c+=1;}while c>0{c-=1;graphics::draw_char(x+(d.len()-1-c)*0,y,d[c],TEXT);}}
+fn draw_num(x:usize,y:usize,mut n:u32){if n==0{graphics::draw_char(x,y,b'0',TEXT);return;}let mut d=[0u8;10];let mut c=0;while n>0{d[c]=(n%10)as u8+b'0';n/=10;c+=1;}let start=c;while c>0{c-=1;graphics::draw_char(x+(start-1-c)*8,y,d[c],TEXT);}}
 fn btn(x:usize,y:usize,w:usize,label:&str,hot:bool){graphics::fill_rect(x,y,w,24,if hot{BLUE2}else{TOOL});graphics::border_rect(x,y,w,24,BORDER);graphics::draw_str(x+8,y+8,label,if hot{BLUE}else{TEXT});}
 
 pub fn reset(){unsafe{VIEW=VIEW_COMPUTER;SEL=-1;HOVER=-1;FOCUS_ADDR=false;CTX=false;CONFIRM_DEL=false;HIST_N=0;HIST_I=0;CWD[0]=b'/';CWD_LEN=1;NTFS_CWD_REF=5;NTFS_DEPTH=0;PREVIEW_LEN=0;}status(b"Ready");}
@@ -112,25 +112,25 @@ fn draw_sidebar(wx:usize,y:usize,w:usize,h:usize){
 
     graphics::draw_str(wx+14,y+14,"QUICK ACCESS",DIM);
     icon::blit(icon::IconId::Folder,wx+10,y+28,false);
-    graphics::draw_str(wx+32,y+36,"Desktop",TEXT);
+    graphics::draw_str(wx+40,y+36,"Desktop",TEXT);
     icon::blit(icon::IconId::Folder,wx+10,y+48,false);
-    graphics::draw_str(wx+32,y+56,"Documents",TEXT);
+    graphics::draw_str(wx+40,y+56,"Documents",TEXT);
     icon::blit(icon::IconId::Folder,wx+10,y+68,false);
-    graphics::draw_str(wx+32,y+76,"Downloads",TEXT);
+    graphics::draw_str(wx+40,y+76,"Downloads",TEXT);
 
     graphics::draw_str(wx+14,y+106,"THIS PC",DIM);
     icon::blit(icon::IconId::MyComputer,wx+10,y+121,false);
-    graphics::draw_str(wx+32,y+129,"Computer",TEXT);
+    graphics::draw_str(wx+40,y+129,"Computer",TEXT);
     icon::blit(icon::IconId::MyComputer,wx+10,y+141,false);
-    graphics::draw_str(wx+32,y+149,"Local Disk (C:)",TEXT);
+    graphics::draw_str(wx+40,y+149,"Local Disk (C:)",TEXT);
     icon::blit(icon::IconId::MyComputer,wx+10,y+161,false);
-    graphics::draw_str(wx+32,y+169,"AetherFS (A:)",TEXT);
+    graphics::draw_str(wx+40,y+169,"AetherFS (A:)",TEXT);
 
     graphics::draw_str(wx+14,y+200,"SYSTEM",DIM);
     icon::blit(icon::IconId::MyComputer,wx+10,y+215,false);
-    graphics::draw_str(wx+32,y+223,"Network",TEXT);
+    graphics::draw_str(wx+40,y+223,"Network",TEXT);
     icon::blit(icon::IconId::MyComputer,wx+10,y+235,false);
-    graphics::draw_str(wx+32,y+243,"Devices",TEXT);
+    graphics::draw_str(wx+40,y+243,"Devices",TEXT);
     let _=h;
 }
 fn draw_drive(wx:usize,y:usize,name:&str,sub:&str,sel:bool){
@@ -498,26 +498,22 @@ pub fn on_click(wx:i32,wy:i32,ww:i32,wh:i32,title_h:i32,mx:i32,my:i32,right:bool
                 if my<list_top+52{return false;}
                 let row=((my-list_top-52)/24)as i32;
                 if row>=0&&row<n as i32{
-                    if SEL==row{
-                        if let Some(p)=part::get(row as usize){
-                            log(b"partition open requested");
-                            if p.ptype==0x07{
-                                if fs_ntfs::mount_partition(row as usize){
-                                    VIEW=VIEW_NTFS;SEL=-1;
-                                    status(b"NTFS root opened read-only");
-                                }else{status(b"NTFS mount failed - read-only");}
-                            }else if p.ptype==0x0B||p.ptype==0x0C||p.ptype==0x06||p.ptype==0x0E||p.ptype==0x04{
-                                if fs_fat::mount_partition(row as usize){
-                                    VIEW=VIEW_FAT;SEL=-1;
-                                    status(b"FAT root opened read-only");
-                                }else{status(b"FAT mount failed - read-only");}
-                            }else{
-                                status(b"Partition filesystem not implemented");
-                            }
+                    SEL=row;
+                    if let Some(p)=part::get(row as usize){
+                        log(b"partition open requested");
+                        if p.ptype==0x07{
+                            if fs_ntfs::mount_partition(row as usize){
+                                VIEW=VIEW_NTFS;SEL=-1;NTFS_CWD_REF=5;NTFS_DEPTH=0;
+                                status(b"NTFS root opened read-only");
+                            }else{status(b"NTFS mount failed - read-only");}
+                        }else if p.ptype==0x0B||p.ptype==0x0C||p.ptype==0x06||p.ptype==0x0E||p.ptype==0x04{
+                            if fs_fat::mount_partition(row as usize){
+                                VIEW=VIEW_FAT;SEL=-1;
+                                status(b"FAT root opened read-only");
+                            }else{status(b"FAT mount failed - read-only");}
+                        }else{
+                            status(b"Linux/ext4 filesystem not implemented");
                         }
-                    }else{
-                        SEL=row;
-                        status(b"Partition selected");
                     }
                     return true;
                 }
@@ -528,27 +524,23 @@ pub fn on_click(wx:i32,wy:i32,ww:i32,wh:i32,title_h:i32,mx:i32,my:i32,right:bool
                 if my<list_top+28{return false;}
                 let row=((my-list_top-28)/20)as i32;
                 if row>=0&&row<n as i32{
-                    if SEL==row{
-                        if let Some(e)=fs_ntfs::entry(row as usize){
-                            if e.is_dir{
-                                if fs_ntfs::list_directory(e.mft_ref){
-                                    if NTFS_DEPTH<8{
-                                        NTFS_PARENT[NTFS_DEPTH]=NTFS_CWD_REF;
-                                        NTFS_DEPTH+=1;
-                                    }
-                                    NTFS_CWD_REF=e.mft_ref;
-                                    SEL=-1;
-                                    status(b"NTFS folder opened");
-                                }else{
-                                    status(b"NTFS folder read failed");
+                    SEL=row;
+                    if let Some(e)=fs_ntfs::entry(row as usize){
+                        if e.is_dir{
+                            if fs_ntfs::list_directory(e.mft_ref){
+                                if NTFS_DEPTH<8{
+                                    NTFS_PARENT[NTFS_DEPTH]=NTFS_CWD_REF;
+                                    NTFS_DEPTH+=1;
                                 }
+                                NTFS_CWD_REF=e.mft_ref;
+                                SEL=-1;
+                                status(b"NTFS folder opened");
                             }else{
-                                status(b"NTFS file preview not implemented");
+                                status(b"NTFS folder read failed");
                             }
+                        }else{
+                            status(b"NTFS file preview not implemented");
                         }
-                    }else{
-                        SEL=row;
-                        status(b"Selected");
                     }
                     return true;
                 }
@@ -577,7 +569,7 @@ pub fn on_click(wx:i32,wy:i32,ww:i32,wh:i32,title_h:i32,mx:i32,my:i32,right:bool
         }
         if my>=list_top&&my<list_top+330&&mx<wx+side{
             // Sidebar hit boxes match the labels/icons drawn above.
-            if my>=list_top+135&&my<list_top+170{
+            if my>=list_top+132&&my<list_top+156{
                 if fs_ntfs::mount_first(){
                     VIEW=VIEW_NTFS;
                     SEL=-1;
@@ -589,7 +581,7 @@ pub fn on_click(wx:i32,wy:i32,ww:i32,wh:i32,title_h:i32,mx:i32,my:i32,right:bool
                 }
                 return true;
             }
-            if my>=list_top+155&&my<list_top+195{
+            if my>=list_top+156&&my<list_top+182{
                 push_hist();
                 set_root();
                 status(b"AetherFS (A:) opened");
