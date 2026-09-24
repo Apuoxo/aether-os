@@ -237,6 +237,13 @@ fn cmd_wf() {
     }
     crate::drivers::wifi::probe_prerequisites();
     crate::drivers::wifi::probe_capabilities();
+    write_str("  MSI_CTRL=");
+    write_hex(crate::drivers::wifi::msi_ctrl() as usize);
+    write_str(" PCIE=");
+    write_str(if crate::drivers::wifi::pcie_cap() { "YES" } else { "NO" });
+    write_str(" LINK_STATUS=");
+    write_hex(crate::drivers::wifi::pcie_link_status() as usize);
+    write_str("\n");
     write_str("  CAPS PTR=");
     write_hex(crate::drivers::wifi::cap_ptr() as usize);
     write_str(" PM=");
