@@ -151,6 +151,12 @@ fn write_usize(v: usize) {
 }
 
 fn write_hex(mut v: usize) {
+    unsafe {
+        if !GUI_OUTPUT {
+            serial::write_hex(v);
+            return;
+        }
+    }
     if v == 0 { putc(b'0'); return; }
     let mut d = [0u8; 16];
     let mut k = 0usize;
@@ -581,14 +587,14 @@ fn cmd_vedid() {
         write_str("EDID: block read but validation/parser rejected it\\n");
         return;
     }
-    serial::write_str("[VIDEO/EDID] block0:");
+    write_str("[VIDEO/EDID] block0:");
     let mut i = 0usize;
     while i < 128 {
         if i % 16 == 0 { serial::write_str(if i == 0 { " " } else { "\\n[VIDEO/EDID] " }); }
         write_hex(block[i] as usize);
         i += 1;
     }
-    serial::write_str("\\n");
+    write_str("\\n");
     if let Some(m) = crate::drivers::video::preferred_mode() {
         write_str("preferred mode: ");
         write_usize(m.width as usize);
