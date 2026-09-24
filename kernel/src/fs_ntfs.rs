@@ -10,6 +10,7 @@ pub struct NtfsEntry {
     pub name: [u8; 48],
     pub name_len: usize,
     pub size: u64,
+    pub mtime: u64,
     pub is_dir: bool,
     pub mft_ref: u32,
 }
@@ -39,7 +40,7 @@ static mut INDEX_ALLOC_DIAG_START: usize = 0;
 static mut INDEX_ALLOC_DIAG_END: usize = 0;
 const STORAGE_LIMIT: usize = 256;
 static mut ENTRIES: [NtfsEntry; STORAGE_LIMIT] = [NtfsEntry {
-    name: [0; 48], name_len: 0, size: 0, is_dir: false, mft_ref: 0,
+    name: [0; 48], name_len: 0, size: 0, mtime: 0, is_dir: false, mft_ref: 0,
 }; STORAGE_LIMIT];
 static mut NENT: usize = 0;
 
@@ -666,6 +667,11 @@ fn parse_index_entries(rec: &[u8], mut off: usize, end: usize) -> usize {
                 rec[fn_off + 0x30], rec[fn_off + 0x31], rec[fn_off + 0x32], rec[fn_off + 0x33],
                 rec[fn_off + 0x34], rec[fn_off + 0x35], rec[fn_off + 0x36], rec[fn_off + 0x37],
             ]);
+            // $FILE_NAME last-modified time: offset +0x10 from FILE_NAME key start.
+            let mtime = u64::from_le_bytes([
+                rec[fn_off + 0x10], rec[fn_off + 0x11], rec[fn_off + 0x12], rec[fn_off + 0x13],
+                rec[fn_off + 0x14], rec[fn_off + 0x15], rec[fn_off + 0x16], rec[fn_off + 0x17],
+            ]);
             let name_bytes = fn_off + 0x42;
             let mut name = [0u8; 48];
             let mut nl = 0usize;
@@ -695,6 +701,7 @@ fn parse_index_entries(rec: &[u8], mut off: usize, end: usize) -> usize {
                             name,
                             name_len: nl,
                             size: real_size,
+                            mtime,
                             is_dir,
                             mft_ref: mft_lo,
                         };
