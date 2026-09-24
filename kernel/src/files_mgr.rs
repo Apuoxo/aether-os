@@ -735,24 +735,6 @@ pub fn on_click(wx:i32,wy:i32,ww:i32,wh:i32,title_h:i32,mx:i32,my:i32,right:bool
                     }
                     return true;
                 }
-                if false{
-                        if p.ptype==0x07{
-                            if fs_ntfs::mount_partition(row as usize){
-                                VIEW=VIEW_NTFS;SEL=-1;NTFS_CWD_REF=5;NTFS_DEPTH=0;NTFS_VIEW_DIRTY=true;NTFS_SCROLL=0;
-                                trace_ntfs(b"OPEN");
-                            }else{status(b"NTFS mount failed - read-only");}
-                        }else if p.ptype==0x0B||p.ptype==0x0C||p.ptype==0x06||p.ptype==0x0E||p.ptype==0x04{
-                            if fs_fat::mount_partition(row as usize){
-                                VIEW=VIEW_FAT;SEL=-1;
-                                status(b"FAT root opened read-only");
-                            }else{status(b"FAT mount failed - read-only");}
-                        }else{
-                            status(b"Linux/ext4 filesystem not implemented");
-                        }
-                    }
-                    }
-                    return true;
-                }
                 return false;
             }
             else if VIEW==VIEW_NTFS{
