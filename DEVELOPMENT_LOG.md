@@ -139,3 +139,12 @@ Every significant change should be followed by:
 - Acceptance criteria for this task: (1) empty/inert clicks do not visibly flicker; (2) Explorer sidebar/input hit-testing is functional; (3) double-clicking C: opens the actual root contents of the selected NTFS system volume, not the partition table; (4) physical partitions remain available only through an explicitly separate diagnostic/storage view; (5) no host-disk writes are introduced.
 - Important unresolved technical point: fs_ntfs::mount_first() must not be assumed to identify the user's intended C: volume when multiple NTFS/ExFAT partitions exist. The next source inspection must establish deterministic logical-volume selection from actual partition metadata, and if the NTFS root parser returns empty data, fix the filesystem path rather than masking it in the Explorer UI.
 - Working rule added: do not call the Explorer complete until source inspection, CI/QEMU verification, and the required AH532 runtime test support these acceptance criteria.
+
+### 2026-09-24 — Repeated command-routing mistake: GUI terminal vs shell.rs
+- Error recorded as a project-level process failure: the `77` diagnostic was first modified in `kernel/src/shell.rs`, even though the command was being entered in the desktop GUI terminal.
+- The desktop GUI terminal has its own command dispatcher in `kernel/src/desktop.rs`, specifically `run_cmd()`, plus its own terminal buffer (`TERM_ROWS=16`, `TERM_COLS=52`). Changes to `shell.rs` therefore do not change the GUI terminal command path unless source inspection proves that routing.
+- This mistake was repeated after it had already been identified once. It must not be repeated again.
+- **Mandatory project rule:** when the user runs a command in the desktop GUI terminal, first inspect `kernel/src/desktop.rs` -> `run_cmd()` -> the exact command handler. Do not modify `kernel/src/shell.rs` unless the GUI routing to it is explicitly proven from source.
+- The same rule applies to diagnostic commands such as `77` and `dsk`: verify the actual GUI dispatch path before changing command behavior.
+- Terminal-capacity finding: the GUI terminal keeps only 16 visible rows and scrolls older lines out of its buffer; it also limits each line to 52 columns. Long diagnostics must therefore be designed/validated with this constraint in mind.
+
