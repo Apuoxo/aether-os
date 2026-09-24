@@ -487,8 +487,8 @@ fn cmd_wf() {
     write_str("======== WF NETWORK SURVEY ========\n");
     write_str("PURPOSE: collect native network hardware facts for the WiFi bring-up plan\n");
     write_str("MODE: native PCI probe; no firmware load, association, TX/RX, or disk write\n");
-    write_str("PROBE: fresh Intel WLAN PCI discovery is executed now\n");
-    crate::drivers::wifi::init();
+    write_str("PROBE: fresh read-only Intel WLAN PCI discovery is executed now\n");
+    crate::drivers::wifi::survey();
 
     let wifi = crate::drivers::wifi::found();
     let wifi_ready = crate::drivers::wifi::ready();

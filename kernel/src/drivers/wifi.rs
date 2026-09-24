@@ -154,6 +154,54 @@ pub fn probe_prerequisites() {
     }
 }
 
+/// Fresh read-only PCI survey for WF. It never enables PCI command bits,
+/// maps MMIO, resets the device, enables interrupts, starts DMA, or loads firmware.
+pub fn survey() {
+    unsafe {
+        for bus in 0u8..=31 {
+            for dev in 0u8..32 {
+                for func in 0u8..8 {
+                    let id = pci_r32(bus, dev, func, 0);
+                    if id == 0xFFFF_FFFF || id == 0 { continue; }
+                    let vid = (id & 0xFFFF) as u16;
+                    let did = ((id >> 16) & 0xFFFF) as u16;
+                    let cr = pci_r32(bus, dev, func, 0x08);
+                    let class = ((cr >> 24) & 0xFF) as u8;
+                    let sub = ((cr >> 16) & 0xFF) as u8;
+                    if vid != INTEL_VID || class != 0x02 || sub != 0x80 { continue; }
+                    let bar0 = (pci_r32(bus, dev, func, 0x10) as u64) & !0xF;
+                    let subsys = (pci_r32(bus, dev, func, 0x2C) >> 16) as u16;
+                    FOUND = true;
+                    BUS = bus;
+                    DEV = dev;
+                    FUNC = func;
+                    BAR0 = bar0;
+                    SUBSYS = subsys;
+                    NEEDS_FW = true;
+                    serial::write_str("[WIFI] SURVEY FOUND ");
+                    serial::write_usize(bus as usize);
+                    serial::write_str(":");
+                    serial::write_usize(dev as usize);
+                    serial::write_str(".");
+                    serial::write_usize(func as usize);
+                    serial::write_str(" DID=");
+                    serial::write_hex(did as usize);
+                    serial::write_str(" SUB=");
+                    serial::write_hex(subsys as usize);
+                    serial::write_str(" BAR0=");
+                    serial::write_hex(bar0 as usize);
+                    serial::write_str(" (READ-ONLY)\\n");
+                    return;
+                }
+            }
+        }
+        FOUND = false;
+        READY = false;
+        NEEDS_FW = true;
+        serial::write_str("[WIFI] SURVEY no Intel WLAN on buses 0..31\\n");
+    }
+}
+
 /// Force probe Intel Centrino Wireless-N 2230 (AH532) and any 02:80 Intel WLAN
 pub fn init() {
     serial::write_str("[WIFI] AH532 target: Centrino Wireless-N 2230 (8086:0887)\n");
