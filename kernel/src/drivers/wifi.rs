@@ -37,6 +37,11 @@ static mut PCI_STATUS: u16 = 0;
 static mut IRQ_LINE: u8 = 0;
 static mut IRQ_PIN: u8 = 0;
 static mut PREREQS_READ: bool = false;
+static mut CAP_PTR: u8 = 0;
+static mut CAP_MSI: bool = false;
+static mut CAP_MSIX: bool = false;
+static mut CAP_PM: bool = false;
+static mut CAP_CHAIN_READ: bool = false;
 
 unsafe fn pci_r32(bus: u8, dev: u8, func: u8, off: u8) -> u32 {
     let a = 0x8000_0000u32
@@ -120,6 +125,69 @@ pub fn pci_status() -> u16 { unsafe { PCI_STATUS } }
 pub fn irq_line() -> u8 { unsafe { IRQ_LINE } }
 pub fn irq_pin() -> u8 { unsafe { IRQ_PIN } }
 pub fn prerequisites_read() -> bool { unsafe { PREREQS_READ } }
+pub fn cap_ptr() -> u8 { unsafe { CAP_PTR } }
+pub fn cap_msi() -> bool { unsafe { CAP_MSI } }
+pub fn cap_msix() -> bool { unsafe { CAP_MSIX } }
+pub fn cap_pm() -> bool { unsafe { CAP_PM } }
+pub fn cap_chain_read() -> bool { unsafe { CAP_CHAIN_READ } }
+
+/// Read-only PCI capability-chain snapshot for the Intel 2230.
+/// No capability is modified and no interrupt mode is enabled.
+pub fn probe_capabilities() {
+    unsafe {
+        CAP_PTR = 0;
+        CAP_MSI = false;
+        CAP_MSIX = false;
+        CAP_PM = false;
+        CAP_CHAIN_READ = false;
+        if !FOUND {
+            serial::write_str("[WIFI] CAPS=NO-DEVICE\\n");
+            return;
+        }
+
+        let p = pci_r32(BUS, DEV, FUNC, 0x34);
+        let mut ptr = (p & 0xFF) as u8;
+        CAP_PTR = ptr;
+        let mut count = 0usize;
+
+        serial::write_str("[WIFI] CAPS PTR=");
+        serial::write_hex(ptr as usize);
+        serial::write_str("\\n");
+
+        while ptr >= 0x40 && count < 48 {
+            let off = ptr & 0xFC;
+            let word = pci_r32(BUS, DEV, FUNC, off);
+            let cap_id = (word & 0xFF) as u8;
+            let next = ((word >> 8) & 0xFF) as u8;
+            serial::write_str("[WIFI] CAP off=");
+            serial::write_hex(ptr as usize);
+            serial::write_str(" ID=");
+            serial::write_hex(cap_id as usize);
+            serial::write_str(" NEXT=");
+            serial::write_hex(next as usize);
+            serial::write_str("\\n");
+
+            match cap_id {
+                0x01 => { CAP_PM = true; }
+                0x05 => { CAP_MSI = true; }
+                0x11 => { CAP_MSIX = true; }
+                _ => {}
+            }
+
+            if next == 0 || next == ptr { break; }
+            ptr = next & 0xFC;
+            count += 1;
+        }
+        CAP_CHAIN_READ = true;
+        serial::write_str("[WIFI] CAPS PM=");
+        serial::write_str(if CAP_PM { "YES" } else { "NO" });
+        serial::write_str(" MSI=");
+        serial::write_str(if CAP_MSI { "YES" } else { "NO" });
+        serial::write_str(" MSIX=");
+        serial::write_str(if CAP_MSIX { "YES" } else { "NO" });
+        serial::write_str(" READ=YES\\n");
+    }
+}
 
 /// Read-only PCI prerequisite snapshot for the Intel 2230 bring-up stage.
 /// No device reset, firmware load, interrupt enable, DMA, TX/RX, or association.
