@@ -765,6 +765,7 @@ pub fn on_click(wx:i32,wy:i32,ww:i32,wh:i32,title_h:i32,mx:i32,my:i32,right:bool
                             status(b"NTFS file preview not implemented");
                         }
                     }
+                    }
                     return true;
                 }
                 return false;
