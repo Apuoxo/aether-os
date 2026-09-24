@@ -307,7 +307,7 @@ pub unsafe fn irq_handler() {
                         let valid = core::ptr::read_volatile(p.add(4 + 4 + 28));
                         ALIVE_SEEN = true;
                         ALIVE_SUBTYPE = subtype;
-                        ALIVE_VALID = valid;
+                        ALIVE_VALID = valid as u32;
                         serial::write_str("[WIFI] ALIVE cmd=1 subtype=");
                         serial::write_usize(subtype as usize);
                         serial::write_str(" valid=");
