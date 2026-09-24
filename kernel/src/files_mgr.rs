@@ -197,10 +197,10 @@ fn draw_computer(wx:usize,y:usize,ww:usize,h:usize){
                 j+=1;
             }
             graphics::draw_str(wx+52,cy+30,"Partitions:",DIM);
-            draw_num(wx+112,cy+30,parts_on_disk as u32);
-            graphics::draw_str(wx+145,cy+30,"•",DIM);
-            draw_num(wx+157,cy+30,total_mb);
-            graphics::draw_str(wx+198,cy+30,"MB",DIM);
+            draw_num(wx+132,cy+30,parts_on_disk as u32);
+            graphics::draw_str(wx+145,cy+30,"-",DIM);
+            draw_num(wx+166,cy+30,total_mb);
+            graphics::draw_str(wx+214,cy+30,"MB",DIM);
             graphics::fill_rect(wx+52,cy+50,ww.saturating_sub(68),8,TOOL2);
             graphics::border_rect(wx+52,cy+50,ww.saturating_sub(68),8,BORDER);
             row+=1;
@@ -227,7 +227,7 @@ fn draw_disk(wx:usize,y:usize,ww:usize,h:usize){
     }
     graphics::fill_rect(wx,y+26,ww,24,TOOL2);
     graphics::draw_str(wx+8,y+34,"Disk",TEXT);
-    graphics::draw_str(wx+58,y+34,"Partition",TEXT);
+    graphics::draw_str(wx+76,y+34,"Partition",TEXT);
     graphics::draw_str(wx+140,y+34,"Filesystem",TEXT);
     graphics::draw_str(wx+280,y+34,"Size MB",TEXT);
     unsafe{
@@ -238,8 +238,8 @@ fn draw_disk(wx:usize,y:usize,ww:usize,h:usize){
                 let ry=y+52+row*24;
                 if SEL==row as i32{graphics::fill_rect(wx,ry,ww,24,SELECT);}
                 icon::blit(icon::IconId::MyComputer,wx+4,ry-1,false);
-                draw_num(wx+28,ry+7,p.disk as u32);
-                draw_num(wx+92,ry+7,p.index as u32);
+                draw_num(wx+44,ry+7,p.disk as u32);
+                draw_num(wx+108,ry+7,p.index as u32);
                 graphics::draw_str(wx+140,ry+7,part::type_name(p.ptype),DIM);
                 draw_num(wx+280,ry+7,p.sectors/2048);
                 row+=1;
@@ -258,7 +258,7 @@ fn draw_fat(wx:usize,y:usize,ww:usize,h:usize){
     let n=fs_fat::entry_count();
     if n==0{graphics::draw_str(wx+16,y+52,"This volume is empty or unreadable.",DIM);return;}
     let mut i=0usize;
-    while i<n&&i<32{
+    while i<n&&i<32&&y+ROW_TOP as usize+i*ROW_H as usize+24<=y+h{
         if let Some(e)=fs_fat::entry(i){
             let ry=y+ROW_TOP as usize+i*ROW_H as usize;
             unsafe{if SEL==i as i32{graphics::fill_rect(wx,ry,ww,24,SELECT);}}
@@ -283,7 +283,7 @@ fn draw_ntfs(wx:usize,y:usize,ww:usize,h:usize){
         return;
     }
     let mut i=0usize;
-    while i<n&&i<32{
+    while i<n&&i<32&&y+ROW_TOP as usize+i*ROW_H as usize+24<=y+h{
         if let Some(e)=fs_ntfs::entry(i){
             let ry=y+ROW_TOP as usize+i*ROW_H as usize;
             unsafe{if SEL==i as i32{graphics::fill_rect(wx,ry,ww,24,SELECT);}if HOVER==i as i32{graphics::border_rect(wx,ry,ww,24,BLUE);}}
@@ -529,7 +529,7 @@ pub fn on_click(wx:i32,wy:i32,ww:i32,wh:i32,title_h:i32,mx:i32,my:i32,right:bool
             }
             else if VIEW==VIEW_NTFS{
                 let n=fs_ntfs::entry_count();
-                if my<list_top+28{return false;}
+                if my<list_top+ROW_TOP{return false;}
                 let row=hit_row(list_top,my);
                 if row>=0&&row<n as i32{
                     SEL=row;
@@ -557,7 +557,7 @@ pub fn on_click(wx:i32,wy:i32,ww:i32,wh:i32,title_h:i32,mx:i32,my:i32,right:bool
             else if VIEW==VIEW_ROOT{
                 let mut a=[fs::ListItem{name:[0;24],name_len:0,size:0,is_dir:false};16];
                 let n=fs::list_ex_path(core::str::from_utf8_unchecked(&CWD[..CWD_LEN]),&mut a);
-                if my<list_top+24{return false;}
+                if my<list_top+ROW_TOP{return false;}
                 let row=hit_row(list_top,my);
                 if row>=0&&row<n as i32{
                     if SEL==row{
