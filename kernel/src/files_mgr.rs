@@ -483,7 +483,7 @@ fn new_folder(){if fs::mkdir("/New Folder"){status(b"New folder created");}else{
 fn new_file(){if fs::create("/New Text Document.txt"){let _=fs::write("/New Text Document.txt",b"");status(b"Text document created");}else{status(b"Cannot create file");}}
 fn rename_selected(){unsafe{if SEL<0{return;}let mut a=[fs::ListItem{name:[0;24],name_len:0,size:0,is_dir:false};16];let n=fs::list_ex(&mut a);let s=SEL as usize;if s<n&&fs::rename(core::str::from_utf8_unchecked(core::slice::from_raw_parts(a[s].name.as_ptr(),a[s].name_len)),"Renamed Item"){SEL=-1;status(b"Renamed to Renamed Item");}else{status(b"Rename failed");}}}
 
-pub fn on_click(wx:i32,wy:i32,ww:i32,wh:i32,title_h:i32,mx:i32,my:i32,right:bool)->bool{
+pub fn on_click(wx:i32,wy:i32,ww:i32,wh:i32,title_h:i32,mx:i32,my:i32,right:bool,double_click:bool)->bool{
     let by=wy+title_h;let relx=mx-wx;let rely=my-by;
     unsafe{
         if CONFIRM_DEL{let cx=ww/2;let cy=wh/2;if my>wy+cy+20&&my<wy+cy+60{if mx<wx+cx{delete_selected();}CONFIRM_DEL=false;}return true;}
@@ -621,8 +621,10 @@ pub fn on_click(wx:i32,wy:i32,ww:i32,wh:i32,title_h:i32,mx:i32,my:i32,right:bool
                 if my<list_top+ROW_TOP{return false;}
                 let row=hit_row(list_top,my);
                 if row>=0&&row<n as i32{
+                    let was_selected = SEL==row;
                     SEL=row;
                     let idx=match ntfs_row_index((unsafe{NTFS_SCROLL})+row as usize){Some(v)=>v,None=>return false};
+                    if double_click && was_selected {
                     if let Some(e)=fs_ntfs::entry(idx){
                         if e.is_dir{
                             if fs_ntfs::list_directory(e.mft_ref){
@@ -651,7 +653,7 @@ pub fn on_click(wx:i32,wy:i32,ww:i32,wh:i32,title_h:i32,mx:i32,my:i32,right:bool
                 if my<list_top+ROW_TOP{return false;}
                 let row=hit_row(list_top,my);
                 if row>=0&&row<n as i32{
-                    if SEL==row{
+                    if SEL==row && double_click{
                         log(b"open selected");
                         open_selected();
                     }else{
