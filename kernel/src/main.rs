@@ -46,8 +46,6 @@ mod arch {
 use core::panic::PanicInfo;
 use crate::mm::paging;
 
-const AETHER_BUILD: u32 = 177;
-
 #[panic_handler]
 fn panic(_: &PanicInfo) -> ! {
     serial::write_str("PANIC\n");
@@ -110,7 +108,7 @@ pub extern "C" fn kernel_main(mbi: usize) -> ! {
     vga_mark(2, b'K'); // entered kernel_main
     serial::init();
     vga_mark(3, b'S'); // serial init done (or skipped)
-    serial::write_str("\nAETHER OS Build 177\n");
+    serial::write_str("\nAETHER OS Build 178\n");
     serial::write_str("AETHER v1.7-hw\n\n");
     // PMM: start 2MiB, size conservative 64MiB (avoid claiming non-existent RAM)
     mm::init(2 * 1024 * 1024, 64 * 1024 * 1024);
