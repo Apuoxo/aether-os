@@ -26,6 +26,29 @@ const IWLAGN_RTC_DATA_LOWER_BOUND: u32 = 0x800000;
 const HBUS_TARG_MEM_WADDR: usize = 0x410;
 const HBUS_TARG_MEM_WDAT: usize = 0x418;
 
+const CSR_INT: usize = 0x008;
+const CSR_INT_MASK: usize = 0x00C;
+const CSR_FH_INT_STATUS: usize = 0x010;
+const CSR_INT_BIT_FH_TX: u32 = 1 << 27;
+const CSR_FH_INT_TX_MASK: u32 = 0x0000_0003;
+const FH_MEM_LOWER_BOUND: usize = 0x1000;
+const FH_TFDIB_CTRL0_SRVC: usize = FH_MEM_LOWER_BOUND + 0x900 + 8 * 9;
+const FH_TFDIB_CTRL1_SRVC: usize = FH_TFDIB_CTRL0_SRVC + 4;
+const FH_TCSR_CONFIG_SRVC: usize = FH_MEM_LOWER_BOUND + 0xD00 + 0x20 * 9;
+const FH_TCSR_BUF_STS_SRVC: usize = FH_TCSR_CONFIG_SRVC + 8;
+const FH_SRVC_SRAM_ADDR: usize = FH_MEM_LOWER_BOUND + 0x9C8;
+const FH_MEM_TFDIB_REG1_ADDR_BITSHIFT: u32 = 28;
+const FH_MEM_TB_MAX_LENGTH: usize = 0x0002_0000;
+const FH_TCSR_DMA_ENABLE: u32 = 0x8000_0000;
+const FH_TCSR_CIRQ_HOST_ENDTFD: u32 = 0x0010_0000;
+const FH_TCSR_TFDB_VALID: u32 = 0x0000_0003;
+const FH_TCSR_TB_NUM: u32 = 1 << 20;
+const FH_TCSR_TB_IDX: u32 = 1 << 12;
+
+#[repr(align(4096))]
+struct FirmwareDmaBuf([u8; FH_MEM_TB_MAX_LENGTH]);
+static mut FW_DMA_BUF: FirmwareDmaBuf = FirmwareDmaBuf([0; FH_MEM_TB_MAX_LENGTH]);
+
 static mut FOUND: bool = false;
 static mut READY: bool = false; // phase1 ready = found + mapped
 static mut NEEDS_FW: bool = true;
@@ -187,56 +210,25 @@ pub fn activate_before() -> u32 { unsafe { ACTIVATE_BEFORE } }
 pub fn activate_after() -> u32 { unsafe { ACTIVATE_AFTER } }
 pub fn firmware_attempted() -> bool { unsafe { FW_ATTEMPTED } }
 pub fn firmware_loaded() -> bool { unsafe { FW_LOADED } }
-pub fn firmware_version() -> u32 { unsafe { FW_VER } }
-pub fn firmware_inst_size() -> u32 { unsafe { FW_INST_SIZE } }
-pub fn firmware_data_size() -> u32 { unsafe { FW_DATA_SIZE } }
-pub fn firmware_exec_attempted() -> bool { unsafe { FW_EXEC_ATTEMPTED } }
-pub fn firmware_exec_started() -> bool { unsafe { FW_EXEC_STARTED } }
-
-fn fw_le32(b: &[u8], off: usize) -> u32 {
-    (b[off] as u32) | ((b[off + 1] as u32) << 8) |
-    ((b[off + 2] as u32) << 16) | ((b[off + 3] as u32) << 24)
-}
-
-unsafe fn write_target_mem(addr: u32, data: &[u8]) -> bool {
-    if data.len() == 0 || (data.len() & 3) != 0 { return false; }
-    let wa = (MMIO + HBUS_TARG_MEM_WADDR) as *mut u32;
-    let wd = (MMIO + HBUS_TARG_MEM_WDAT) as *mut u32;
-    core::ptr::write_volatile(wa, addr);
-    let mut off = 0usize;
-    while off < data.len() {
-        core::ptr::write_volatile(wd, fw_le32(data, off));
-        off += 4;
-    }
-    true
-}
-
-/// Load Intel 2230 runtime uCode into device SRAM through the native HBUS
-/// target-memory window. No MSI, DMA rings, TX/RX or association are started.
-pub fn load_firmware() -> bool {
+pub fn firmware_version() -> u32 { upub fn load_firmware() -> bool {
     unsafe {
         FW_ATTEMPTED = true;
         FW_LOADED = false;
         if !ACTIVATE_OK || MMIO == 0 || !MMIO_MAPPED {
-            serial::write_str("[WIFI] FW=NOT-ATTEMPTED activation prerequisite missing\n");
+            serial::write_str("[WIFI] FW=NOT-ATTEMPTED activation prerequisite missing\\n");
             return false;
         }
-        if IWL2030_FW.len() < 76 {
-            serial::write_str("[WIFI] FW=INVALID file too small\n");
+        if IWL2030_FW.len() < 88 {
+            serial::write_str("[WIFI] FW=INVALID file too small\\n");
             return false;
         }
 
-        // iwlwifi-2030-6 is a TLV-format image. Linux distinguishes this
-        // format by zero at offset 0 and IWL_TLV_UCODE_MAGIC at offset 4.
-        // Linux iwlwifi defines the TLV header as 8 + 64 + 4 + 4 + 8 = 88 bytes.
-        // The version/build fields therefore start at offsets 72/76 and TLVs at 88.
         let magic = fw_le32(IWL2030_FW, 4);
         const IWL_TLV_UCODE_MAGIC: u32 = 0x0A4C5749;
-        let tlv_format = fw_le32(IWL2030_FW, 0) == 0 && magic == IWL_TLV_UCODE_MAGIC;
-        if !tlv_format {
+        if fw_le32(IWL2030_FW, 0) != 0 || magic != IWL_TLV_UCODE_MAGIC {
             serial::write_str("[WIFI] FW=UNSUPPORTED_FORMAT MAGIC=");
             serial::write_hex(magic as usize);
-            serial::write_str("\n");
+            serial::write_str("\\n");
             return false;
         }
 
@@ -246,7 +238,6 @@ pub fn load_firmware() -> bool {
         FW_VER = ver;
         FW_INST_SIZE = 0;
         FW_DATA_SIZE = 0;
-
         serial::write_str("[WIFI] FW FORMAT=TLV MAGIC=");
         serial::write_hex(magic as usize);
         serial::write_str(" VER=");
@@ -255,7 +246,58 @@ pub fn load_firmware() -> bool {
         serial::write_usize(api as usize);
         serial::write_str(" BUILD=");
         serial::write_usize(build as usize);
-        serial::write_str("\n");
+        serial::write_str("\\n");
+
+        let dma_base = (&FW_DMA_BUF.0 as *const u8) as u64;
+        serial::write_str("[WIFI] FW DMA_BUFFER=");
+        serial::write_hex(dma_base as usize);
+        serial::write_str("\\n");
+
+        let load_chunk = |dst: u32, src: &[u8]| -> bool {
+            if src.is_empty() || src.len() > FH_MEM_TB_MAX_LENGTH || (src.len() & 3) != 0 {
+                return false;
+            }
+            let mut i = 0usize;
+            while i < src.len() {
+                FW_DMA_BUF.0[i] = src[i];
+                i += 1;
+            }
+
+            // Intel's gen1/gen2 iwlwifi transport uses FH service DMA channel 9.
+            // We poll the same completion interrupt that Linux handles, avoiding
+            // dependence on an Aether PCI ISR while bringing the firmware up.
+            core::ptr::write_volatile((MMIO + CSR_INT_MASK) as *mut u32, CSR_INT_BIT_FH_TX);
+            core::ptr::write_volatile((MMIO + CSR_FH_INT_STATUS) as *mut u32, CSR_FH_INT_TX_MASK);
+            core::ptr::write_volatile((MMIO + CSR_INT) as *mut u32, CSR_INT_BIT_FH_TX);
+            core::ptr::write_volatile((MMIO + FH_TCSR_CONFIG_SRVC) as *mut u32, 0);
+            core::ptr::write_volatile((MMIO + FH_SRVC_SRAM_ADDR) as *mut u32, dst);
+            core::ptr::write_volatile((MMIO + FH_TFDIB_CTRL0_SRVC) as *mut u32, dma_base as u32);
+            core::ptr::write_volatile(
+                (MMIO + FH_TFDIB_CTRL1_SRVC) as *mut u32,
+                (((dma_base >> 32) as u32) << FH_MEM_TFDIB_REG1_ADDR_BITSHIFT) | src.len() as u32
+            );
+            core::ptr::write_volatile(
+                (MMIO + FH_TCSR_BUF_STS_SRVC) as *mut u32,
+                FH_TCSR_TB_NUM | FH_TCSR_TB_IDX | FH_TCSR_TFDB_VALID
+            );
+            core::ptr::write_volatile(
+                (MMIO + FH_TCSR_CONFIG_SRVC) as *mut u32,
+                FH_TCSR_DMA_ENABLE | FH_TCSR_CIRQ_HOST_ENDTFD
+            );
+
+            let mut n = 0usize;
+            while n < 50_000_000 {
+                let inta = core::ptr::read_volatile((MMIO + CSR_INT) as *const u32);
+                if (inta & CSR_INT_BIT_FH_TX) != 0 {
+                    core::ptr::write_volatile((MMIO + CSR_FH_INT_STATUS) as *mut u32, CSR_FH_INT_TX_MASK);
+                    core::ptr::write_volatile((MMIO + CSR_INT) as *mut u32, CSR_INT_BIT_FH_TX);
+                    return true;
+                }
+                core::hint::spin_loop();
+                n += 1;
+            }
+            false
+        };
 
         let mut pos = 88usize;
         let mut inst_seen = false;
@@ -269,64 +311,71 @@ pub fn load_firmware() -> bool {
             let data_start = pos + 8;
             let data_end = match data_start.checked_add(tlv_len) {
                 Some(v) => v,
-                None => {
-                    serial::write_str("[WIFI] FW TLV=BOUNDS_INVALID\n");
-                    return false;
-                }
+                None => return false,
             };
-            if data_end > IWL2030_FW.len() {
-                serial::write_str("[WIFI] FW TLV=BOUNDS_INVALID\n");
-                return false;
-            }
+            if data_end > IWL2030_FW.len() { return false; }
 
-            // Linux aligns every TLV payload to 4 bytes before advancing.
             let aligned_len = (tlv_len + 3) & !3usize;
             let next = match data_start.checked_add(aligned_len) {
                 Some(v) => v,
-                None => {
-                    serial::write_str("[WIFI] FW TLV=ALIGN_OVERFLOW\n");
-                    return false;
-                }
+                None => return false,
             };
-            if next > IWL2030_FW.len() {
-                serial::write_str("[WIFI] FW TLV=ALIGN_BOUNDS_INVALID\n");
-                return false;
+            if next > IWL2030_FW.len() { return false; }
+
+            let (dst, seen) = match tlv_type {
+                1 if !inst_seen => {
+                    inst_seen = true;
+                    inst_size = tlv_len;
+                    (IWLAGN_RTC_INST_LOWER_BOUND, true)
+                }
+                2 if !data_seen => {
+                    data_seen = true;
+                    data_size = tlv_len;
+                    (IWLAGN_RTC_DATA_LOWER_BOUND, true)
+                }
+                _ => (0, false),
+            };
+
+            if seen {
+                let mut off = 0usize;
+                while off < tlv_len {
+                    let chunk = core::cmp::min(FH_MEM_TB_MAX_LENGTH, tlv_len - off) & !3usize;
+                    if chunk == 0 || !load_chunk(
+                        dst + off as u32,
+                        &IWL2030_FW[data_start + off..data_start + off + chunk]
+                    ) {
+                        serial::write_str("[WIFI] FW SERVICE-DMA=TIMEOUT dst=");
+                        serial::write_hex((dst + off) as usize);
+                        serial::write_str("\\n");
+                        return false;
+                    }
+                    off += chunk;
+                }
+                serial::write_str("[WIFI] FW SERVICE-DMA section dst=");
+                serial::write_hex(dst as usize);
+                serial::write_str(" bytes=");
+                serial::write_usize(tlv_len);
+                serial::write_str(" OK\\n");
             }
 
-            match tlv_type {
-                1 => {
-                    if !inst_seen {
-                        if (tlv_len & 3) != 0 {
-                            serial::write_str("[WIFI] FW INST=UNALIGNED\n");
-                            return false;
-                        }
-                        if tlv_len == 0 {
-                            serial::write_str("[WIFI] FW INST=EMPTY\n");
-                            return false;
-                        }
-                        inst_seen = true;
-                        inst_size = tlv_len;
-                        if !write_target_mem(IWLAGN_RTC_INST_LOWER_BOUND, &IWL2030_FW[data_start..data_end]) {
-                            serial::write_str("[WIFI] FW INST WRITE=FAIL\n");
-                            return false;
-                        }
-                        serial::write_str("[WIFI] FW TLV INST BYTES=");
-                        serial::write_usize(tlv_len);
-                        serial::write_str("\n");
-                    }
-                }
-                2 => {
-                    if !data_seen {
-                        if (tlv_len & 3) != 0 {
-                            serial::write_str("[WIFI] FW DATA=UNALIGNED\n");
-                            return false;
-                        }
-                        if tlv_len == 0 {
-                            serial::write_str("[WIFI] FW DATA=EMPTY\n");
-                            return false;
-                        }
-                        data_seen = true;
-                        data_size = tlv_len;
+            pos = next;
+        }
+
+        if !inst_seen || !data_seen {
+            serial::write_str("[WIFI] FW TLV=RUNTIME_SECTIONS_MISSING\\n");
+            return false;
+        }
+
+        FW_INST_SIZE = inst_size as u32;
+        FW_DATA_SIZE = data_size as u32;
+        FW_LOADED = true;
+        NEEDS_FW = false;
+        serial::write_str("[WIFI] FW LOAD=OK via Intel FH service DMA\\n");
+        true
+    }
+}
+
+v_len;
                         if !write_target_mem(IWLAGN_RTC_DATA_LOWER_BOUND, &IWL2030_FW[data_start..data_end]) {
                             serial::write_str("[WIFI] FW DATA WRITE=FAIL\n");
                             return false;
