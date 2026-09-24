@@ -92,7 +92,7 @@ pub unsafe extern "C" fn bcmp(a: *const u8, b: *const u8, n: usize) -> i32 {
 #[no_mangle]
 pub extern "C" fn rust_eh_personality() {}
 
-extern "C" { fn enter_user_mode(entry: u64, stack: u64) -> !; }
+extern "C" { fn enter_user_mode(entry: u64, stack: u64) -> !; static __kernel_end: u8; }
 
 
 /// VGA text marker at column `col` (0..80), white on black — visible on real BIOS
@@ -111,8 +111,17 @@ pub extern "C" fn kernel_main(mbi: usize) -> ! {
     vga_mark(3, b'S'); // serial init done (or skipped)
     serial::write_str("\nAETHER OS Build 178\n");
     serial::write_str("AETHER v1.7-hw\n\n");
-    // PMM: start 2MiB, size conservative 64MiB (avoid claiming non-existent RAM)
-    mm::init(2 * 1024 * 1024, 64 * 1024 * 1024);
+    // PMM must begin after the linked kernel image + .bss. The embedded
+    // 2230 firmware increased the kernel beyond the old fixed 2 MiB boundary,
+    // which caused early page allocations to overwrite the kernel itself.
+    let kernel_end = unsafe { &__kernel_end as *const u8 as usize };
+    let pmm_start = (kernel_end + 0x1F_FFFF) & !0x1F_FFFF;
+    serial::write_str("[PMM] kernel_end=");
+    serial::write_hex(kernel_end);
+    serial::write_str(" start=");
+    serial::write_hex(pmm_start);
+    serial::write_str("\n");
+    mm::init(pmm_start, 64 * 1024 * 1024);
     vga_mark(4, b'P'); // PMM
     serial::write_str("[OK] PMM\n");
     // Kernel stack must be large: rust_kernel_after_user has big locals; Ring3 TSS uses rsp0
