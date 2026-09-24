@@ -437,7 +437,9 @@ fn shell_dsk_probe_partition(disk: usize, start: u64) {
 fn cmd_wf() {
     write_str("======== WF NETWORK SURVEY ========\n");
     write_str("PURPOSE: collect native network hardware facts for the WiFi bring-up plan\n");
-    write_str("MODE: READ-ONLY PCI/device survey; no firmware load, association, TX/RX, or disk write\n");
+    write_str("MODE: native PCI probe; no firmware load, association, TX/RX, or disk write\n");
+    write_str("PROBE: fresh Intel WLAN PCI discovery is executed now\n");
+    crate::drivers::wifi::init();
 
     let wifi = crate::drivers::wifi::found();
     let wifi_ready = crate::drivers::wifi::ready();
@@ -691,6 +693,8 @@ fn run_line(line: &[u8], len: usize) {
         cmd_dsk();
     } else if eq(line, s, clen, b"77") {
         cmd_77();
+    } else if eq(line, s, clen, b"WF") || eq(line, s, clen, b"wf") {
+        cmd_wf();
     } else if eq(line, s, clen, b"vdiag") {
         cmd_vdiag();
     } else if eq(line, s, clen, b"vedid") {
