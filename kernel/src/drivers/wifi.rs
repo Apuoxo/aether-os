@@ -74,6 +74,8 @@ const SCD_SRAM_BASE_ADDR: u32 = SCD_BASE + 0x00;
 const SCD_DRAM_BASE_ADDR: u32 = SCD_BASE + 0x08;
 const SCD_TXFACT: u32 = SCD_BASE + 0x10;
 const SCD_QUEUECHAIN_SEL: u32 = SCD_BASE + 0xE8;
+const SCD_QUEUE_WRPTR: u32 = SCD_BASE + 0x18 + (IWL_DEFAULT_CMD_QUEUE_NUM as u32 * 4);
+const SCD_QUEUE_RDPTR: u32 = SCD_BASE + 0x68 + (IWL_DEFAULT_CMD_QUEUE_NUM as u32 * 4);
 const SCD_CHAINEXT_EN: u32 = SCD_BASE + 0x244;
 const SCD_QUEUE_STATUS_BITS: u32 = SCD_BASE + 0x10C + (IWL_DEFAULT_CMD_QUEUE_NUM as u32 * 4);
 const SCD_QUEUE_CTX: u32 = 0x0600 + (IWL_DEFAULT_CMD_QUEUE_NUM as u32 * 8);
@@ -340,6 +342,7 @@ pub fn init_command_queue() -> bool {
         core::ptr::write_volatile((MMIO + FH_TCSR_CONFIG_CMD) as *mut u32,
             FH_TCSR_TX_CMD_DMA_ENABLE | FH_TCSR_TX_CMD_CREDIT_ENABLE |
             FH_TCSR_TX_CMD_CIRQ_HOST_ENDTFD);
+        prph_write(SCD_QUEUE_WRPTR, 0);
         CMD_WRITE_PTR = 0;
         CMD_SEQ = 0;
         CMD_QUEUE_READY = true;
@@ -381,9 +384,10 @@ pub fn send_command(cmd: u8, payload: &[u8]) -> bool {
         let len = 4 + payload.len();
         let tfd = (&mut CMD_TFD_QUEUE.0[slot * FH_TFD_SIZE]) as *mut u8;
         cmd_tfd_set(tfd, (&FW_DMA_BUF.0[0] as *const u8) as u64, len);
-        core::ptr::write_volatile((MMIO + 0x60) as *mut u32,
-            ((IWL_DEFAULT_CMD_QUEUE_NUM as u32) << 8) | ((slot + 1) as u32 & 0xFF));
-        CMD_WRITE_PTR = (slot + 1) & (FH_TFD_CMD_SLOTS - 1);
+        let next = (slot + 1) & (FH_TFD_CMD_SLOTS - 1);
+        // DVM publishes a queued TFD through the SCD scheduler write pointer.
+        prph_write(SCD_QUEUE_WRPTR, next as u32);
+        CMD_WRITE_PTR = next;
         CMD_SEQ = CMD_SEQ.wrapping_add(1);
         serial::write_str("[WIFI] CMD TX id=");
         serial::write_hex(cmd as usize);
@@ -471,11 +475,28 @@ pub fn scan_24ghz() -> bool {
         serial::write_str("[WIFI] SCAN24 CMD=SUBMITTED\n");
         serial::write_str("[WIFI] SCAN24 CMD=SUBMITTED\\n");
         let mut spins = 0usize;
-        while spins < 100_000_000 {
+        while spins < 5_000_000 {
             irq_handler();
             if scan_notification_seen() { break; }
             core::hint::spin_loop();
             spins += 1;
+        }
+        if scan_notification_seen() {
+            serial::write_str("[WIFI] SCAN24 NOTIFY=SEEN spins=");
+            serial::write_usize(spins);
+            serial::write_str("\\n");
+        } else {
+            serial::write_str("[WIFI] SCAN24 TIMEOUT spins=");
+            serial::write_usize(spins);
+            serial::write_str(" CSR_INT=");
+            serial::write_hex(core::ptr::read_volatile((MMIO + CSR_INT) as *const u32) as usize);
+            serial::write_str(" FH_INT=");
+            serial::write_hex(core::ptr::read_volatile((MMIO + CSR_FH_INT_STATUS) as *const u32) as usize);
+            serial::write_str(" SCD_WRPTR=");
+            serial::write_hex(prph_read(SCD_QUEUE_WRPTR) as usize);
+            serial::write_str(" SCD_RDPTR=");
+            serial::write_hex(prph_read(SCD_QUEUE_RDPTR) as usize);
+            serial::write_str("\\n");
         }
         true
     }
