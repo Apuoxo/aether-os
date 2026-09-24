@@ -519,17 +519,13 @@ pub fn start_firmware() -> bool {
             serial::write_str("[WIFI] RX-RING INIT=FAILED\n");
             return false;
         }
-        if IRQ_LINE == 7 {
-            core::arch::asm!(
-                "in al, 0x21; and al, 0x7F; out 0x21, al; sti",
-                options(nostack, preserves_flags)
-            );
-            serial::write_str("[WIFI] IRQ7 LEGACY=ENABLED\n");
-        } else {
-            serial::write_str("[WIFI] IRQ7 LEGACY=SKIPPED line=");
-            serial::write_usize(IRQ_LINE as usize);
-            serial::write_str("\n");
-        }
+        // Do not execute STI here. Aether does not yet have a complete
+        // legacy PIC dispatch path for every IRQ. Enabling CPU interrupts at
+        // this point can vector an unrelated IRQ to an uninstalled IDT gate
+        // and triple-fault/reboot the machine. Keep WiFi bring-up polled.
+        serial::write_str("[WIFI] IRQ=POLLED (CPU IF unchanged) line=");
+        serial::write_usize(IRQ_LINE as usize);
+        serial::write_str("\n");
         let gp1_clr = (MMIO + 0x05C) as *mut u32;
         let csr = (MMIO + CSR_RESET) as *mut u32;
         core::ptr::write_volatile(gp1_clr, 0x0000_0006);
@@ -540,7 +536,27 @@ pub fn start_firmware() -> bool {
         serial::write_hex(after as usize);
         serial::write_str(" RESULT=");
         serial::write_str(if FW_EXEC_STARTED { "STARTED" } else { "FAILED" });
-        serial::write_str(" ALIVE=NOT-YET RX/IRQ=NOT-STARTED\n");
+        serial::write_str(" ALIVE=NOT-YET RX/IRQ=POLLING\n");
+
+        // Poll the device instead of enabling global CPU interrupts. This
+        // lets us validate the RX/ALIVE path without depending on the
+        // unfinished common legacy PIC dispatcher.
+        if !FW_EXEC_STARTED { return false; }
+        let mut n = 0usize;
+        while n < 5_000_000 {
+            let inta = core::ptr::read_volatile((MMIO + CSR_INT) as *const u32);
+            if (inta & (CSR_INT_BIT_FH_RX | CSR_INT_BIT_ALIVE)) != 0 {
+                irq_handler();
+                if ALIVE_SEEN { break; }
+            }
+            core::hint::spin_loop();
+            n += 1;
+        }
+        serial::write_str("[WIFI] ALIVE=");
+        serial::write_str(if ALIVE_SEEN { "SEEN" } else { "NOT-SEEN" });
+        serial::write_str(" IRQ_COUNT=");
+        serial::write_usize(RX_IRQ_COUNT as usize);
+        serial::write_str("\n");
         FW_EXEC_STARTED
     }
 }
