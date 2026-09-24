@@ -336,15 +336,7 @@ fn run_cmd(line: &[u8], len: usize) {
         term_write_str(" FULL PCI / USB-HC / PORT\n");
         term_write_str(" PORT-CHANGE lines = plug\n");
         unsafe { DIRTY_FULL = true; }
-    } else if eq_cmd(&cmd, ci, b"77") {
-        // CMD77 belongs to the GUI terminal command dispatcher. The older
-        // kernel shell parser is not reached while the desktop is running.
-        term_write_str("===== AETHER CMD77 GUI =====\n");
-        term_write_str("CMD77_HANDLER=DESKTOP_RUN_CMD\n");
-        term_write_str("CMD77_MARKER=9F77AETHER-GUI\n");
-        term_write_str("===== END CMD77 GUI =====\n");
-        unsafe { DIRTY_FULL = true; }
-    } else if eq_cmd(&cmd, ci, b"dsk") {
+    } else if eq_cmd(&cmd, ci, b"77") || eq_cmd(&cmd, ci, b"dsk") {
         // GUI terminal DSK must use the same raw-only AHCI path as the kernel shell.
         // Do not use part.rs, block.rs, or VFS here: this command is the storage truth probe.
         term_write_str("DIAG... DSK RAW-ONLY DISK DIAGNOSTIC\n");
