@@ -59,6 +59,40 @@ const FH_TCSR_CIRQ_HOST_ENDTFD: u32 = 0x0010_0000;
 const FH_TCSR_TFDB_VALID: u32 = 0x0000_0003;
 const FH_TCSR_TB_NUM: u32 = 1 << 20;
 const FH_TCSR_TB_IDX: u32 = 1 << 12;
+const FH_MEM_CBBC_CMD: usize = FH_MEM_LOWER_BOUND + 0x9D0 + 4 * 4;
+const FH_TCSR_CONFIG_CMD: usize = FH_MEM_LOWER_BOUND + 0xD00 + 0x20 * 4;
+const FH_TCSR_BUF_STS_CMD: usize = FH_TCSR_CONFIG_CMD + 8;
+const FH_TCSR_TX_CMD_DMA_ENABLE: u32 = 0x8000_0000;
+const FH_TCSR_TX_CMD_CIRQ_HOST_ENDTFD: u32 = 0x0010_0000;
+const FH_TCSR_TX_CMD_CREDIT_ENABLE: u32 = 0x0000_0008;
+const FH_TFD_CMD_SLOTS: usize = 32;
+const FH_TFD_SIZE: usize = 128;
+const IWL_DEFAULT_CMD_QUEUE_NUM: usize = 4;
+const IWL_CMD_FIFO_NUM: u32 = 7;
+const SCD_BASE: u32 = 0x00A0_2C00;
+const SCD_SRAM_BASE_ADDR: u32 = SCD_BASE + 0x00;
+const SCD_DRAM_BASE_ADDR: u32 = SCD_BASE + 0x08;
+const SCD_TXFACT: u32 = SCD_BASE + 0x10;
+const SCD_QUEUECHAIN_SEL: u32 = SCD_BASE + 0xE8;
+const SCD_CHAINEXT_EN: u32 = SCD_BASE + 0x244;
+const SCD_QUEUE_STATUS_BITS: u32 = SCD_BASE + 0x10C + (IWL_DEFAULT_CMD_QUEUE_NUM as u32 * 4);
+const SCD_QUEUE_CTX: u32 = 0x0600 + (IWL_DEFAULT_CMD_QUEUE_NUM as u32 * 8);
+const SCD_GP_CTRL: u32 = SCD_BASE + 0x1A8;
+const SCD_EN_CTRL: u32 = SCD_BASE + 0x254;
+const SCD_GP_CTRL_ENABLE_31_QUEUES: u32 = 1 << 0;
+const SCD_QUEUE_ACTIVE: u32 = 1 << 3;
+const SCD_QUEUE_WSL: u32 = 1 << 4;
+const SCD_QUEUE_STATUS_MASK: u32 = 0x017F_0000;
+const SCD_WIN_SIZE: u32 = 64;
+const SCD_FRAME_LIMIT: u32 = 64;
+
+#[repr(align(256))]
+struct CmdTfdQueue([u8; FH_TFD_CMD_SLOTS * FH_TFD_SIZE]);
+static mut CMD_TFD_QUEUE: CmdTfdQueue = CmdTfdQueue([0; FH_TFD_CMD_SLOTS * FH_TFD_SIZE]);
+static mut CMD_QUEUE_READY: bool = false;
+static mut CMD_WRITE_PTR: usize = 0;
+static mut CMD_SEQ: u8 = 0;
+
 
 #[repr(align(4096))]
 struct FirmwareDmaBuf([u8; FH_MEM_TB_MAX_LENGTH]);
@@ -250,6 +284,113 @@ pub fn rx_irq_count() -> u32 { unsafe { RX_IRQ_COUNT } }
 pub fn alive_seen() -> bool { unsafe { ALIVE_SEEN } }
 pub fn alive_valid() -> u32 { unsafe { ALIVE_VALID } }
 pub fn alive_subtype() -> u8 { unsafe { ALIVE_SUBTYPE } }
+
+fn prph_write(addr: u32, val: u32) {
+    unsafe {
+        core::ptr::write_volatile((MMIO + 0x444) as *mut u32, (addr & 0x000F_FFFF) | (3 << 24));
+        core::ptr::write_volatile((MMIO + 0x44C) as *mut u32, val);
+    }
+}
+
+fn prph_read(addr: u32) -> u32 {
+    unsafe {
+        core::ptr::write_volatile((MMIO + 0x448) as *mut u32, (addr & 0x000F_FFFF) | (3 << 24));
+        core::ptr::read_volatile((MMIO + 0x450) as *const u32)
+    }
+}
+
+/// Initialize the legacy gen1/gen2 scheduler and command queue (#4).
+/// This is the transport prerequisite for host commands such as REPLY_SCAN_CMD.
+pub fn init_command_queue() -> bool {
+    unsafe {
+        if !ALIVE_SEEN || !MMIO_MAPPED || MMIO == 0 { return false; }
+        let tfd_base = (&CMD_TFD_QUEUE.0 as *const u8) as u64;
+        let scd_sram = prph_read(SCD_SRAM_BASE_ADDR);
+        if scd_sram == 0 || scd_sram == 0xFFFF_FFFF { 
+            serial::write_str("[WIFI] CMDQ SCD_SRAM=INVALID\\n");
+            return false;
+        }
+        core::ptr::write_bytes(CMD_TFD_QUEUE.0.as_mut_ptr(), 0, CMD_TFD_QUEUE.0.len());
+        core::ptr::write_volatile((MMIO + FH_MEM_CBBC_CMD) as *mut u32, (tfd_base >> 8) as u32);
+
+        // Reset command-queue scheduler context, byte-count table pointer is
+        // not used by this first command-only FIFO path.
+        prph_write(SCD_CHAINEXT_EN, 0);
+        prph_write(SCD_GP_CTRL, SCD_GP_CTRL_ENABLE_31_QUEUES);
+        prph_write(SCD_EN_CTRL, 0);
+        prph_write(SCD_QUEUECHAIN_SEL, 0);
+        prph_write(SCD_TXFACT, 1u32 << IWL_CMD_FIFO_NUM);
+
+        // Queue #4 is the default DVM command queue when PAN is disabled.
+        // FIFO 7 is the command FIFO. Active + write-status-limit are required.
+        prph_write(SCD_QUEUE_STATUS_BITS,
+            SCD_QUEUE_ACTIVE | (IWL_CMD_FIFO_NUM << 0) | SCD_QUEUE_WSL);
+        // Context: window size and frame limit, matching the DVM scheduler.
+        let ctx = scd_sram + SCD_QUEUE_CTX;
+        core::ptr::write_volatile((MMIO + 0x410) as *mut u32, ctx);
+        core::ptr::write_volatile((MMIO + 0x418) as *mut u32, 0);
+        core::ptr::write_volatile((MMIO + 0x410) as *mut u32, ctx + 4);
+        core::ptr::write_volatile((MMIO + 0x418) as *mut u32,
+            (SCD_WIN_SIZE & 0x7F) | ((SCD_FRAME_LIMIT & 0x7F) << 16));
+
+        core::ptr::write_volatile((MMIO + FH_TCSR_CONFIG_CMD) as *mut u32, 0);
+        core::ptr::write_volatile((MMIO + FH_TCSR_BUF_STS_CMD) as *mut u32, 0);
+        core::ptr::write_volatile((MMIO + FH_TCSR_CONFIG_CMD) as *mut u32,
+            FH_TCSR_TX_CMD_DMA_ENABLE | FH_TCSR_TX_CMD_CREDIT_ENABLE |
+            FH_TCSR_TX_CMD_CIRQ_HOST_ENDTFD);
+        CMD_WRITE_PTR = 0;
+        CMD_SEQ = 0;
+        CMD_QUEUE_READY = true;
+        serial::write_str("[WIFI] CMDQ READY QUEUE=4 FIFO=7 TFD=32\\n");
+        true
+    }
+}
+
+fn cmd_tfd_set(buf: *mut u8, dma: u64, len: usize) {
+    unsafe {
+        core::ptr::write_bytes(buf, 0, FH_TFD_SIZE);
+        *buf.add(3) = 1;
+        core::ptr::write_volatile(buf.add(4) as *mut u32, dma as u32);
+        core::ptr::write_volatile(buf.add(8) as *mut u16,
+            ((len as u16) << 4) | (((dma >> 32) as u16) & 0xF));
+    }
+}
+
+/// Send one legacy DVM host command through command queue #4.
+/// The caller supplies the complete command header+payload.
+pub fn send_command(cmd: u8, payload: &[u8]) -> bool {
+    unsafe {
+        if !CMD_QUEUE_READY || payload.len() > 360 { return false; }
+        let slot = CMD_WRITE_PTR & (FH_TFD_CMD_SLOTS - 1);
+        let frame = (&mut FW_DMA_BUF.0[0]) as *mut u8;
+        core::ptr::write_bytes(frame, 0, 512);
+        *frame.add(0) = cmd;
+        *frame.add(1) = CMD_SEQ;
+        *frame.add(2) = 0;
+        *frame.add(3) = 0;
+        let mut i = 0usize;
+        while i < payload.len() {
+            *frame.add(4 + i) = payload[i];
+            i += 1;
+        }
+        let len = 4 + payload.len();
+        let tfd = (&mut CMD_TFD_QUEUE.0[slot * FH_TFD_SIZE]) as *mut u8;
+        cmd_tfd_set(tfd, (&FW_DMA_BUF.0[0] as *const u8) as u64, len);
+        core::ptr::write_volatile((MMIO + 0x60) as *mut u32,
+            ((IWL_DEFAULT_CMD_QUEUE_NUM as u32) << 8) | ((slot + 1) as u32 & 0xFF));
+        CMD_WRITE_PTR = (slot + 1) & (FH_TFD_CMD_SLOTS - 1);
+        CMD_SEQ = CMD_SEQ.wrapping_add(1);
+        serial::write_str("[WIFI] CMD TX id=");
+        serial::write_hex(cmd as usize);
+        serial::write_str(" len=");
+        serial::write_usize(len);
+        serial::write_str(" Q=4\\n");
+        true
+    }
+}
+
+pub fn command_queue_ready() -> bool { unsafe { CMD_QUEUE_READY } }
+
 
 unsafe fn init_rx_queue() -> bool {
     if !MMIO_MAPPED || MMIO == 0 { return false; }
