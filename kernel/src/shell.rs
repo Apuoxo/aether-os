@@ -148,7 +148,7 @@ fn eq(line: &[u8], s: usize, clen: usize, b: &[u8]) -> bool {
 }
 
 fn cmd_help() {
-    write_str("Commands: help ls cat dsk2 uname vdiag vedid echo halt\n");
+    write_str("Commands: help ls cat dsk uname vdiag vedid echo halt\n");
 }
 
 fn write_u64_decimal(mut n: u64) {
@@ -176,10 +176,10 @@ fn print_hex16_fresh(buf: &[u8; 512]) {
     }
 }
 
-fn cmd_dsk2() {
-    write_str("======== DSK2 FRESH BUILD-INDEPENDENT DIAGNOSTIC ========\n");
+fn cmd_dsk() {
+    write_str("======== DSK FRESH RAW DISK DIAGNOSTIC ========\n");
     write_str("SOURCE PATH: AHCI -> RAW LBA -> BOOT -> NTFS MFT\n");
-    write_str("NO block::read / NO old cmd_dsk / NO NTFS mount\n");
+    write_str("NO block::read / NO VFS / READ-ONLY\n");
 
     let nd = crate::drivers::ahci::disk_count();
     write_str("PHYSICAL DISKS="); serial::write_usize(nd); write_str("\n");
@@ -303,7 +303,7 @@ fn cmd_dsk2() {
         p += 1;
     }
 
-    write_str("======== DSK2 FRESH END ========\n");
+    write_str("======== DSK FRESH END ========\n");
 }
 
 fn cmd_vdiag() {
@@ -491,8 +491,8 @@ fn run_line(line: &[u8], len: usize) {
         cmd_cat_test();
     } else if eq(line, s, clen, b"mem") {
         cmd_mem();
-    } else if eq(line, s, clen, b"dsk2") {
-        cmd_dsk2();
+    } else if eq(line, s, clen, b"dsk") {
+        cmd_dsk();
     } else if eq(line, s, clen, b"vdiag") {
         cmd_vdiag();
     } else if eq(line, s, clen, b"vedid") {
