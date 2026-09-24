@@ -32,6 +32,11 @@ static mut MMIO: usize = 0;
 static mut REV: u8 = 0;
 static mut SUBSYS: u16 = 0;
 static mut MMIO_MAPPED: bool = false;
+static mut PCI_COMMAND: u16 = 0;
+static mut PCI_STATUS: u16 = 0;
+static mut IRQ_LINE: u8 = 0;
+static mut IRQ_PIN: u8 = 0;
+static mut PREREQS_READ: bool = false;
 
 unsafe fn pci_r32(bus: u8, dev: u8, func: u8, off: u8) -> u32 {
     let a = 0x8000_0000u32
@@ -108,6 +113,45 @@ pub fn bar0() -> u64 {
 }
 pub fn bus_dev_func() -> (u8, u8, u8) {
     unsafe { (BUS, DEV, FUNC) }
+}
+
+pub fn pci_command() -> u16 { unsafe { PCI_COMMAND } }
+pub fn pci_status() -> u16 { unsafe { PCI_STATUS } }
+pub fn irq_line() -> u8 { unsafe { IRQ_LINE } }
+pub fn irq_pin() -> u8 { unsafe { IRQ_PIN } }
+pub fn prerequisites_read() -> bool { unsafe { PREREQS_READ } }
+
+/// Read-only PCI prerequisite snapshot for the Intel 2230 bring-up stage.
+/// No device reset, firmware load, interrupt enable, DMA, TX/RX, or association.
+pub fn probe_prerequisites() {
+    unsafe {
+        if !FOUND {
+            serial::write_str("[WIFI] PREREQ=NO-DEVICE\\n");
+            return;
+        }
+        let cmdstat = pci_r32(BUS, DEV, FUNC, 0x04);
+        PCI_COMMAND = (cmdstat & 0xFFFF) as u16;
+        PCI_STATUS = (cmdstat >> 16) as u16;
+        let il = pci_r32(BUS, DEV, FUNC, 0x3C);
+        IRQ_LINE = (il & 0xFF) as u8;
+        IRQ_PIN = ((il >> 8) & 0xFF) as u8;
+        PREREQS_READ = true;
+        serial::write_str("[WIFI] PREREQ PCI_CMD=");
+        serial::write_hex(PCI_COMMAND as usize);
+        serial::write_str(" STATUS=");
+        serial::write_hex(PCI_STATUS as usize);
+        serial::write_str(" IRQ_LINE=");
+        serial::write_usize(IRQ_LINE as usize);
+        serial::write_str(" IRQ_PIN=");
+        serial::write_usize(IRQ_PIN as usize);
+        serial::write_str(" MMIO=");
+        serial::write_str(if MMIO_MAPPED { "READY" } else { "NOT-MAPPED" });
+        serial::write_str(" FW=");
+        serial::write_str(if NEEDS_FW { "REQUIRED" } else { "LOADED" });
+        serial::write_str("\\n");
+        serial::write_str("[WIFI] PREREQ RESET=NOT-TOUCHED INTERRUPTS=NOT-ENABLED DMA=NOT-STARTED\\n");
+        serial::write_str("[WIFI] PREREQ firmware loader=NOT-IMPLEMENTED (contract only)\\n");
+    }
 }
 
 /// Force probe Intel Centrino Wireless-N 2230 (AH532) and any 02:80 Intel WLAN
