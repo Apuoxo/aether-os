@@ -42,6 +42,9 @@ static mut CAP_MSI: bool = false;
 static mut CAP_MSIX: bool = false;
 static mut CAP_PM: bool = false;
 static mut CAP_CHAIN_READ: bool = false;
+static mut MSI_CTRL: u16 = 0;
+static mut PCIE_CAP: bool = false;
+static mut PCIE_LINK_STATUS: u16 = 0;
 
 unsafe fn pci_r32(bus: u8, dev: u8, func: u8, off: u8) -> u32 {
     let a = 0x8000_0000u32
@@ -130,6 +133,9 @@ pub fn cap_msi() -> bool { unsafe { CAP_MSI } }
 pub fn cap_msix() -> bool { unsafe { CAP_MSIX } }
 pub fn cap_pm() -> bool { unsafe { CAP_PM } }
 pub fn cap_chain_read() -> bool { unsafe { CAP_CHAIN_READ } }
+pub fn msi_ctrl() -> u16 { unsafe { MSI_CTRL } }
+pub fn pcie_cap() -> bool { unsafe { PCIE_CAP } }
+pub fn pcie_link_status() -> u16 { unsafe { PCIE_LINK_STATUS } }
 
 /// Read-only PCI capability-chain snapshot for the Intel 2230.
 /// No capability is modified and no interrupt mode is enabled.
@@ -140,6 +146,9 @@ pub fn probe_capabilities() {
         CAP_MSIX = false;
         CAP_PM = false;
         CAP_CHAIN_READ = false;
+        MSI_CTRL = 0;
+        PCIE_CAP = false;
+        PCIE_LINK_STATUS = 0;
         if !FOUND {
             serial::write_str("[WIFI] CAPS=NO-DEVICE\\n");
             return;
@@ -169,7 +178,15 @@ pub fn probe_capabilities() {
 
             match cap_id {
                 0x01 => { CAP_PM = true; }
-                0x05 => { CAP_MSI = true; }
+                0x05 => {
+                    CAP_MSI = true;
+                    MSI_CTRL = ((word >> 16) & 0xFFFF) as u16;
+                }
+                0x10 => {
+                    PCIE_CAP = true;
+                    let pcie = pci_r32(BUS, DEV, FUNC, off.wrapping_add(0x0C));
+                    PCIE_LINK_STATUS = ((pcie >> 16) & 0xFFFF) as u16;
+                }
                 0x11 => { CAP_MSIX = true; }
                 _ => {}
             }
