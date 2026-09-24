@@ -24,6 +24,10 @@ SECTIONS
         *(COMMON)
     }
 
+    /* Export the first byte after all kernel runtime storage so PMM can
+       never hand the kernel's own image/stack pages back to the allocator. */
+    __kernel_end = .;
+
     /DISCARD/ : {
         *(.eh_frame)
         *(.comment)
