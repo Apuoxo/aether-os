@@ -519,6 +519,17 @@ pub fn start_firmware() -> bool {
             serial::write_str("[WIFI] RX-RING INIT=FAILED\n");
             return false;
         }
+        if IRQ_LINE == 7 {
+            core::arch::asm!(
+                "in al, 0x21; and al, 0x7F; out 0x21, al; sti",
+                options(nostack, preserves_flags)
+            );
+            serial::write_str("[WIFI] IRQ7 LEGACY=ENABLED\n");
+        } else {
+            serial::write_str("[WIFI] IRQ7 LEGACY=SKIPPED line=");
+            serial::write_usize(IRQ_LINE as usize);
+            serial::write_str("\n");
+        }
         let gp1_clr = (MMIO + 0x05C) as *mut u32;
         let csr = (MMIO + CSR_RESET) as *mut u32;
         core::ptr::write_volatile(gp1_clr, 0x0000_0006);
