@@ -244,6 +244,9 @@ fn cmd_wf() {
     write_str(" 64BIT=");
     write_str(if (crate::drivers::wifi::msi_ctrl() & 0x0080) != 0 { "YES" } else { "NO" });
     write_str("\n");
+    write_str("  FLR_SUPPORTED=");
+    write_str(if crate::drivers::wifi::pcie_flr_supported() { "YES" } else { "NO" });
+    write_str("\n");
     write_str("  PCIE_LINK SPEED=");
     write_hex(crate::drivers::wifi::pcie_link_speed() as usize);
     write_str(" WIDTH=");
