@@ -20,6 +20,7 @@ mod fs_ntfs;
 mod storage;
 mod storage_hw_diag;
 mod fb;
+mod ai_agent;
 mod desktop;
 mod files_mgr;
 mod ring3_resume;
