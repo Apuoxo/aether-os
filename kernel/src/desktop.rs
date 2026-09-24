@@ -2073,7 +2073,19 @@ pub fn run() -> ! {
 
         let sc = ps2::last_scancode();
         if sc != 0 {
-            if let Some(ch) = ps2::scancode_to_ascii(sc) {
+            let ext = ps2::last_scancode_extended();
+            if ext {
+                match sc {
+                    0x48 | 0x49 => { term_scroll_up(); }
+                    0x50 | 0x51 => { term_scroll_down(); }
+                    _ => {
+                        ps2::scancode_to_ascii(0xE0);
+                        if let Some(ch) = ps2::scancode_to_ascii(sc) {
+                            handle_key(ch);
+                        }
+                    }
+                }
+            } else if let Some(ch) = ps2::scancode_to_ascii(sc) {
                 handle_key(ch);
             }
         }
