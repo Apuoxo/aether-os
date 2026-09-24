@@ -124,6 +124,8 @@ static mut CLICK_FRAME: u32 = 0;
 static mut LAST_CLICK_FRAME: u32 = 0;
 static mut LAST_CLICK_WIN: usize = 255;
 static mut FRAME_N: u32 = 0;
+static mut LAST_FILES_CLICK_FRAME: u32 = 0;
+static mut LAST_FILES_CLICK_ROW: i32 = -1;
 static mut START_MENU: bool = false;
 static mut CTX_MENU: bool = false;
 static mut CTX_X: i32 = 0;
@@ -974,6 +976,15 @@ fn handle_terminal_scroll_click(mx: i32, my: i32) -> bool {
     }
 }
 
+fn redraw_input_window(idx: usize) {
+    unsafe {
+        cursor_restore();
+        draw_window(idx);
+        CURSOR_SAVED = false;
+        cursor_save_and_draw(MX, MY);
+    }
+}
+
 fn handle_mouse_buttons(buttons: u8) {
     unsafe {
         let left = buttons & 1;
@@ -1042,9 +1053,9 @@ fn handle_mouse_buttons(buttons: u8) {
                     serial::write_str("[MOUSE] right Files hit\n");
                     let changed = crate::files_mgr::on_click(
                         WINS[idx].x, WINS[idx].y, WINS[idx].w, WINS[idx].h,
-                        TITLE_H, mx, my, true,
+                        TITLE_H, mx, my, true, false,
                     );
-                    if changed { DIRTY_FULL = true; }
+                    if changed { redraw_input_window(idx); }
                 }
             }
         }
@@ -1162,20 +1173,38 @@ fn handle_mouse_buttons(buttons: u8) {
                     // My Computer and the Files icon must share one Explorer
                     // implementation. This removes the legacy click path.
                     let right = (buttons & 2) != 0;
+                    let mut double_click = false;
+                    if !right {
+                        let row = (my - (WINS[idx].y + TITLE_H + 40 + 30)) / 32;
+                        double_click = LAST_FILES_CLICK_ROW >= 0
+                            && FRAME_N.wrapping_sub(LAST_FILES_CLICK_FRAME) < 25
+                            && LAST_FILES_CLICK_ROW == row;
+                        LAST_FILES_CLICK_FRAME = FRAME_N;
+                        LAST_FILES_CLICK_ROW = row;
+                    }
                     let changed = crate::files_mgr::on_click(
                         WINS[idx].x, WINS[idx].y, WINS[idx].w, WINS[idx].h,
-                        TITLE_H, mx, my, right,
+                        TITLE_H, mx, my, right, double_click,
                     );
-                    if changed { DIRTY_FULL = true; }
+                    if changed { redraw_input_window(idx); }
                 } else if WINS[idx].kind == WinKind::Files
                     && my >= WINS[idx].y + TITLE_H
                 {
                     let right = (buttons & 2) != 0;
-                    let _ = crate::files_mgr::on_click(
+                    let mut double_click = false;
+                    if !right {
+                        let row = (my - (WINS[idx].y + TITLE_H + 40 + 30)) / 32;
+                        double_click = LAST_FILES_CLICK_ROW >= 0
+                            && FRAME_N.wrapping_sub(LAST_FILES_CLICK_FRAME) < 25
+                            && LAST_FILES_CLICK_ROW == row;
+                        LAST_FILES_CLICK_FRAME = FRAME_N;
+                        LAST_FILES_CLICK_ROW = row;
+                    }
+                    let changed = crate::files_mgr::on_click(
                         WINS[idx].x, WINS[idx].y, WINS[idx].w, WINS[idx].h,
-                        TITLE_H, mx, my, right,
+                        TITLE_H, mx, my, right, double_click,
                     );
-                    DIRTY_FULL = true;
+                    if changed { redraw_input_window(idx); }
                 } else if WINS[idx].kind == WinKind::Sound
                     && my >= WINS[idx].y + TITLE_H
                 {
