@@ -50,6 +50,18 @@ static mut PCIE_LINK_SPEED: u8 = 0;
 static mut PCIE_LINK_WIDTH: u8 = 0;
 static mut PCIE_CAP_OFF: u8 = 0;
 static mut PCIE_FLR_SUPPORTED: bool = false;
+// Device-specific reset state. PCIe FLR is absent on the AH532 2230, so
+// bring-up uses the Intel iwlwifi CSR software-reset path instead of inventing
+// a PCI config reset. No firmware, interrupts, or DMA are started here.
+static mut RESET_ATTEMPTED: bool = false;
+static mut RESET_OK: bool = false;
+static mut RESET_BEFORE: u32 = 0;
+static mut RESET_AFTER: u32 = 0;
+
+const CSR_RESET: usize = 0x020;
+const CSR_RESET_SW_RESET: u32 = 0x0000_0080;
+
+
 
 unsafe fn pci_r32(bus: u8, dev: u8, func: u8, off: u8) -> u32 {
     let a = 0x8000_0000u32
@@ -145,6 +157,59 @@ pub fn pcie_device_status() -> u16 { unsafe { PCIE_DEVICE_STATUS } }
 pub fn pcie_link_speed() -> u8 { unsafe { PCIE_LINK_SPEED } }
 pub fn pcie_link_width() -> u8 { unsafe { PCIE_LINK_WIDTH } }
 pub fn pcie_flr_supported() -> bool { unsafe { PCIE_FLR_SUPPORTED } }
+pub fn reset_attempted() -> bool { unsafe { RESET_ATTEMPTED } }
+pub fn reset_ok() -> bool { unsafe { RESET_OK } }
+pub fn reset_before() -> u32 { unsafe { RESET_BEFORE } }
+pub fn reset_after() -> u32 { unsafe { RESET_AFTER } }
+
+/// Execute the device-specific Intel 2000/2030-family software reset used by
+/// iwlwifi for pre-8000 devices. The Linux driver writes SW_RESET to CSR_RESET
+/// and waits 5-6 ms. We deliberately do not touch PCI MSI/MSI-X, DMA rings,
+/// firmware, or association state in this stage.
+pub fn software_reset() -> bool {
+    unsafe {
+        RESET_ATTEMPTED = false;
+        RESET_OK = false;
+        RESET_BEFORE = 0;
+        RESET_AFTER = 0;
+        if !FOUND || !MMIO_MAPPED || MMIO == 0 {
+            serial::write_str("[WIFI] RESET=NOT-ATTEMPTED prerequisite missing\\n");
+            return false;
+        }
+
+        let csr = (MMIO + CSR_RESET) as *mut u32;
+        let before = core::ptr::read_volatile(csr);
+        RESET_BEFORE = before;
+        RESET_ATTEMPTED = true;
+        serial::write_str("[WIFI] RESET path=INTEL_CSR_RESET SW_RESET=0x80 BEFORE=");
+        serial::write_hex(before as usize);
+        serial::write_str("\\n");
+
+        // Exact device-family operation documented in iwlwifi gen1/gen2:
+        // set CSR_RESET_REG_FLAG_SW_RESET, then wait 5-6 ms.
+        core::ptr::write_volatile(csr, before | CSR_RESET_SW_RESET);
+
+        // Aether currently has no calibrated microsecond delay primitive.
+        // This bounded PAUSE loop is intentionally conservative and is only
+        // used for this hardware-reset settling interval.
+        let mut n = 0usize;
+        while n < 10_000_000 {
+            core::hint::spin_loop();
+            n += 1;
+        }
+
+        let after = core::ptr::read_volatile(csr);
+        RESET_AFTER = after;
+        RESET_OK = after != 0xFFFF_FFFF && after != 0xFFFF_FFFE;
+        serial::write_str("[WIFI] RESET AFTER=");
+        serial::write_hex(after as usize);
+        serial::write_str(" RESULT=");
+        serial::write_str(if RESET_OK { "READABLE" } else { "MMIO-FAIL" });
+        serial::write_str("\\n");
+        RESET_OK
+    }
+}
+
 
 /// Read-only PCI capability-chain snapshot for the Intel 2230.
 /// No capability is modified and no interrupt mode is enabled.
