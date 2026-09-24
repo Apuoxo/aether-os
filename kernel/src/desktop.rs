@@ -126,6 +126,8 @@ static mut LAST_CLICK_WIN: usize = 255;
 static mut FRAME_N: u32 = 0;
 static mut LAST_FILES_CLICK_FRAME: u32 = 0;
 static mut LAST_FILES_CLICK_ROW: i32 = -1;
+static mut LAST_DESKTOP_ICON_FRAME: u32 = 0;
+static mut LAST_DESKTOP_ICON: usize = usize::MAX;
 static mut START_MENU: bool = false;
 static mut CTX_MENU: bool = false;
 static mut CTX_X: i32 = 0;
@@ -1128,20 +1130,25 @@ fn handle_mouse_buttons(buttons: u8) {
                     open_win(slot);
                 }
             }
-            // Desktop icons
+            // Desktop icons: first click selects, second click opens.
             if let Some(idx) = hit_desktop_icon(mx, my) {
+                let dbl = LAST_DESKTOP_ICON == idx
+                    && FRAME_N.wrapping_sub(LAST_DESKTOP_ICON_FRAME) < 25;
                 SELECTED_ICON = idx;
+                LAST_DESKTOP_ICON = idx;
+                LAST_DESKTOP_ICON_FRAME = FRAME_N;
                 DIRTY_FULL = true;
-                // map desktop icon index -> window slot
-                match idx {
-                    0 => open_win(7), // My Computer
-                    1 => open_win(5), // Documents -> Files
-                    2 => open_win(0), // Terminal
-                    3 => open_win(2), // Network
-                    4 => open_win(8), // Settings -> SysProps
-                    _ => {} // Recycle Bin placeholder
+                if dbl {
+                    match idx {
+                        0 => open_win(7),
+                        1 => open_win(5),
+                        2 => open_win(0),
+                        3 => open_win(2),
+                        4 => open_win(8),
+                        _ => {}
+                    }
+                    LAST_DESKTOP_ICON = usize::MAX;
                 }
-
             }
             // Windows
             if let Some(idx) = hit_test(mx, my) {
@@ -2105,8 +2112,15 @@ fn handle_special_key(hid_code: u8) -> bool {
 fn handle_key(ch: u8) {
     unsafe {
         if ch == 0x1B {
-            // Esc
+            // Esc: let Explorer close its modal/context state before closing desktop menus.
+            if FOCUS < MAX_WIN && WINS[FOCUS].visible && WINS[FOCUS].kind == WinKind::Files {
+                if crate::files_mgr::on_escape() {
+                    DIRTY_FULL = true;
+                    return;
+                }
+            }
             START_MENU = false;
+            CTX_MENU = false;
             DIRTY_FULL = true;
             return;
         }
