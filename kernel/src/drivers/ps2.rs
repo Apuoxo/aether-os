@@ -261,11 +261,11 @@ pub fn poll() {
                     if MY < 0 {
                         MY = 0;
                     }
-                    if MX > 799 {
-                        MX = 799;
+                    if MX > 1365 {
+                        MX = 1365;
                     }
-                    if MY > 599 {
-                        MY = 599;
+                    if MY > 767 {
+                        MY = 767;
                     }
                 }
             } else {
