@@ -101,6 +101,28 @@ pub fn on_nav_key(sc:u8)->bool{unsafe{if VIEW!=VIEW_NTFS{return false;}if NTFS_V
 fn set_root(){unsafe{CWD[0]=b'/';CWD_LEN=1;VIEW=VIEW_ROOT;SEL=-1;}}
 fn push_hist(){unsafe{if HIST_N<8{let mut i=0;while i<32{HIST[HIST_N][i]=CWD[i];i+=1;}HIST_LEN[HIST_N]=CWD_LEN;HIST_N+=1;HIST_I=HIST_N;}}}
 fn draw_num(x:usize,y:usize,mut n:u32){if n==0{graphics::draw_char(x,y,b'0',TEXT);return;}let mut d=[0u8;10];let mut c=0;while n>0{d[c]=(n%10)as u8+b'0';n/=10;c+=1;}let start=c;while c>0{c-=1;graphics::draw_char(x+(start-1-c)*8,y,d[c],TEXT);}}
+fn ft_ymdhm(ft:u64)->(u32,u32,u32,u32,u32){
+    let secs=(ft/10_000_000).saturating_sub(11_644_473_600);
+    let days=(secs/86400) as i64; let rem=(secs%86400) as u32;
+    let z=days+719468; let era=z.div_euclid(146097); let doe=z-era*146097;
+    let yoe=(doe-doe/1460+doe/36524-doe/146096)/365;
+    let doy=doe-(365*yoe+yoe/4-yoe/100); let mp=(5*doy+2)/153;
+    let d=(doy-(153*mp+2)/5+1) as u32; let m=(if mp<10{mp+3}else{mp-9}) as u32;
+    let y=(yoe+era*400+if m<=2{1}else{0}) as u32;
+    (y,m,d,rem/3600,(rem%3600)/60)
+}
+fn draw_2(x:usize,y:usize,v:u32){
+    graphics::draw_char(x,y,b'0'+((v/10)%10) as u8,TEXT);
+    graphics::draw_char(x+8,y,b'0'+(v%10) as u8,TEXT);
+}
+fn draw_mtime(x:usize,y:usize,ft:u64){
+    let (yr,mo,d,hh,mi)=ft_ymdhm(ft);
+    let mut q=yr; let mut digs=[0u8;4]; let mut i=4usize;
+    while i>0{i-=1;digs[i]=b'0'+(q%10) as u8;q/=10;}
+    graphics::draw_char(x,y,digs[2],TEXT); graphics::draw_char(x+8,y,digs[3],TEXT);
+    graphics::draw_char(x+16,y,b'.',TEXT); draw_2(x+24,y,d); graphics::draw_char(x+40,y,b'.',TEXT); draw_2(x+48,y,mo);
+    graphics::draw_char(x+64,y,b' ',TEXT); draw_2(x+72,y,hh); graphics::draw_char(x+88,y,b':',TEXT); draw_2(x+96,y,mi);
+}
 fn btn(x:usize,y:usize,w:usize,label:&str,hot:bool){
     if hot{vgrad(x,y,w,24,0x00EAF6FD,0x00A7D9F5);}else{vgrad(x,y,w,24,0x00F6F7F9,0x00E3E8EF);}
     graphics::border_rect(x,y,w,24,if hot{0x003C7FB1}else{0x00A0A8B4});
@@ -326,10 +348,15 @@ fn draw_fat(wx:usize,y:usize,ww:usize,h:usize){
 fn draw_ntfs(wx:usize,y:usize,ww:usize,h:usize){
     if unsafe{NTFS_VIEW_DIRTY}{rebuild_ntfs_view();}
     graphics::fill_rect(wx,y,ww,h,WHITE);
-    graphics::fill_rect(wx,y,ww,28,TOOL2);
+    vgrad(wx,y,ww,28,W7_HDR_T,W7_HDR_B);
+    graphics::fill_rect(wx,y+27,ww,1,W7_SEP);
+    graphics::fill_rect(wx+244,y+3,1,22,W7_SEP);
+    graphics::fill_rect(wx+384,y+3,1,22,W7_SEP);
+    graphics::fill_rect(wx+454,y+3,1,22,W7_SEP);
     graphics::draw_str(wx+10,y+9,"Name",TEXT);
-    graphics::draw_str(wx+250,y+9,"Type",TEXT);
-    graphics::draw_str(wx+350,y+9,"Size",TEXT);
+    graphics::draw_str(wx+250,y+9,"Date modified",TEXT);
+    graphics::draw_str(wx+390,y+9,"Type",TEXT);
+    graphics::draw_str(wx+460,y+9,"Size",TEXT);
     if unsafe{NTFS_VIEW_COUNT==0}{graphics::draw_str(wx+16,y+52,"This folder is empty or unavailable.",DIM);graphics::draw_str(wx+16,y+70,"NTFS is currently mounted read-only.",DIM);return;}
     let rows=visible_rows(h);unsafe{NTFS_VISIBLE_ROWS=if rows==0{1}else{rows};if NTFS_SCROLL+NTFS_VISIBLE_ROWS>NTFS_VIEW_COUNT{NTFS_SCROLL=NTFS_VIEW_COUNT.saturating_sub(NTFS_VISIBLE_ROWS);}}
     let mut r=0usize;
@@ -345,8 +372,9 @@ fn draw_ntfs(wx:usize,y:usize,ww:usize,h:usize){
             if e.is_dir{icon::blit(icon::IconId::Folder,wx+7,ry,false);}else{icon::blit(icon::IconId::File,wx+7,ry,false);}
             let col=TEXT;
             let mut k=0;while k<e.name_len&&k<27{graphics::draw_char(wx+42+k*8,ry+10,e.name[k],col);k+=1;}
-            graphics::draw_str(wx+250,ry+10,if e.is_dir{"Folder"}else{"File"},DIM);
-            if !e.is_dir{draw_num(wx+350,ry+10,if e.size>0xFFFF_FFFF{0xFFFF_FFFF}else{e.size as u32});}
+            draw_mtime(wx+250,ry+10,e.mtime);
+            graphics::draw_str(wx+390,ry+10,if e.is_dir{"Folder"}else{"File"},DIM);
+            if !e.is_dir{draw_num(wx+460,ry+10,if e.size>0xFFFF_FFFF{0xFFFF_FFFF}else{e.size as u32});}
         }
         r+=1;
     }
