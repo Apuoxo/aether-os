@@ -168,45 +168,7 @@ fn write_u64_decimal(mut n: u64) {
 
 
 fn cmd_dsk() {
-    write_str("======== DSK: real storage probe (READ-ONLY) ========\n");
-
-    let snap = crate::storage_hw_diag::snapshot();
-    write_str("PCI mass-storage controllers: ");
-    serial::write_usize(snap.mass_n);
-    write_str("  AHCI=");
-    serial::write_usize(snap.ahci_n);
-    write_str(" IDE=");
-    serial::write_usize(snap.ide_n);
-    write_str(" NVMe=");
-    serial::write_usize(snap.nvme_n);
-    write_str("\n");
-
-    if snap.mass_n > 0 {
-        let mut i = 0usize;
-        while i < snap.mass_n {
-            let d = snap.mass[i];
-            write_str("  PCI ");
-            serial::write_usize(d.bus as usize);
-            write_str(":");
-            serial::write_usize(d.dev as usize);
-            write_str(".");
-            serial::write_usize(d.func as usize);
-            write_str(" ");
-            serial::write_hex(d.vid as usize);
-            write_str(":");
-            serial::write_hex(d.did as usize);
-            write_str(" AHCI=");
-            write_str(if d.is_ahci { "Y" } else { "N" });
-            write_str(" ABAR=");
-            serial::write_hex(d.abar as usize);
-            write_str(" PI=");
-            serial::write_hex(d.pi as usize);
-            write_str(" present=");
-            serial::write_hex(d.ports_present as usize);
-            write_str("\n");
-            i += 1;
-        }
-    }
+    write_str("======== DSK: REAL DISK ACCESS DIAGNOSTIC (READ-ONLY) ========\n");
 
     let nd = crate::drivers::ahci::disk_count();
     write_str("AHCI runtime disks: ");
@@ -215,13 +177,13 @@ fn cmd_dsk() {
 
     let mut di = 0usize;
     while di < nd {
-        let mut model = [0u8; 40];
-        let ml = crate::drivers::ahci::disk_model(di, &mut model);
-        write_str("  disk");
+        write_str("\nDISK ");
         serial::write_usize(di);
         write_str(" model=");
+        let mut model = [0u8; 40];
+        let ml = crate::drivers::ahci::disk_model(di, &mut model);
         let mut j = 0usize;
-        while j < ml {
+        while j < ml && j < 40 {
             putc(model[j]);
             j += 1;
         }
@@ -230,53 +192,30 @@ fn cmd_dsk() {
         write_str("\n");
 
         let mut sec0 = [0u8; 512];
-        let ok = crate::drivers::ahci::read_sectors(di, 0, 1, &mut sec0);
-        write_str("    LBA0 READ=");
-        write_str(if ok { "OK" } else { "FAIL" });
-        if ok {
-            write_str(" sig=");
-            if sec0[510] == 0x55 && sec0[511] == 0xAA {
-                write_str("MBR");
-            } else {
-                write_str("no-55AA");
-            }
+        let ok0 = crate::drivers::ahci::read_sectors(di, 0, 1, &mut sec0);
+        write_str("  LBA0: READ=");
+        write_str(if ok0 { "OK" } else { "FAIL" });
+        if ok0 {
+            write_str(" SIG=");
+            write_str(if sec0[510] == 0x55 && sec0[511] == 0xAA { "MBR" } else { "NO-55AA" });
         }
         write_str("\n");
         di += 1;
     }
 
-    let nb = crate::block::count();
-    write_str("Block devices: ");
-    serial::write_usize(nb);
-    write_str("\n");
-    let mut bi = 0usize;
-    while bi < nb {
-        if let Some(d) = crate::block::get(bi) {
-            write_str("  block");
-            serial::write_usize(bi);
-            write_str(" hw=");
-            write_str(if d.is_hw { "Y" } else { "N" });
-            write_str(" ahci=");
-            write_str(if d.is_ahci { "Y" } else { "N" });
-            write_str(" sectors32=");
-            serial::write_usize(d.sectors as usize);
-            write_str("\n");
-        }
-        bi += 1;
-    }
-
     let np = crate::part::count();
-    write_str("Partitions parsed from READ data: ");
+    write_str("\nPARTITIONS: ");
     serial::write_usize(np);
     write_str("\n");
+
     let mut pi = 0usize;
     while pi < np {
         if let Some(p) = crate::part::get(pi) {
-            write_str("  #");
+            write_str("\n#");
             serial::write_usize(pi);
             write_str(" disk=");
             serial::write_usize(p.disk as usize);
-            write_str(" idx=");
+            write_str(" part=");
             serial::write_usize(p.index as usize);
             write_str(" type=");
             write_str(crate::part::type_name(p.ptype));
@@ -284,54 +223,95 @@ fn cmd_dsk() {
             serial::write_usize(p.lba_start as usize);
             write_str(" sectors=");
             serial::write_usize(p.sectors as usize);
-
-            let mut sec = [0u8; 512];
-            let ok = crate::block::read(p.disk, p.lba_start, 1, &mut sec);
-            write_str(" read=");
-            write_str(if ok { "OK" } else { "FAIL" });
-            if ok {
-                write_str(" fs=");
-                if sec[3] == b'N' && sec[4] == b'T' && sec[5] == b'F' && sec[6] == b'S' {
-                    write_str("NTFS");
-                } else if sec[54] == b'F' && sec[55] == b'A' && sec[56] == b'T' {
-                    write_str("FAT");
-                } else {
-                    write_str("unknown");
-                }
-            }
             write_str("\n");
+
+            // First test: can the block layer actually read the partition boot sector?
+            let mut boot = [0u8; 512];
+            let rb = crate::block::read(p.disk, p.lba_start, 1, &mut boot);
+            write_str("  BOOT READ=");
+            write_str(if rb { "OK" } else { "FAIL" });
+            if !rb {
+                write_str("  <-- ACCESS FAILURE AT BLOCK LAYER\n");
+                pi += 1;
+                continue;
+            }
+
+            write_str("  BOOT SIG=");
+            write_str(if boot[510] == 0x55 && boot[511] == 0xAA { "55AA" } else { "NO-55AA" });
+            write_str("\n");
+
+            // NTFS: verify the filesystem signature and then read the first MFT sector.
+            if boot[3] == b'N' && boot[4] == b'T' && boot[5] == b'F' && boot[6] == b'S' {
+                write_str("  FS=NTFS\n");
+                let bps = u16::from_le_bytes([boot[11], boot[12]]);
+                let spc = boot[13];
+                let mft = u64::from_le_bytes([
+                    boot[48], boot[49], boot[50], boot[51],
+                    boot[52], boot[53], boot[54], boot[55],
+                ]);
+                write_str("  NTFS BPS=");
+                serial::write_usize(bps as usize);
+                write_str(" SPC=");
+                serial::write_usize(spc as usize);
+                write_str(" MFT_LCN=");
+                serial::write_usize(mft as usize);
+                write_str("\n");
+
+                if bps != 512 || spc == 0 {
+                    write_str("  NTFS BOOT PARAMETERS=INVALID\n");
+                } else {
+                    let mft_lba64 = p.lba_start as u64 + mft.saturating_mul(spc as u64);
+                    if mft_lba64 > 0xFFFF_FFFF {
+                        write_str("  MFT LBA=OUT-OF-RANGE\n");
+                    } else {
+                        let mut mftsec = [0u8; 512];
+                        let rm = crate::block::read(p.disk, mft_lba64 as u32, 1, &mut mftsec);
+                        write_str("  MFT LBA=");
+                        serial::write_usize(mft_lba64 as usize);
+                        write_str(" READ=");
+                        write_str(if rm { "OK" } else { "FAIL" });
+                        if rm {
+                            write_str(" SIG=");
+                            write_str(if mftsec[0] == b'F' && mftsec[1] == b'I' &&
+                                      mftsec[2] == b'L' && mftsec[3] == b'E' {
+                                "FILE"
+                            } else {
+                                "NOT-FILE"
+                            });
+                        }
+                        write_str("\n");
+                    }
+                }
+            // ext4: superblock starts 1024 bytes into the partition, i.e. LBA+2 at 512 B sectors.
+            } else if p.ptype == 0x83 && p.sectors > 2 {
+                let mut sb = [0u8; 512];
+                let rsb = crate::block::read(p.disk, p.lba_start.saturating_add(2), 1, &mut sb);
+                write_str("  FS=Linux/ext4 probe  SUPERBLOCK READ=");
+                write_str(if rsb { "OK" } else { "FAIL" });
+                if rsb {
+                    let magic = u16::from_le_bytes([sb[0x38], sb[0x39]]);
+                    write_str(" MAGIC=");
+                    serial::write_hex(magic as usize);
+                    if magic == 0xEF53 {
+                        write_str(" EXT4-MAGIC");
+                    } else {
+                        write_str(" NOT-EXT4");
+                    }
+                }
+                write_str("\n");
+            } else if (boot[54] == b'F' && boot[55] == b'A' && boot[56] == b'T') ||
+                      (boot[82] == b'F' && boot[83] == b'A' && boot[84] == b'T') {
+                write_str("  FS=FAT signature detected (READ-ONLY support path)\n");
+            } else {
+                write_str("  FS=UNKNOWN\n");
+            }
         }
         pi += 1;
     }
 
-    write_str("NTFS mounted: ");
-    write_str(if crate::fs_ntfs::is_mounted() { "YES" } else { "NO" });
-    write_str("\n");
-    if crate::fs_ntfs::is_mounted() {
-        let n = crate::fs_ntfs::entry_count();
-        write_str("NTFS root entries: ");
-        serial::write_usize(n);
-        write_str("\n");
-        if n > 0 {
-            write_str("NTFS root:\n");
-            let mut ei = 0usize;
-            while ei < n {
-                if let Some(e) = crate::fs_ntfs::entry(ei) {
-                    write_str("  [");
-                    write_str(if e.is_dir { "DIR " } else { "FILE" });
-                    write_str("] ");
-                    let mut j = 0usize;
-                    while j < e.name_len && j < e.name.len() { putc(e.name[j]); j += 1; }
-                    write_str("  size=");
-                    write_u64_decimal(e.size);
-                    write_str("  MFT=");
-                    serial::write_usize(e.mft_ref as usize);
-                    write_str("\n");
-                }
-                ei += 1;
-            }
-        }
-    }
+    write_str("\nRESULT: partition-table access and filesystem-boot-sector access are tested separately.\n");
+    write_str("If BOOT READ=FAIL, the failure is below the filesystem layer.\n");
+    write_str("If BOOT READ=OK but NTFS MFT READ=FAIL, the failure is in filesystem addressing/read path.\n");
     write_str("======== END DSK ========\n");
 }
 
