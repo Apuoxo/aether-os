@@ -1039,11 +1039,12 @@ fn handle_mouse_buttons(buttons: u8) {
             if let Some(idx) = hit_test(mx, my) {
                 if WINS[idx].kind == WinKind::Files {
                     bring_to_front(idx);
-                    let _ = crate::files_mgr::on_click(
+                    serial::write_str("[MOUSE] right Files hit\n");
+                    let changed = crate::files_mgr::on_click(
                         WINS[idx].x, WINS[idx].y, WINS[idx].w, WINS[idx].h,
                         TITLE_H, mx, my, true,
                     );
-                    DIRTY_FULL = true;
+                    if changed { DIRTY_FULL = true; }
                 }
             }
         }
@@ -1161,11 +1162,11 @@ fn handle_mouse_buttons(buttons: u8) {
                     // My Computer and the Files icon must share one Explorer
                     // implementation. This removes the legacy click path.
                     let right = (buttons & 2) != 0;
-                    let _ = crate::files_mgr::on_click(
+                    let changed = crate::files_mgr::on_click(
                         WINS[idx].x, WINS[idx].y, WINS[idx].w, WINS[idx].h,
                         TITLE_H, mx, my, right,
                     );
-                    DIRTY_FULL = true;
+                    if changed { DIRTY_FULL = true; }
                 } else if WINS[idx].kind == WinKind::Files
                     && my >= WINS[idx].y + TITLE_H
                 {
