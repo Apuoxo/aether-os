@@ -152,10 +152,28 @@ fn cmd_help() {
 }
 
 fn cmd_77() {
-    write_str("===== AETHER CMD77 =====\n");
-    write_str("CMD77_HANDLER=ACTIVE\n");
-    write_str("CMD77_MARKER=9F77AETHER\n");
-    write_str("===== END CMD77 =====\n");
+    write_str("===== 77-BEGIN =====\n");
+    write_str("77-TEST-01\n");
+    write_str("77-TEST-02\n");
+    write_str("77-TEST-03\n");
+    write_str("77-TEST-04\n");
+    write_str("77-TEST-05\n");
+    write_str("77-TEST-06\n");
+    write_str("77-TEST-07\n");
+    write_str("77-TEST-08\n");
+    write_str("77-TEST-09\n");
+    write_str("77-TEST-10\n");
+    write_str("77-TEST-11\n");
+    write_str("77-TEST-12\n");
+    write_str("77-TEST-13\n");
+    write_str("77-TEST-14\n");
+    write_str("77-TEST-15\n");
+    write_str("77-TEST-16\n");
+    write_str("77-TEST-17\n");
+    write_str("77-TEST-18\n");
+    write_str("77-TEST-19\n");
+    write_str("77-TEST-20\n");
+    write_str("===== 77-END =====\n");
 }
 
 fn write_u64_decimal(mut n: u64) {
