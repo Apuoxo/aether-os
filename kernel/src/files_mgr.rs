@@ -144,58 +144,102 @@ fn draw_drive(wx:usize,y:usize,name:&str,sub:&str,sel:bool){
 }
 fn draw_computer(wx:usize,y:usize,ww:usize,h:usize){
     graphics::draw_str(wx,y+8,"This PC",TEXT);
-    graphics::draw_str(wx,y+31,"Drives",DIM);
+    graphics::draw_str(wx,y+31,"Physical drives",DIM);
 
-    graphics::fill_rect(wx,y+45,ww,78,WHITE);
-    graphics::border_rect(wx,y+45,ww,78,BORDER);
-    draw_drive(wx+8,y+50,"Local Disk (C:)","NTFS • Read-only",false);
+    // Render every physical disk discovered by the block layer. Do not collapse
+    // multiple disks into a single "C:" card.
+    let mut disks=[false;8];
+    let mut dn=0usize;
+    let pn=part::count();
+    let mut i=0usize;
+    while i<pn{
+        if let Some(p)=part::get(i){
+            let d=p.disk as usize;
+            if d<8&&!disks[d]{disks[d]=true;dn+=1;}
+        }
+        i+=1;
+    }
 
-    graphics::fill_rect(wx,y+132,ww,78,WHITE);
-    graphics::border_rect(wx,y+132,ww,78,BORDER);
-    draw_drive(wx+8,y+137,"AetherFS (A:)","RAM filesystem • Read/Write",false);
+    let mut d=0usize;
+    let mut row=0usize;
+    while d<8{
+        if disks[d]{
+            let cy=y+45+row*82;
+            graphics::fill_rect(wx,cy,ww,74,WHITE);
+            graphics::border_rect(wx,cy,ww,74,BORDER);
+            icon::blit(icon::IconId::MyComputer,wx+10,cy+11,false);
 
-    graphics::draw_str(wx,y+229,"Devices",DIM);
-    graphics::fill_rect(wx,y+243,ww,46,TOOL);
-    graphics::border_rect(wx,y+243,ww,46,BORDER);
-    graphics::draw_str(wx+14,y+261,"No removable volumes mounted",DIM);
+            if d==0{
+                graphics::draw_str(wx+52,cy+12,"Disk 0",TEXT);
+            }else if d==1{
+                graphics::draw_str(wx+52,cy+12,"Disk 1",TEXT);
+            }else{
+                graphics::draw_str(wx+52,cy+12,"Disk",TEXT);
+            }
 
-    graphics::draw_str(wx,y+h.saturating_sub(18),"Aether Explorer • native storage view",DIM);
+            let mut parts_on_disk=0usize;
+            let mut total_mb=0u32;
+            let mut j=0usize;
+            while j<pn{
+                if let Some(p)=part::get(j){
+                    if p.disk as usize==d{
+                        parts_on_disk+=1;
+                        total_mb=total_mb.saturating_add(p.sectors/2048);
+                    }
+                }
+                j+=1;
+            }
+            graphics::draw_str(wx+52,cy+30,"Partitions:",DIM);
+            draw_num(wx+112,cy+30,parts_on_disk as u32);
+            graphics::draw_str(wx+145,cy+30,"•",DIM);
+            draw_num(wx+157,cy+30,total_mb);
+            graphics::draw_str(wx+198,cy+30,"MB",DIM);
+            graphics::fill_rect(wx+52,cy+50,ww.saturating_sub(68),8,TOOL2);
+            graphics::border_rect(wx+52,cy+50,ww.saturating_sub(68),8,BORDER);
+            row+=1;
+        }
+        d+=1;
+    }
+
+    let ay=y+45+row*82;
+    graphics::fill_rect(wx,ay,ww,74,WHITE);
+    graphics::border_rect(wx,ay,ww,74,BORDER);
+    icon::blit(icon::IconId::MyComputer,wx+10,ay+11,false);
+    graphics::draw_str(wx+52,ay+12,"AetherFS (A:)",TEXT);
+    graphics::draw_str(wx+52,ay+30,"RAM filesystem • Read/Write",DIM);
+    graphics::fill_rect(wx+52,ay+50,ww.saturating_sub(68),8,TOOL2);
+    graphics::draw_str(wx,y+h.saturating_sub(18),"Double-click a physical disk to inspect its partitions.",DIM);
 }
 fn draw_disk(wx:usize,y:usize,ww:usize,h:usize){
     graphics::fill_rect(wx,y,ww,h,WHITE);
-    graphics::draw_str(wx+8,y+8,"Local Disk (C:) — Partitions",TEXT);
+    graphics::draw_str(wx+8,y+8,"Physical disk partitions",TEXT);
     let n=part::count();
     if n==0{
         graphics::draw_str(wx+10,y+34,"No partitions detected.",RED);
-        graphics::draw_str(wx+10,y+52,"AHCI/partition scan did not return volumes.",DIM);
         return;
     }
-    graphics::fill_rect(wx,y+24,ww,22,TOOL2);
-    graphics::draw_str(wx+8,y+31,"Volume",TEXT);
-    graphics::draw_str(wx+190,y+31,"Filesystem",TEXT);
-    graphics::draw_str(wx+300,y+31,"Size (MB)",TEXT);
+    graphics::fill_rect(wx,y+26,ww,24,TOOL2);
+    graphics::draw_str(wx+8,y+34,"Disk",TEXT);
+    graphics::draw_str(wx+58,y+34,"Partition",TEXT);
+    graphics::draw_str(wx+140,y+34,"Filesystem",TEXT);
+    graphics::draw_str(wx+280,y+34,"Size MB",TEXT);
     unsafe{
         let mut row=0usize;
         let mut i=0usize;
-        while i<n&&row<16{
+        while i<n&&row<18{
             if let Some(p)=part::get(i){
-                let ry=y+48+row*24;
+                let ry=y+52+row*24;
                 if SEL==row as i32{graphics::fill_rect(wx,ry,ww,24,SELECT);}
-                icon::blit(icon::IconId::MyComputer,wx+4,ry-2,false);
-                graphics::draw_str(wx+34,ry+7,"Partition",TEXT);
-                graphics::draw_str(wx+190,ry+7,part::type_name(p.ptype),DIM);
-                draw_num(wx+300,ry+7,p.sectors/2048);
+                icon::blit(icon::IconId::MyComputer,wx+4,ry-1,false);
+                draw_num(wx+28,ry+7,p.disk as u32);
+                draw_num(wx+92,ry+7,p.index as u32);
+                graphics::draw_str(wx+140,ry+7,part::type_name(p.ptype),DIM);
+                draw_num(wx+280,ry+7,p.sectors/2048);
                 row+=1;
             }
             i+=1;
         }
-        if SEL>=0{
-            let s=SEL as usize;
-            if let Some(p)=part::get(s){
-                graphics::draw_str(wx+8,y+h.saturating_sub(38),"Read-only: ",DIM);
-                graphics::draw_str(wx+76,y+h.saturating_sub(38),part::type_name(p.ptype),TEXT);
-            }
-        }
+        graphics::draw_str(wx+8,y+h.saturating_sub(20),"Double-click a partition to open its read-only filesystem.",DIM);
     }
 }
 fn draw_fat(wx:usize,y:usize,ww:usize,h:usize){
@@ -403,31 +447,56 @@ pub fn on_click(wx:i32,wy:i32,ww:i32,wh:i32,title_h:i32,mx:i32,my:i32,right:bool
         }
         let side=150i32.min(ww/3);let list_top=by+40;
         if mx>=wx+side+8&&my>=list_top{
-            let cx=mx-(wx+side+8);let _=cx;
             if VIEW==VIEW_COMPUTER{
-                if my>=list_top+42&&my<list_top+98{
-                    log(b"Local Disk (C:) open requested");
-                    if fs_ntfs::mount_first(){
-                        SEL=-1;
-                        VIEW=VIEW_NTFS;
-                        status(b"Local Disk (C:) opened - NTFS read-only");
-                    }else{
-                        status(b"Local Disk (C:) mount failed");
+                // Physical disk cards: clicking any disk opens the partition view.
+                let pn=part::count();
+                let mut disks=[false;8];
+                let mut d=0usize;
+                while d<8{
+                    let mut j=0usize;
+                    while j<pn{
+                        if let Some(p)=part::get(j){if p.disk as usize==d{disks[d]=true;break;}}
+                        j+=1;
                     }
-                    return true;
+                    d+=1;
                 }
-                if my>=list_top+98&&my<list_top+154{
+                let mut card=0usize;
+                let mut dd=0usize;
+                while dd<8{
+                    if disks[dd]{
+                        let top=list_top+45+(card*82) as i32;
+                        if my>=top&&my<top+74{
+                            // Select the first partition belonging to this physical disk.
+                            let mut j=0usize;
+                            while j<pn{
+                                if let Some(p)=part::get(j){
+                                    if p.disk as usize==dd{
+                                        SEL=j as i32;
+                                        VIEW=VIEW_DISK;
+                                        status(b"Physical disk opened");
+                                        return true;
+                                    }
+                                }
+                                j+=1;
+                            }
+                        }
+                        card+=1;
+                    }
+                    dd+=1;
+                }
+                // AetherFS card.
+                let atop=list_top+45+(card*82) as i32;
+                if my>=atop&&my<atop+74{
                     push_hist();
                     set_root();
-                    log(b"AetherFS (A:) opened");
                     status(b"AetherFS (A:) opened");
                     return true;
                 }
             }
             else if VIEW==VIEW_DISK{
                 let n=part::count();
-                if my<list_top+48{return false;}
-                let row=((my-list_top-48)/24)as i32;
+                if my<list_top+52{return false;}
+                let row=((my-list_top-52)/24)as i32;
                 if row>=0&&row<n as i32{
                     if SEL==row{
                         if let Some(p)=part::get(row as usize){
@@ -507,8 +576,20 @@ pub fn on_click(wx:i32,wy:i32,ww:i32,wh:i32,title_h:i32,mx:i32,my:i32,right:bool
             return true;
         }
         if my>=list_top&&my<list_top+330&&mx<wx+side{
-            // Sidebar: only implemented destinations change state.
-            if my>=list_top+220&&my<list_top+260{
+            // Sidebar hit boxes match the labels/icons drawn above.
+            if my>=list_top+135&&my<list_top+170{
+                if fs_ntfs::mount_first(){
+                    VIEW=VIEW_NTFS;
+                    SEL=-1;
+                    NTFS_CWD_REF=5;
+                    NTFS_DEPTH=0;
+                    status(b"Local Disk (C:) opened");
+                }else{
+                    status(b"Local Disk (C:) mount failed");
+                }
+                return true;
+            }
+            if my>=list_top+155&&my<list_top+195{
                 push_hist();
                 set_root();
                 status(b"AetherFS (A:) opened");
