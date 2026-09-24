@@ -448,6 +448,11 @@ fn run_cmd(line: &[u8], len: usize) {
         }
 
         term_write_str("======== DSK RAW-ONLY END ========\n");
+        // The terminal has only 16 rows; the long probe scrolls its opening line away.
+        // Leave an unmistakable CMD77 proof at the end of the output.
+        if eq_cmd(&cmd, ci, b"77") {
+            term_write_str("DIAG... CMD77 COMPLETE (SAME RAW DISK PROBE)\n");
+        }
         unsafe { DIRTY_FULL = true; }
     } else if eq_cmd(&cmd, ci, b"ls") {
         if !fs::is_mounted() {
