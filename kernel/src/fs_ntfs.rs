@@ -500,7 +500,34 @@ pub fn entry(i: usize) -> Option<NtfsEntry> {
 
 /// NTFS diagnostic for the GUI terminal (read-only).
 /// This intentionally exercises the filesystem parser path, not the DSK RAW/MBR probe.
-fn diag_str(s: &str) {\n    crate::desktop::terminal_write(s);\n    serial::write_str(s);\n}\n\nfn diag_usize(mut v: usize) {\n    let mut buf = [0u8; 20];\n    let mut n = 0usize;\n    if v == 0 { diag_str("0"); return; }\n    while v > 0 { buf[n] = b'0' + (v % 10) as u8; n += 1; v /= 10; }\n    let mut out = [0u8; 20];\n    let mut i = 0usize;\n    while i < n { out[i] = buf[n - 1 - i]; i += 1; }\n    let s = unsafe { core::str::from_utf8_unchecked(&out[..n]) };\n    diag_str(s);\n}\n\npub fn diagnostic() {
+fn diag_str(s: &str) {
+    crate::desktop::terminal_write(s);
+    serial::write_str(s);
+}
+
+fn diag_usize(mut v: usize) {
+    let mut buf = [0u8; 20];
+    let mut n = 0usize;
+    if v == 0 {
+        diag_str("0");
+        return;
+    }
+    while v > 0 {
+        buf[n] = b'0' + (v % 10) as u8;
+        n += 1;
+        v /= 10;
+    }
+    let mut out = [0u8; 20];
+    let mut i = 0usize;
+    while i < n {
+        out[i] = buf[n - 1 - i];
+        i += 1;
+    }
+    let s = unsafe { core::str::from_utf8_unchecked(&out[..n]) };
+    diag_str(s);
+}
+
+pub fn diagnostic() {
     diag_str("[NTFSDIAG] begin\n");
     let np = part::count();
     diag_str("[NTFSDIAG] partitions=");
