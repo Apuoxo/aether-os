@@ -54,3 +54,5 @@ jobs:
         with:
           name: aether-iso
           path: kernel/build/aether.iso
+
+# Trigger validation for Properties modal integration.
