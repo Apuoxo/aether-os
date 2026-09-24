@@ -259,6 +259,14 @@ fn cmd_wf() {
     write_str(" AFTER=");
     write_hex(crate::drivers::wifi::reset_after() as usize);
     write_str("\n");
+    let activate_ok = crate::drivers::wifi::activate_nic();
+    write_str("  ACTIVATE_RESULT=");
+    write_str(if activate_ok { "MAC_CLOCK_READY" } else { "FAILED/NOT-ATTEMPTED" });
+    write_str(" BEFORE=");
+    write_hex(crate::drivers::wifi::activate_before() as usize);
+    write_str(" AFTER=");
+    write_hex(crate::drivers::wifi::activate_after() as usize);
+    write_str("\n");
     write_str("  PCIE_LINK SPEED=");
     write_hex(crate::drivers::wifi::pcie_link_speed() as usize);
     write_str(" WIDTH=");
