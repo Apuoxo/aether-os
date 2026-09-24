@@ -510,6 +510,7 @@ pub fn on_click(wx:i32,wy:i32,ww:i32,wh:i32,title_h:i32,mx:i32,my:i32,right:bool
             return true;
         }
         if right{
+            status(b"RCLICK");
             let side=150i32.min(ww/3);
             let list_top=by+40;
             if mx>=wx+side+8&&my>=list_top{
