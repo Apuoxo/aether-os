@@ -303,8 +303,8 @@ pub unsafe fn irq_handler() {
                 if len >= 8 && len <= FH_RX_BUF_SIZE - 4 {
                     let cmd = core::ptr::read_volatile(p.add(4));
                     if cmd == 1 {
-                        let subtype = core::ptr::read_volatile(p.add(4 + 10));
-                        let valid = core::ptr::read_volatile(p.add(4 + 20));
+                        let subtype = core::ptr::read_volatile(p.add(4 + 4 + 13));
+                        let valid = core::ptr::read_volatile(p.add(4 + 4 + 28));
                         ALIVE_SEEN = true;
                         ALIVE_SUBTYPE = subtype;
                         ALIVE_VALID = valid;
