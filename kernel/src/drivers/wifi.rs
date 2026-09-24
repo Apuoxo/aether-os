@@ -360,7 +360,7 @@ fn cmd_tfd_set(buf: *mut u8, dma: u64, len: usize) {
 /// The caller supplies the complete command header+payload.
 pub fn send_command(cmd: u8, payload: &[u8]) -> bool {
     unsafe {
-        if !CMD_QUEUE_READY || payload.len() > 360 { return false; }
+        if !CMD_QUEUE_READY || payload.len() > 4096 { return false; }
         let slot = CMD_WRITE_PTR & (FH_TFD_CMD_SLOTS - 1);
         let frame = (&mut FW_DMA_BUF.0[0]) as *mut u8;
         core::ptr::write_bytes(frame, 0, 512);
@@ -390,6 +390,78 @@ pub fn send_command(cmd: u8, payload: &[u8]) -> bool {
 }
 
 pub fn command_queue_ready() -> bool { unsafe { CMD_QUEUE_READY } }
+
+
+const REPLY_SCAN_CMD: u8 = 0x80;
+const SCAN_START_NOTIFICATION: u8 = 0x82;
+const SCAN_RESULTS_NOTIFICATION: u8 = 0x83;
+const SCAN_COMPLETE_NOTIFICATION: u8 = 0x84;
+const RXON_FLG_BAND_24G: u32 = 1 << 0;
+const IWL_GOOD_CRC_TH_DEFAULT: u16 = 1;
+const IWL_SCAN_CHANNEL_ACTIVE: u32 = 1;
+const IWL_SCAN_CHANNEL_COUNT_24G: usize = 11;
+
+fn put_le16(buf: &mut [u8], off: usize, v: u16) {
+    buf[off] = v as u8;
+    buf[off + 1] = (v >> 8) as u8;
+}
+fn put_le32(buf: &mut [u8], off: usize, v: u32) {
+    buf[off] = v as u8;
+    buf[off + 1] = (v >> 8) as u8;
+    buf[off + 2] = (v >> 16) as u8;
+    buf[off + 3] = (v >> 24) as u8;
+}
+
+/// First real DVM scan request: passive 2.4 GHz sweep over channels 1..11.
+/// This intentionally omits probe TX until the command transport is proven.
+pub fn scan_24ghz() -> bool {
+    unsafe {
+        if !CMD_QUEUE_READY || !ALIVE_SEEN { return false; }
+
+        // iwl_scan_cmd fixed header (28), zero TX header (52),
+        // 20 direct-scan SSID IEs (34 each), then 11 channel entries (12 each).
+        let fixed = 28usize + 52usize + 20usize * 34usize;
+        let channels = IWL_SCAN_CHANNEL_COUNT_24G * 12usize;
+        let total = fixed + channels;
+        let mut p = [0u8; 1024];
+
+        put_le16(&mut p, 0, total as u16);
+        p[2] = 0; // scan_flags
+        p[3] = IWL_SCAN_CHANNEL_COUNT_24G as u8;
+        put_le16(&mut p, 4, 0); // quiet_time
+        put_le16(&mut p, 6, 0); // quiet_plcp_th
+        put_le16(&mut p, 8, IWL_GOOD_CRC_TH_DEFAULT);
+        put_le16(&mut p, 10, 0x0007); // RX chain: allow A/B/C
+        put_le32(&mut p, 12, 0); // max_out_time: unassociated
+        put_le32(&mut p, 16, 0); // suspend_time
+        put_le32(&mut p, 20, RXON_FLG_BAND_24G);
+        put_le32(&mut p, 24, 0); // filter_flags
+
+        // TX header remains zero for this passive scan.
+        // Direct SSID table remains zero.
+        let mut off = fixed;
+        let mut ch = 1u16;
+        while ch <= 11 {
+            put_le32(&mut p, off, 0); // passive channel
+            put_le16(&mut p, off + 4, ch);
+            p[off + 6] = 0;
+            p[off + 7] = 0;
+            put_le16(&mut p, off + 8, 0);   // active dwell
+            put_le16(&mut p, off + 10, 100); // passive dwell, TU
+            off += 12;
+            ch += 1;
+        }
+
+        serial::write_str("[WIFI] SCAN24 CMD channels=11\n");
+        if !send_command(REPLY_SCAN_CMD, &p[..total]) {
+            serial::write_str("[WIFI] SCAN24 CMD=FAILED\n");
+            return false;
+        }
+        serial::write_str("[WIFI] SCAN24 CMD=SUBMITTED\n");
+        true
+    }
+}
+
 
 
 unsafe fn init_rx_queue() -> bool {
