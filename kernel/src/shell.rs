@@ -236,6 +236,18 @@ fn cmd_wf() {
         write_str(" API=5..6\n");
     }
     crate::drivers::wifi::probe_prerequisites();
+    crate::drivers::wifi::probe_capabilities();
+    write_str("  CAPS PTR=");
+    write_hex(crate::drivers::wifi::cap_ptr() as usize);
+    write_str(" PM=");
+    write_str(if crate::drivers::wifi::cap_pm() { "YES" } else { "NO" });
+    write_str(" MSI=");
+    write_str(if crate::drivers::wifi::cap_msi() { "YES" } else { "NO" });
+    write_str(" MSIX=");
+    write_str(if crate::drivers::wifi::cap_msix() { "YES" } else { "NO" });
+    write_str(" READ=");
+    write_str(if crate::drivers::wifi::cap_chain_read() { "YES" } else { "NO" });
+    write_str("\n");
     write_str("  PREREQ PCI_CMD=");
     write_hex(crate::drivers::wifi::pci_command() as usize);
     write_str(" STATUS=");
