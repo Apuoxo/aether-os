@@ -642,6 +642,7 @@ pub fn run() -> ! {
     }
 
     write_str("======== Aether Shell ========\n");
+    write_str("SHELL BUILD MARKER = 4099CMD77\n");
     cmd_help();
     write_str("aether> ");
 
