@@ -362,7 +362,7 @@ fn read_mft_record(ref_num: u32, out: &mut [u8]) -> bool {
     true
 }
 
-fn list_directory(mft_ref: u32) -> bool {
+pub fn list_directory(mft_ref: u32) -> bool {
     unsafe { NENT = 0; }
     let mut rec = [0u8; 1024];
     let rec_size = unsafe { MFT_REC_SIZE as usize };
