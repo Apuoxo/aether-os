@@ -257,7 +257,8 @@ fn run_cmd(line: &[u8], len: usize) {
         i += 1;
     }
     if eq_cmd(&cmd, ci, b"help") {
-        term_write_str("help ls cat touch rm mem uname clear dsk 1 beep\n");
+        term_write_str("help ls cat touch rm mem uname clear dsk 77 1 beep\n");
+        term_write_str("77 = CMD77 runtime-path diagnostic\n");
         term_write_str("1 = full PCI+USB hardware diag\n");
     } else if eq_cmd(&cmd, ci, b"1") || eq_cmd(&cmd, ci, b"diag") || eq_cmd(&cmd, ci, b"storage") {
         term_write_str("--- STORAGE HW DIAG (on-screen) ---\n");
@@ -334,6 +335,14 @@ fn run_cmd(line: &[u8], len: usize) {
         term_write_str("DIAG done. Check serial:\n");
         term_write_str(" FULL PCI / USB-HC / PORT\n");
         term_write_str(" PORT-CHANGE lines = plug\n");
+        unsafe { DIRTY_FULL = true; }
+    } else if eq_cmd(&cmd, ci, b"77") {
+        // CMD77 belongs to the GUI terminal command dispatcher. The older
+        // kernel shell parser is not reached while the desktop is running.
+        term_write_str("===== AETHER CMD77 GUI =====\n");
+        term_write_str("CMD77_HANDLER=DESKTOP_RUN_CMD\n");
+        term_write_str("CMD77_MARKER=9F77AETHER-GUI\n");
+        term_write_str("===== END CMD77 GUI =====\n");
         unsafe { DIRTY_FULL = true; }
     } else if eq_cmd(&cmd, ci, b"dsk") {
         // GUI terminal DSK must use the same raw-only AHCI path as the kernel shell.
