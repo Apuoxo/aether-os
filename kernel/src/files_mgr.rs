@@ -270,7 +270,7 @@ fn draw_props(wx:usize,y:usize,ww:usize,h:usize){
     unsafe{if SEL<0{graphics::draw_str(wx+14,y+40,"No item selected.",DIM);return;}let mut a=[fs::ListItem{name:[0;24],name_len:0,size:0,is_dir:false};16];let n=fs::list_ex_path(core::str::from_utf8_unchecked(&CWD[..CWD_LEN]),&mut a);let s=SEL as usize;if s>=n{return;}graphics::draw_str(wx+14,y+46,"Name:",DIM);let mut k=0;while k<a[s].name_len{graphics::draw_char(wx+66+k*8,y+46,a[s].name[k],TEXT);k+=1;}graphics::draw_str(wx+14,y+66,if a[s].is_dir{"Type: Folder"}else{"Type: File"},TEXT);if !a[s].is_dir{graphics::draw_str(wx+14,y+86,"Size:",DIM);draw_num(wx+56,y+86,a[s].size);}graphics::draw_str(wx+14,y+106,"Location: AetherFS (A:)",DIM);}
 }
 
-fn draw_context(){
+// Recreated Explorer shell: keep the visual layer self-contained and native to Aether.\nfn draw_context(){
     unsafe{
         // Windows 7-style light context menu with separators and disabled
         // read-only operations. The menu remains native Aether UI.
@@ -331,7 +331,7 @@ pub fn on_click(wx:i32,wy:i32,ww:i32,wh:i32,title_h:i32,mx:i32,my:i32,right:bool
     unsafe{
         if CONFIRM_DEL{let cx=ww/2;let cy=wh/2;if my>wy+cy+20&&my<wy+cy+60{if mx<wx+cx{delete_selected();}CONFIRM_DEL=false;}return true;}
         if CTX{
-            if mx>=CTX_X&&mx<CTX_X+210&&my>=CTX_Y&&my<CTX_Y+216{
+            if mx>=CTX_X&&mx<CTX_X+218&&my>=CTX_Y&&my<CTX_Y+224{
                 let r=(my-CTX_Y)/20;
                 match r{
                     0=>open_selected(),
