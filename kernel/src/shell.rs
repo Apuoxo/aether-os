@@ -519,6 +519,7 @@ fn cmd_wf() {
         write_str(crate::drivers::wifi::firmware_prefix());
         write_str(" API=5..6\n");
     }
+    crate::drivers::wifi::probe_prerequisites();
 
     let eth = crate::drivers::net::eth_found();
     write_str("ETHERNET: ");
