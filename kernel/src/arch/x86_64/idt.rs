@@ -40,11 +40,13 @@ fn set_gate(num: usize, handler: u64, typ: u8) {
 extern "C" {
     fn isr_page_fault();
     fn isr_syscall();
+    fn isr_wifi_irq();
 }
 
 pub fn init() {
     set_gate(14, isr_page_fault as u64, 0x8E);
     set_gate(0x80, isr_syscall as u64, 0xEE);
+    set_gate(0x27, isr_wifi_irq as u64, 0x8E);
     unsafe {
         IDTR.limit = (core::mem::size_of_val(&IDT) - 1) as u16;
         IDTR.base = &IDT as *const _ as u64;
