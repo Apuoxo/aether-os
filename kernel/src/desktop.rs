@@ -56,6 +56,7 @@ enum WinKind {
     DateTime,
     MyComputer,
     SysProps,
+    Settings,
 }
 
 struct Window {
@@ -93,6 +94,8 @@ static mut WINS: [Window; MAX_WIN] = [
         minimized: false, maximized: false, rx: 80, ry: 40, rw: 520, rh: 360 },
     Window { x: 140, y: 50, w: 420, h: 360, kind: WinKind::SysProps, visible: false, z: 9,
         minimized: false, maximized: false, rx: 140, ry: 50, rw: 420, rh: 360 },
+    Window { x: 120, y: 60, w: 500, h: 360, kind: WinKind::Settings, visible: false, z: 10,
+        minimized: false, maximized: false, rx: 120, ry: 60, rw: 500, rh: 360 },
     Window { x: 0, y: 0, w: 0, h: 0, kind: WinKind::About, visible: false, z: 0,
         minimized: false, maximized: false, rx: 0, ry: 0, rw: 0, rh: 0 },
 ];
@@ -133,6 +136,9 @@ static mut CTX_MENU: bool = false;
 static mut CTX_X: i32 = 0;
 static mut CTX_Y: i32 = 0;
 static mut Z_TOP: i32 = 3;
+static mut SETTINGS_VIEW: u8 = 0;
+static mut CURSOR_COLOR: u32 = COL_CURSOR;
+static mut CURSOR_PENDING: u8 = 0;
 
 // Terminal buffer
 const TERM_ROWS: usize = 128;
@@ -736,6 +742,7 @@ fn win_title(kind: WinKind) -> &'static str {
         WinKind::DateTime => "Date/Time",
         WinKind::MyComputer => "My Computer",
         WinKind::SysProps => "System Properties",
+        WinKind::Settings => "Settings",
     }
 }
 
@@ -746,6 +753,10 @@ fn open_win(slot: usize) {
         }
         if slot >= MAX_WIN {
             return;
+        }
+        if WINS[slot].kind == WinKind::Settings {
+            SETTINGS_VIEW = 0;
+            CURSOR_PENDING = 0;
         }
         let was = WINS[slot].visible && !WINS[slot].minimized;
         WINS[slot].minimized = false;
@@ -849,6 +860,7 @@ fn draw_taskbar_buttons(w: usize, h: usize) {
                     WinKind::SysProps => "Sys",
                     WinKind::DateTime => "Time",
                     WinKind::About => "About",
+                    WinKind::Settings => "Settings",
                 };
                 let bw = short.len() * 8 + 20;
                 if x + bw > w.saturating_sub(100) {
@@ -1093,7 +1105,7 @@ fn handle_mouse_buttons(buttons: u8) {
                         1 => open_win(5), // Files
                         2 => open_win(7), // My Computer
                         3 => open_win(2), // Network
-                        4 => open_win(8), // SysProps / Settings
+                        4 => open_win(9), // Settings
                         5 => open_win(5), // Documents -> Files
                         _ => {}
                     }
@@ -1144,7 +1156,7 @@ fn handle_mouse_buttons(buttons: u8) {
                         1 => open_win(5),
                         2 => open_win(0),
                         3 => open_win(2),
-                        4 => open_win(8),
+                        4 => open_win(9),
                         _ => {}
                     }
                     LAST_DESKTOP_ICON = usize::MAX;
@@ -1212,6 +1224,51 @@ fn handle_mouse_buttons(buttons: u8) {
                         TITLE_H, mx, my, right, double_click,
                     );
                     if changed { redraw_input_window(idx); }
+                } else if WINS[idx].kind == WinKind::Settings
+                    && my >= WINS[idx].y + TITLE_H
+                {
+                    let sx = WINS[idx].x;
+                    let sy = WINS[idx].y;
+                    let sw = WINS[idx].w;
+                    let sh = WINS[idx].h;
+                    if SETTINGS_VIEW == 0 {
+                        if mx >= sx + 16 && mx < sx + 155 && my >= sy + 66 && my < sy + 108 {
+                            SETTINGS_VIEW = 1;
+                            CURSOR_PENDING = match unsafe { CURSOR_COLOR } {
+                                0x00000000 => 1,
+                                0x00E81123 => 2,
+                                0x0000A000 => 3,
+                                0x000000CC => 4,
+                                _ => 0,
+                            };
+                            DIRTY_FULL = true;
+                        }
+                    } else {
+                        let colors: [u32; 5] = [0x00FFFFFF, 0x00000000, 0x00E81123, 0x0000A000, 0x000000CC];
+                        let mut i = 0usize;
+                        while i < 5 {
+                            let bx = sx + 28 + i * 88;
+                            if mx >= bx && mx < bx + 68 && my >= sy + 112 && my < sy + 194 {
+                                CURSOR_PENDING = i as u8;
+                                DIRTY_FULL = true;
+                            }
+                            i += 1;
+                        }
+                        let okx = sx + sw - 184;
+                        let cancelx = sx + sw - 94;
+                        let by = sy + sh - 42;
+                        if my >= by && my < by + 24 {
+                            if mx >= okx && mx < okx + 78 {
+                                CURSOR_COLOR = colors[CURSOR_PENDING as usize];
+                                SETTINGS_VIEW = 0;
+                                DIRTY_FULL = true;
+                            } else if mx >= cancelx && mx < cancelx + 78 {
+                                SETTINGS_VIEW = 0;
+                                CURSOR_PENDING = 0;
+                                DIRTY_FULL = true;
+                            }
+                        }
+                    }
                 } else if WINS[idx].kind == WinKind::Sound
                     && my >= WINS[idx].y + TITLE_H
                 {
@@ -1275,13 +1332,13 @@ fn handle_mouse_buttons(buttons: u8) {
 fn draw_cursor(x: i32, y: i32) {
     let x = if x < 0 { 0usize } else { x as usize };
     let y = if y < 0 { 0usize } else { y as usize };
-    // arrow cursor
-    graphics::fill_rect(x, y, 2, 16, COL_CURSOR);
-    graphics::fill_rect(x, y, 12, 2, COL_CURSOR);
-    graphics::fill_rect(x + 2, y + 4, 8, 2, COL_CURSOR);
-    graphics::fill_rect(x + 2, y + 8, 6, 2, COL_CURSOR);
-    graphics::put_pixel(x + 3, y + 12, COL_CURSOR);
-    graphics::put_pixel(x + 4, y + 13, COL_CURSOR);
+    let col = unsafe { CURSOR_COLOR };
+    graphics::fill_rect(x, y, 2, 16, col);
+    graphics::fill_rect(x, y, 12, 2, col);
+    graphics::fill_rect(x + 2, y + 4, 8, 2, col);
+    graphics::fill_rect(x + 2, y + 8, 6, 2, col);
+    graphics::put_pixel(x + 3, y + 12, col);
+    graphics::put_pixel(x + 4, y + 13, col);
 }
 
 fn draw_window(idx: usize) {
@@ -1315,6 +1372,7 @@ fn draw_window(idx: usize) {
             let iid = match w.kind {
                 WinKind::Terminal => IconId::Terminal,
                 WinKind::MyComputer | WinKind::SysProps => IconId::MyComputer,
+                WinKind::Settings => IconId::Settings,
                 WinKind::Files => IconId::Folder,
                 WinKind::Network => IconId::Network,
                 WinKind::Sound | WinKind::Video | WinKind::DateTime => IconId::Settings,
@@ -1526,6 +1584,9 @@ fn draw_window(idx: usize) {
                 // single native Windows-7-style Explorer implementation.
                 crate::files_mgr::draw(wx, wy, ww, wh, TITLE_H as usize);
             }
+            WinKind::Settings => {
+                draw_settings(wx, wy, ww, wh);
+            }
             WinKind::SysProps => {
                                 graphics::fill_rect(wx + 3, wy + TITLE_H as usize, ww - 6, wh - TITLE_H as usize - 3, COL_CLIENT);
                 // Tab strip
@@ -1582,6 +1643,64 @@ fn draw_window(idx: usize) {
                     graphics::draw_str(wx + 84, wy + 300, "none", COL_TEXT);
                 }
             }
+        }
+    }
+}
+
+fn draw_settings(wx: usize, wy: usize, ww: usize, wh: usize) {
+    unsafe {
+        graphics::fill_rect(wx + 3, wy + TITLE_H as usize, ww - 6, wh - TITLE_H as usize - 3, COL_CLIENT);
+        if SETTINGS_VIEW == 0 {
+            graphics::fill_rect(wx + 8, wy + 34, 145, wh - 50, 0x00FFFFFF);
+            graphics::border_rect(wx + 8, wy + 34, 145, wh - 50, 0x00808080);
+            graphics::draw_str(wx + 20, wy + 46, "Settings", COL_TEXT);
+            graphics::fill_rect(wx + 16, wy + 68, 129, 34, 0x00DCEBFA);
+            graphics::border_rect(wx + 16, wy + 68, 129, 34, 0x00316AC5);
+            graphics::draw_str(wx + 28, wy + 80, "Mouse", COL_TEXT);
+            graphics::draw_str(wx + 28, wy + 96, "Mouse and pointer", COL_TEXT_DIM);
+            graphics::border_rect(wx + 166, wy + 34, ww - 182, wh - 50, 0x00808080);
+            graphics::draw_str(wx + 182, wy + 48, "Settings", COL_TEXT);
+            graphics::draw_str(wx + 182, wy + 76, "Choose a category.", COL_TEXT_DIM);
+            graphics::draw_str(wx + 182, wy + 98, "Mouse", COL_TEXT);
+            graphics::draw_str(wx + 182, wy + 116, "Configure the mouse pointer and cursor.", COL_TEXT_DIM);
+        } else {
+            graphics::draw_str(wx + 18, wy + 44, "Mouse", COL_TEXT);
+            graphics::draw_str(wx + 18, wy + 62, "Mouse settings", COL_TEXT_DIM);
+            graphics::border_rect(wx + 14, wy + 76, ww - 28, 150, 0x00808080);
+            graphics::draw_str(wx + 26, wy + 88, "Choose cursor", COL_TEXT);
+            let colors: [u32; 5] = [0x00FFFFFF, 0x00000000, 0x00E81123, 0x0000A000, 0x000000CC];
+            let names: [&str; 5] = ["White", "Black", "Red", "Green", "Blue"];
+            let mut i = 0usize;
+            while i < 5 {
+                let bx = wx + 28 + i * 88;
+                let by = wy + 112;
+                let selected = CURSOR_PENDING == i as u8;
+                graphics::fill_rect(bx, by, 68, 82, if selected { 0x00DCEBFA } else { 0x00FFFFFF });
+                graphics::border_rect(bx, by, 68, 82, if selected { 0x00316AC5 } else { 0x00808080 });
+                let cx = bx + 24;
+                let cy = by + 10;
+                let col = colors[i];
+                graphics::fill_rect(cx, cy, 2, 18, col);
+                graphics::fill_rect(cx, cy, 13, 2, col);
+                graphics::fill_rect(cx + 2, cy + 5, 9, 2, col);
+                graphics::fill_rect(cx + 2, cy + 10, 7, 2, col);
+                graphics::put_pixel(cx + 3, cy + 14, col);
+                graphics::put_pixel(cx + 4, cy + 15, col);
+                graphics::draw_str(bx + 8, by + 58, names[i], COL_TEXT);
+                i += 1;
+            }
+            graphics::draw_str(wx + 18, wy + 244, "Current cursor:", COL_TEXT_DIM);
+            let current = match CURSOR_PENDING { 0 => "White", 1 => "Black", 2 => "Red", 3 => "Green", _ => "Blue" };
+            graphics::draw_str(wx + 126, wy + 244, current, COL_TEXT);
+            let okx = wx + ww - 184;
+            let cancelx = wx + ww - 94;
+            let by = wy + wh - 42;
+            graphics::fill_rect(okx, by, 78, 24, COL_BTN_FACE);
+            graphics::border_rect(okx, by, 78, 24, 0x00404040);
+            graphics::draw_str(okx + 22, by + 8, "Choose", COL_TEXT);
+            graphics::fill_rect(cancelx, by, 78, 24, COL_BTN_FACE);
+            graphics::border_rect(cancelx, by, 78, 24, 0x00404040);
+            graphics::draw_str(cancelx + 22, by + 8, "Cancel", COL_TEXT);
         }
     }
 }
