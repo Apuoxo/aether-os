@@ -148,7 +148,14 @@ fn eq(line: &[u8], s: usize, clen: usize, b: &[u8]) -> bool {
 }
 
 fn cmd_help() {
-    write_str("Commands: help ls cat dsk uname vdiag vedid echo halt\n");
+    write_str("Commands: help ls cat dsk 77 uname vdiag vedid echo halt\n");
+}
+
+fn cmd_77() {
+    write_str("===== AETHER CMD77 =====\n");
+    write_str("CMD77_HANDLER=ACTIVE\n");
+    write_str("CMD77_MARKER=9F77AETHER\n");
+    write_str("===== END CMD77 =====\n");
 }
 
 fn write_u64_decimal(mut n: u64) {
