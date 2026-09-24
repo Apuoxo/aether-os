@@ -934,16 +934,16 @@ fn handle_terminal_scroll_click(mx: i32, my: i32) -> bool {
         let view_rows = term_visible_rows();
         let max_view = if total > view_rows { total - view_rows } else { 0 };
         if my < bar_top + 14 {
-            term_scroll_up();
-        } else if my >= bar_bottom - 14 {
             term_scroll_down();
+        } else if my >= bar_bottom - 14 {
+            term_scroll_up();
         } else if max_view > 0 {
             let track_top = bar_top + 14;
             let track_bottom = bar_bottom - 14;
             if my < track_top + (track_bottom - track_top) / 2 {
-                term_scroll_up();
-            } else {
                 term_scroll_down();
+            } else {
+                term_scroll_up();
             }
         }
         DIRTY_FULL = true;
