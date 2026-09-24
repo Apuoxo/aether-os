@@ -41,7 +41,7 @@ const COL_BTN_FACE: u32 = 0x00D4D0C8;
 const COL_MENU_BG: u32 = 0x00FFFFFF;
 const COL_MENU_HDR: u32 = 0x001665CA;
 
-const MAX_WIN: usize = 10;
+const MAX_WIN: usize = 11;
 const TITLE_H: i32 = 26;
 const TASKBAR_H: usize = 30;
 
@@ -1247,7 +1247,7 @@ fn handle_mouse_buttons(buttons: u8) {
                         let colors: [u32; 5] = [0x00FFFFFF, 0x00000000, 0x00E81123, 0x0000A000, 0x000000CC];
                         let mut i = 0usize;
                         while i < 5 {
-                            let bx = sx + 28 + i * 88;
+                            let bx = sx + 28 + (i as i32) * 88;
                             if mx >= bx && mx < bx + 68 && my >= sy + 112 && my < sy + 194 {
                                 CURSOR_PENDING = i as u8;
                                 DIRTY_FULL = true;
