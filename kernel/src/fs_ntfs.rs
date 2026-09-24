@@ -30,6 +30,9 @@ static mut INDEX_RUN_COUNT: usize = 0;
 static mut INDEX_BLOCK_SIZE: u32 = 4096;
 static mut INDEX_REAL_SIZE: u64 = 0;
 static mut INDEX_BUFFERS_READ: usize = 0;
+static mut INDEX_ROOT_ENTRIES: usize = 0;
+static mut INDEX_ALLOCATION_ENTRIES: usize = 0;
+static mut INDEX_TOTAL_PARSED: usize = 0;
 static mut ENTRIES: [NtfsEntry; 32] = [NtfsEntry {
     name: [0; 48], name_len: 0, size: 0, is_dir: false, mft_ref: 0,
 }; 32];
@@ -503,9 +506,7 @@ fn parse_index_buffer(buf: &[u8], size: usize) -> usize {
     if start >= end {
         return 0;
     }
-    let before = unsafe { NENT };
-    parse_index_entries(buf, start, end);
-    unsafe { NENT.saturating_sub(before) }
+    parse_index_entries(buf, start, end)
 }
 
 pub fn list_directory(mft_ref: u32) -> bool {
@@ -515,6 +516,9 @@ pub fn list_directory(mft_ref: u32) -> bool {
         INDEX_REAL_SIZE = 0;
         INDEX_BLOCK_SIZE = 4096;
         INDEX_BUFFERS_READ = 0;
+        INDEX_ROOT_ENTRIES = 0;
+        INDEX_ALLOCATION_ENTRIES = 0;
+        INDEX_TOTAL_PARSED = 0;
     }
     let mut rec = [0u8; 1024];
     let rec_size = unsafe { MFT_REC_SIZE as usize };
@@ -558,7 +562,11 @@ pub fn list_directory(mft_ref: u32) -> bool {
                     }
                 }
                 if val_len > 32 {
-                    parse_index_entries(&rec, base + 32, base + val_len);
+                    let n = parse_index_entries(&rec, base + 32, base + val_len);
+                    unsafe {
+                        INDEX_ROOT_ENTRIES += n;
+                        INDEX_TOTAL_PARSED += n;
+                    }
                 }
             }
         } else if atype == 0xA0 && nonres != 0 {
@@ -588,7 +596,11 @@ pub fn list_directory(mft_ref: u32) -> bool {
                 }
                 if apply_index_fixup(&mut buf[..block_size], block_size) {
                     unsafe { INDEX_BUFFERS_READ += 1; }
-                    let _ = parse_index_buffer(&buf[..block_size], block_size);
+                    let n = parse_index_buffer(&buf[..block_size], block_size);
+                    unsafe {
+                        INDEX_ALLOCATION_ENTRIES += n;
+                        INDEX_TOTAL_PARSED += n;
+                    }
                 }
                 off += block_size;
             }
@@ -605,8 +617,9 @@ fn list_root() -> bool {
     list_directory(5)
 }
 
-fn parse_index_entries(rec: &[u8], mut off: usize, end: usize) {
-    while off + 16 <= end && unsafe { NENT } < 32 {
+fn parse_index_entries(rec: &[u8], mut off: usize, end: usize) -> usize {
+    let mut parsed = 0usize;
+    while off + 16 <= end {
         let mft_lo = u32::from_le_bytes([rec[off], rec[off + 1], rec[off + 2], rec[off + 3]]);
         let entry_size = u16::from_le_bytes([rec[off + 8], rec[off + 9]]) as usize;
         let flags = u16::from_le_bytes([rec[off + 12], rec[off + 13]]);
@@ -659,19 +672,23 @@ fn parse_index_entries(rec: &[u8], mut off: usize, end: usize) {
             if nl > 0 && ns != 2 {
                 let is_dir = (flags_fn & 0x1000_0000) != 0;
                 unsafe {
-                    ENTRIES[NENT] = NtfsEntry {
-                        name,
-                        name_len: nl,
-                        size: real_size,
-                        is_dir,
-                        mft_ref: mft_lo,
-                    };
-                    NENT += 1;
+                    parsed += 1;
+                    if NENT < 32 {
+                        ENTRIES[NENT] = NtfsEntry {
+                            name,
+                            name_len: nl,
+                            size: real_size,
+                            is_dir,
+                            mft_ref: mft_lo,
+                        };
+                        NENT += 1;
+                    }
                 }
             }
         }
         off += entry_size;
     }
+    parsed
 }
 
 pub fn entry_count() -> usize {
@@ -795,6 +812,16 @@ pub fn diagnostic() {
                                     diag_str("[NTFSDIAG] DIRECTORY_ENTRIES=");
                                     diag_usize(entry_count());
                                     diag_str("\n");
+                                    diag_str("[NTFSDIAG] INDEX_ROOT_ENTRIES=");
+                                    unsafe { diag_usize(INDEX_ROOT_ENTRIES); }
+                                    diag_str(" INDEX_ALLOCATION_ENTRIES=");
+                                    unsafe { diag_usize(INDEX_ALLOCATION_ENTRIES); }
+                                    diag_str("\n");
+                                    diag_str("[NTFSDIAG] TOTAL_PARSED=");
+                                    unsafe { diag_usize(INDEX_TOTAL_PARSED); }
+                                    diag_str(" TOTAL_STORED=");
+                                    diag_usize(entry_count());
+                                    diag_str(" STORAGE_LIMIT=32\n");
                                     // Inspect MFT#5 attributes to determine whether the directory
                                     // needs non-resident $INDEX_ALLOCATION traversal.
                                     let mut aoff = u16::from_le_bytes([r5[20], r5[21]]) as usize;
