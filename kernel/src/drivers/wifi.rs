@@ -210,16 +210,27 @@ pub fn activate_before() -> u32 { unsafe { ACTIVATE_BEFORE } }
 pub fn activate_after() -> u32 { unsafe { ACTIVATE_AFTER } }
 pub fn firmware_attempted() -> bool { unsafe { FW_ATTEMPTED } }
 pub fn firmware_loaded() -> bool { unsafe { FW_LOADED } }
-pub fn firmware_version() -> u32 { upub fn load_firmware() -> bool {
+pub fn firmware_version() -> u32 { unsafe { FW_VER } }
+pub fn firmware_inst_size() -> u32 { unsafe { FW_INST_SIZE } }
+pub fn firmware_data_size() -> u32 { unsafe { FW_DATA_SIZE } }
+pub fn firmware_exec_attempted() -> bool { unsafe { FW_EXEC_ATTEMPTED } }
+pub fn firmware_exec_started() -> bool { unsafe { FW_EXEC_STARTED } }
+
+fn fw_le32(b: &[u8], off: usize) -> u32 {
+    (b[off] as u32) | ((b[off + 1] as u32) << 8) |
+    ((b[off + 2] as u32) << 16) | ((b[off + 3] as u32) << 24)
+}
+
+pub fn load_firmware() -> bool {
     unsafe {
         FW_ATTEMPTED = true;
         FW_LOADED = false;
         if !ACTIVATE_OK || MMIO == 0 || !MMIO_MAPPED {
-            serial::write_str("[WIFI] FW=NOT-ATTEMPTED activation prerequisite missing\\n");
+            serial::write_str("[WIFI] FW=NOT-ATTEMPTED activation prerequisite missing\n");
             return false;
         }
         if IWL2030_FW.len() < 88 {
-            serial::write_str("[WIFI] FW=INVALID file too small\\n");
+            serial::write_str("[WIFI] FW=INVALID file too small\n");
             return false;
         }
 
@@ -228,7 +239,7 @@ pub fn firmware_version() -> u32 { upub fn load_firmware() -> bool {
         if fw_le32(IWL2030_FW, 0) != 0 || magic != IWL_TLV_UCODE_MAGIC {
             serial::write_str("[WIFI] FW=UNSUPPORTED_FORMAT MAGIC=");
             serial::write_hex(magic as usize);
-            serial::write_str("\\n");
+            serial::write_str("\n");
             return false;
         }
 
@@ -246,12 +257,12 @@ pub fn firmware_version() -> u32 { upub fn load_firmware() -> bool {
         serial::write_usize(api as usize);
         serial::write_str(" BUILD=");
         serial::write_usize(build as usize);
-        serial::write_str("\\n");
+        serial::write_str("\n");
 
         let dma_base = (&FW_DMA_BUF.0 as *const u8) as u64;
         serial::write_str("[WIFI] FW DMA_BUFFER=");
         serial::write_hex(dma_base as usize);
-        serial::write_str("\\n");
+        serial::write_str("\n");
 
         let load_chunk = |dst: u32, src: &[u8]| -> bool {
             if src.is_empty() || src.len() > FH_MEM_TB_MAX_LENGTH || (src.len() & 3) != 0 {
@@ -325,88 +336,7 @@ pub fn firmware_version() -> u32 { upub fn load_firmware() -> bool {
             let (dst, seen) = match tlv_type {
                 1 if !inst_seen => {
                     inst_seen = true;
-                    inst_size = tlv_len;
-                    (IWLAGN_RTC_INST_LOWER_BOUND, true)
-                }
-                2 if !data_seen => {
-                    data_seen = true;
-                    data_size = tlv_len;
-                    (IWLAGN_RTC_DATA_LOWER_BOUND, true)
-                }
-                _ => (0, false),
-            };
-
-            if seen {
-                let mut off = 0usize;
-                while off < tlv_len {
-                    let chunk = core::cmp::min(FH_MEM_TB_MAX_LENGTH, tlv_len - off) & !3usize;
-                    if chunk == 0 || !load_chunk(
-                        dst + off as u32,
-                        &IWL2030_FW[data_start + off..data_start + off + chunk]
-                    ) {
-                        serial::write_str("[WIFI] FW SERVICE-DMA=TIMEOUT dst=");
-                        serial::write_hex((dst + off) as usize);
-                        serial::write_str("\\n");
-                        return false;
-                    }
-                    off += chunk;
-                }
-                serial::write_str("[WIFI] FW SERVICE-DMA section dst=");
-                serial::write_hex(dst as usize);
-                serial::write_str(" bytes=");
-                serial::write_usize(tlv_len);
-                serial::write_str(" OK\\n");
-            }
-
-            pos = next;
-        }
-
-        if !inst_seen || !data_seen {
-            serial::write_str("[WIFI] FW TLV=RUNTIME_SECTIONS_MISSING\\n");
-            return false;
-        }
-
-        FW_INST_SIZE = inst_size as u32;
-        FW_DATA_SIZE = data_size as u32;
-        FW_LOADED = true;
-        NEEDS_FW = false;
-        serial::write_str("[WIFI] FW LOAD=OK via Intel FH service DMA\\n");
-        true
-    }
-}
-
-v_len;
-                        if !write_target_mem(IWLAGN_RTC_DATA_LOWER_BOUND, &IWL2030_FW[data_start..data_end]) {
-                            serial::write_str("[WIFI] FW DATA WRITE=FAIL\n");
-                            return false;
-                        }
-                        serial::write_str("[WIFI] FW TLV DATA BYTES=");
-                        serial::write_usize(tlv_len);
-                        serial::write_str("\n");
-                    }
-                }
-                _ => {}
-            }
-
-            pos = next;
-        }
-
-        if !inst_seen || !data_seen {
-            serial::write_str("[WIFI] FW TLV=RUNTIME_SECTIONS_MISSING\n");
-            return false;
-        }
-
-        FW_INST_SIZE = inst_size as u32;
-        FW_DATA_SIZE = data_size as u32;
-        FW_LOADED = true;
-        NEEDS_FW = false;
-        serial::write_str("[WIFI] FW LOAD=OK runtime TLV INST+DATA written to SRAM\n");
-        serial::write_str("[WIFI] FW EXECUTION=NOT-YET IRQ/RX/TX=NOT-STARTED\n");
-        true
-    }
-}
-
-/// Release the Intel 2000/2030 runtime uCode from host reset after its
+                    inst_size = tl/// Release the Intel 2000/2030 runtime uCode from host reset after its
 /// runtime instruction/data sections have been written to device SRAM.
 /// This is deliberately a boot-only step: Aether does not claim ALIVE until
 /// the firmware notification is received through the future RX/interrupt path.
@@ -415,7 +345,7 @@ pub fn start_firmware() -> bool {
         FW_EXEC_ATTEMPTED = false;
         FW_EXEC_STARTED = false;
         if !FW_LOADED || !ACTIVATE_OK || MMIO == 0 || !MMIO_MAPPED {
-            serial::write_str("[WIFI] FW EXEC=NOT-ATTEMPTED prerequisite missing\\n");
+            serial::write_str("[WIFI] FW EXEC=NOT-ATTEMPTED prerequisite missing\n");
             return false;
         }
         FW_EXEC_ATTEMPTED = true;
@@ -429,7 +359,7 @@ pub fn start_firmware() -> bool {
         serial::write_hex(after as usize);
         serial::write_str(" RESULT=");
         serial::write_str(if FW_EXEC_STARTED { "STARTED" } else { "FAILED" });
-        serial::write_str(" ALIVE=NOT-YET RX/IRQ=NOT-STARTED\\n");
+        serial::write_str(" ALIVE=NOT-YET RX/IRQ=NOT-STARTED\n");
         FW_EXEC_STARTED
     }
 }
@@ -443,7 +373,7 @@ pub fn activate_nic() -> bool {
         ACTIVATE_BEFORE = 0;
         ACTIVATE_AFTER = 0;
         if !RESET_OK || MMIO == 0 || !MMIO_MAPPED {
-            serial::write_str("[WIFI] ACTIVATE=NOT-ATTEMPTED reset prerequisite missing\\n");
+            serial::write_str("[WIFI] ACTIVATE=NOT-ATTEMPTED reset prerequisite missing\n");
             return false;
         }
         let gp = (MMIO + CSR_GP_CNTRL) as *mut u32;
@@ -467,7 +397,7 @@ pub fn activate_nic() -> bool {
         serial::write_hex(ready as usize);
         serial::write_str(" RESULT=");
         serial::write_str(if ACTIVATE_OK { "MAC_CLOCK_READY" } else { "TIMEOUT" });
-        serial::write_str("\\n");
+        serial::write_str("\n");
         ACTIVATE_OK
     }
 }
@@ -484,7 +414,7 @@ pub fn software_reset() -> bool {
         RESET_BEFORE = 0;
         RESET_AFTER = 0;
         if !FOUND || !MMIO_MAPPED || MMIO == 0 {
-            serial::write_str("[WIFI] RESET=NOT-ATTEMPTED prerequisite missing\\n");
+            serial::write_str("[WIFI] RESET=NOT-ATTEMPTED prerequisite missing\n");
             return false;
         }
 
@@ -494,7 +424,7 @@ pub fn software_reset() -> bool {
         RESET_ATTEMPTED = true;
         serial::write_str("[WIFI] RESET path=INTEL_CSR_RESET SW_RESET=0x80 BEFORE=");
         serial::write_hex(before as usize);
-        serial::write_str("\\n");
+        serial::write_str("\n");
 
         // Exact device-family operation documented in iwlwifi gen1/gen2:
         // set CSR_RESET_REG_FLAG_SW_RESET, then wait 5-6 ms.
@@ -516,7 +446,7 @@ pub fn software_reset() -> bool {
         serial::write_hex(after as usize);
         serial::write_str(" RESULT=");
         serial::write_str(if RESET_OK { "READABLE" } else { "MMIO-FAIL" });
-        serial::write_str("\\n");
+        serial::write_str("\n");
         RESET_OK
     }
 }
@@ -540,7 +470,7 @@ pub fn probe_capabilities() {
         PCIE_CAP_OFF = 0;
         PCIE_FLR_SUPPORTED = false;
         if !FOUND {
-            serial::write_str("[WIFI] CAPS=NO-DEVICE\\n");
+            serial::write_str("[WIFI] CAPS=NO-DEVICE\n");
             return;
         }
 
@@ -551,7 +481,7 @@ pub fn probe_capabilities() {
 
         serial::write_str("[WIFI] CAPS PTR=");
         serial::write_hex(ptr as usize);
-        serial::write_str("\\n");
+        serial::write_str("\n");
 
         while ptr >= 0x40 && count < 48 {
             let off = ptr & 0xFC;
@@ -564,7 +494,7 @@ pub fn probe_capabilities() {
             serial::write_hex(cap_id as usize);
             serial::write_str(" NEXT=");
             serial::write_hex(next as usize);
-            serial::write_str("\\n");
+            serial::write_str("\n");
 
             match cap_id {
                 0x01 => { CAP_PM = true; }
@@ -599,7 +529,7 @@ pub fn probe_capabilities() {
         serial::write_str(if CAP_MSI { "YES" } else { "NO" });
         serial::write_str(" MSIX=");
         serial::write_str(if CAP_MSIX { "YES" } else { "NO" });
-        serial::write_str(" READ=YES\\n");
+        serial::write_str(" READ=YES\n");
     }
 }
 
@@ -608,7 +538,7 @@ pub fn probe_capabilities() {
 pub fn probe_prerequisites() {
     unsafe {
         if !FOUND {
-            serial::write_str("[WIFI] PREREQ=NO-DEVICE\\n");
+            serial::write_str("[WIFI] PREREQ=NO-DEVICE\n");
             return;
         }
         let cmdstat = pci_r32(BUS, DEV, FUNC, 0x04);
@@ -630,9 +560,9 @@ pub fn probe_prerequisites() {
         serial::write_str(if MMIO_MAPPED { "READY" } else { "NOT-MAPPED" });
         serial::write_str(" FW=");
         serial::write_str(if NEEDS_FW { "REQUIRED" } else { "LOADED" });
-        serial::write_str("\\n");
-        serial::write_str("[WIFI] PREREQ RESET=NOT-TOUCHED INTERRUPTS=NOT-ENABLED DMA=NOT-STARTED\\n");
-        serial::write_str("[WIFI] PREREQ firmware loader=NOT-IMPLEMENTED (contract only)\\n");
+        serial::write_str("\n");
+        serial::write_str("[WIFI] PREREQ RESET=NOT-TOUCHED INTERRUPTS=NOT-ENABLED DMA=NOT-STARTED\n");
+        serial::write_str("[WIFI] PREREQ firmware loader=NOT-IMPLEMENTED (contract only)\n");
     }
 }
 
@@ -672,7 +602,7 @@ pub fn survey() {
                     serial::write_hex(subsys as usize);
                     serial::write_str(" BAR0=");
                     serial::write_hex(bar0 as usize);
-                    serial::write_str(" (READ-ONLY)\\n");
+                    serial::write_str(" (READ-ONLY)\n");
                     return;
                 }
             }
@@ -680,7 +610,7 @@ pub fn survey() {
         FOUND = false;
         READY = false;
         NEEDS_FW = true;
-        serial::write_str("[WIFI] SURVEY no Intel WLAN on buses 0..31\\n");
+        serial::write_str("[WIFI] SURVEY no Intel WLAN on buses 0..31\n");
     }
 }
 
