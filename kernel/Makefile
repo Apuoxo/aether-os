@@ -20,7 +20,7 @@ $(BUILD_DIR)/calculator_blob.rs: $(BUILD_DIR)/calculator.elf | $(BUILD_DIR)
 
 $(BUILD_DIR)/iwlwifi-2030-6.ucode: | $(BUILD_DIR)
 	@if [ ! -s $@ ]; then curl -L --fail --silent --show-error "https://kernel.googlesource.com/pub/scm/linux/kernel/git/firmware/linux-firmware.git/+/refs/tags/20250211/iwlwifi-2030-6.ucode?format=TEXT" | base64 -d > $@; fi
-	@test "$(wc -c < "$@")" -eq 707392
+	wc -c < $@ | grep -q "^707392 "
 
 $(BUILD_DIR)/calculator.elf: | $(BUILD_DIR)
 	@if [ ! -f $@ ]; then printf '%s\\n' 'calculator ELF not supplied; building kernel without bundled Calculator' >&2; printf '' > $@; fi
