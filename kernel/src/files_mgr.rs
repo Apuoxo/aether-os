@@ -59,9 +59,8 @@ fn put_str(b:&mut [u8;64],p:&mut usize,s:&[u8]){let mut i=0;while i<s.len()&&*p<
 fn put_num(b:&mut [u8;64],p:&mut usize,mut n:usize){let mut d=[0u8;10];let mut c=0;if n==0{d[0]=b'0';c=1;}while n>0&&c<10{d[c]=(n%10)as u8+b'0';n/=10;c+=1;}while c>0&&*p<63{c-=1;b[*p]=d[c];*p+=1;}}
 fn trace_ntfs(tag:&[u8]){let n=fs_ntfs::entry_count();let mut b=[0u8;64];let mut p=0usize;put_str(&mut b,&mut p,tag);put_str(&mut b,&mut p,b" n=");put_num(&mut b,&mut p,n);let mut i=0usize;while i<3&&i<n{if let Some(e)=fs_ntfs::entry(i){put_str(&mut b,&mut p,b" ");put_num(&mut b,&mut p,i);put_str(&mut b,&mut p,b"=");let mut k=0;while k<e.name_len&&k<12&&p<62{put_str(&mut b,&mut p,&e.name[k..k+1]);k+=1;}}i+=1;}status(&b[..p]);}
 fn trace_partition_click(mx:i32,my:i32,row:i32,part_no:i32){let mut b=[0u8;64];let mut p=0usize;put_str(&mut b,&mut p,b"PCLICK mx=");put_num(&mut b,&mut p,mx.max(0) as usize);put_str(&mut b,&mut p,b" my=");put_num(&mut b,&mut p,my.max(0) as usize);put_str(&mut b,&mut p,b" row=");put_num(&mut b,&mut p,row.max(0) as usize);put_str(&mut b,&mut p,b" part=");put_num(&mut b,&mut p,part_no.max(0) as usize);status(&b[..p]);}
-const ROW_H:i32=32;
+const ROW_H:i32=24;
 const ROW_TOP:i32=30;
-fn visible_rows(h:usize)->usize{if h<=ROW_TOP{0}else{(h-ROW_TOP)/ROW_H as usize}}
 fn hit_row(list_top:i32,my:i32)->i32{if my<list_top+ROW_TOP{-1}else{(my-list_top-ROW_TOP)/ROW_H}}
 fn set_root(){unsafe{CWD[0]=b'/';CWD_LEN=1;VIEW=VIEW_ROOT;SEL=-1;}}
 fn push_hist(){unsafe{if HIST_N<8{let mut i=0;while i<32{HIST[HIST_N][i]=CWD[i];i+=1;}HIST_LEN[HIST_N]=CWD_LEN;HIST_N+=1;HIST_I=HIST_N;}}}
@@ -198,10 +197,10 @@ fn draw_computer(wx:usize,y:usize,ww:usize,h:usize){
                 j+=1;
             }
             graphics::draw_str(wx+52,cy+30,"Partitions:",DIM);
-            draw_num(wx+132,cy+30,parts_on_disk as u32);
-            graphics::draw_str(wx+145,cy+30,"-",DIM);
-            draw_num(wx+166,cy+30,total_mb);
-            graphics::draw_str(wx+214,cy+30,"MB",DIM);
+            draw_num(wx+112,cy+30,parts_on_disk as u32);
+            graphics::draw_str(wx+145,cy+30,"•",DIM);
+            draw_num(wx+157,cy+30,total_mb);
+            graphics::draw_str(wx+198,cy+30,"MB",DIM);
             graphics::fill_rect(wx+52,cy+50,ww.saturating_sub(68),8,TOOL2);
             graphics::border_rect(wx+52,cy+50,ww.saturating_sub(68),8,BORDER);
             row+=1;
@@ -228,7 +227,7 @@ fn draw_disk(wx:usize,y:usize,ww:usize,h:usize){
     }
     graphics::fill_rect(wx,y+26,ww,24,TOOL2);
     graphics::draw_str(wx+8,y+34,"Disk",TEXT);
-    graphics::draw_str(wx+76,y+34,"Partition",TEXT);
+    graphics::draw_str(wx+58,y+34,"Partition",TEXT);
     graphics::draw_str(wx+140,y+34,"Filesystem",TEXT);
     graphics::draw_str(wx+280,y+34,"Size MB",TEXT);
     unsafe{
@@ -239,8 +238,8 @@ fn draw_disk(wx:usize,y:usize,ww:usize,h:usize){
                 let ry=y+52+row*24;
                 if SEL==row as i32{graphics::fill_rect(wx,ry,ww,24,SELECT);}
                 icon::blit(icon::IconId::MyComputer,wx+4,ry-1,false);
-                draw_num(wx+44,ry+7,p.disk as u32);
-                draw_num(wx+108,ry+7,p.index as u32);
+                draw_num(wx+28,ry+7,p.disk as u32);
+                draw_num(wx+92,ry+7,p.index as u32);
                 graphics::draw_str(wx+140,ry+7,part::type_name(p.ptype),DIM);
                 draw_num(wx+280,ry+7,p.sectors/2048);
                 row+=1;
@@ -258,9 +257,8 @@ fn draw_fat(wx:usize,y:usize,ww:usize,h:usize){
     graphics::draw_str(wx+350,y+9,"Size",TEXT);
     let n=fs_fat::entry_count();
     if n==0{graphics::draw_str(wx+16,y+52,"This volume is empty or unreadable.",DIM);return;}
-    let max_rows=visible_rows(h);
     let mut i=0usize;
-    while i<n&&i<max_rows{
+    while i<n&&i<32{
         if let Some(e)=fs_fat::entry(i){
             let ry=y+ROW_TOP as usize+i*ROW_H as usize;
             unsafe{if SEL==i as i32{graphics::fill_rect(wx,ry,ww,24,SELECT);}}
@@ -284,37 +282,20 @@ fn draw_ntfs(wx:usize,y:usize,ww:usize,h:usize){
         graphics::draw_str(wx+16,y+70,"NTFS is currently mounted read-only.",DIM);
         return;
     }
-    let max_rows=visible_rows(h);
-    let mut shown=0usize;
-    let mut pass=0usize;
-    while pass<2&&shown<max_rows{
-        let mut i=0usize;
-        while i<n&&shown<max_rows{
-            if let Some(e)=fs_ntfs::entry(i){
-                let hidden_dot=e.name_len==1&&e.name[0]==b'.';
-                let hidden_sys=e.name_len>0&&e.name[0]==b'$';
-                let show=(pass==0&&e.is_dir)||(pass==1&&!e.is_dir);
-                if show&&!hidden_dot&&!hidden_sys{
-                    let ry=y+ROW_TOP as usize+shown*ROW_H as usize;
-                    unsafe{
-                        if SEL==i as i32{graphics::fill_rect(wx,ry,ww,ROW_H as usize,SELECT);}
-                        if HOVER==i as i32{graphics::border_rect(wx,ry,ww,ROW_H as usize,BLUE);}
-                    }
-                    if e.is_dir{icon::blit(icon::IconId::Folder,wx+7,ry,false);}else{icon::blit(icon::IconId::File,wx+7,ry,false);}
-                    let col=unsafe{if SEL==i as i32{BLUE}else{TEXT}};
-                    let mut k=0;
-                    while k<e.name_len&&k<27{graphics::draw_char(wx+42+k*8,ry+12,e.name[k],col);k+=1;}
-                    graphics::draw_str(wx+250,ry+12,if e.is_dir{"Folder"}else{"File"},DIM);
-                    if !e.is_dir{draw_num(wx+350,ry+12,if e.size>0xFFFF_FFFF{0xFFFF_FFFF}else{e.size as u32});}
-                    shown+=1;
-                }
-            }
-            i+=1;
+    let mut i=0usize;
+    while i<n&&i<32{
+        if let Some(e)=fs_ntfs::entry(i){
+            let ry=y+ROW_TOP as usize+i*ROW_H as usize;
+            unsafe{if SEL==i as i32{graphics::fill_rect(wx,ry,ww,24,SELECT);}if HOVER==i as i32{graphics::border_rect(wx,ry,ww,24,BLUE);}}
+            if e.is_dir{icon::blit(icon::IconId::Folder,wx+7,ry-2,false);}else{icon::blit(icon::IconId::File,wx+7,ry-2,false);}
+            let col=unsafe{if SEL==i as i32{BLUE}else{TEXT}};
+            let mut k=0;while k<e.name_len&&k<27{graphics::draw_char(wx+42+k*8,ry+8,e.name[k],col);k+=1;}
+            graphics::draw_str(wx+250,ry+8,if e.is_dir{"Folder"}else{"File"},DIM);
+            if !e.is_dir{draw_num(wx+350,ry+8,if e.size>0xFFFF_FFFF{0xFFFF_FFFF}else{e.size as u32});}
         }
-        pass+=1;
+        i+=1;
     }
 }
-
 fn draw_list(wx:usize,y:usize,ww:usize,h:usize){
     if !fs::is_mounted(){graphics::draw_str(wx+10,y+10,"AetherFS is not mounted.",RED);return;}
     let mut a=[fs::ListItem{name:[0;24],name_len:0,size:0,is_dir:false};16];
@@ -548,7 +529,7 @@ pub fn on_click(wx:i32,wy:i32,ww:i32,wh:i32,title_h:i32,mx:i32,my:i32,right:bool
             }
             else if VIEW==VIEW_NTFS{
                 let n=fs_ntfs::entry_count();
-                if my<list_top+ROW_TOP{return false;}
+                if my<list_top+28{return false;}
                 let row=hit_row(list_top,my);
                 if row>=0&&row<n as i32{
                     SEL=row;
@@ -576,7 +557,7 @@ pub fn on_click(wx:i32,wy:i32,ww:i32,wh:i32,title_h:i32,mx:i32,my:i32,right:bool
             else if VIEW==VIEW_ROOT{
                 let mut a=[fs::ListItem{name:[0;24],name_len:0,size:0,is_dir:false};16];
                 let n=fs::list_ex_path(core::str::from_utf8_unchecked(&CWD[..CWD_LEN]),&mut a);
-                if my<list_top+ROW_TOP{return false;}
+                if my<list_top+24{return false;}
                 let row=hit_row(list_top,my);
                 if row>=0&&row<n as i32{
                     if SEL==row{
