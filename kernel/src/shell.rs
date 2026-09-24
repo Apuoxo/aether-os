@@ -247,6 +247,18 @@ fn cmd_wf() {
     write_str("  FLR_SUPPORTED=");
     write_str(if crate::drivers::wifi::pcie_flr_supported() { "YES" } else { "NO" });
     write_str("\n");
+    // FLR is absent on this 2230, so use the device-specific iwlwifi CSR reset path.
+    write_str("  RESET_PREP: ");
+    write_str(if crate::drivers::wifi::pcie_flr_supported() { "FLR_AVAILABLE" } else { "FLR_ABSENT; CSR_PATH" });
+    write_str("\n");
+    let reset_ok = crate::drivers::wifi::software_reset();
+    write_str("  RESET_RESULT=");
+    write_str(if reset_ok { "READABLE" } else { "FAILED/NOT-ATTEMPTED" });
+    write_str(" BEFORE=");
+    write_hex(crate::drivers::wifi::reset_before() as usize);
+    write_str(" AFTER=");
+    write_hex(crate::drivers::wifi::reset_after() as usize);
+    write_str("\n");
     write_str("  PCIE_LINK SPEED=");
     write_hex(crate::drivers::wifi::pcie_link_speed() as usize);
     write_str(" WIDTH=");
