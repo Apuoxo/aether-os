@@ -236,6 +236,17 @@ fn cmd_wf() {
         write_str(" API=5..6\n");
     }
     crate::drivers::wifi::probe_prerequisites();
+    write_str("  PREREQ PCI_CMD=");
+    write_hex(crate::drivers::wifi::pci_command() as usize);
+    write_str(" STATUS=");
+    write_hex(crate::drivers::wifi::pci_status() as usize);
+    write_str(" IRQ_LINE=");
+    write_usize(crate::drivers::wifi::irq_line() as usize);
+    write_str(" IRQ_PIN=");
+    write_usize(crate::drivers::wifi::irq_pin() as usize);
+    write_str(" READ=");
+    write_str(if crate::drivers::wifi::prerequisites_read() { "YES" } else { "NO" });
+    write_str("\n");
 
     let eth = crate::drivers::net::eth_found();
     write_str("ETHERNET: ");
