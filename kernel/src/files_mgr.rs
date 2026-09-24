@@ -156,6 +156,18 @@ fn fill_props_selected(){
         }
     }
 }
+fn context_item(rel:i32)->Option<usize>{
+    if rel>=4&&rel<28{return Some(0);}
+    if rel>=28&&rel<50{return Some(1);}
+    if rel>=58&&rel<80{return Some(2);}
+    if rel>=80&&rel<102{return Some(3);}
+    if rel>=102&&rel<124{return Some(4);}
+    if rel>=124&&rel<146{return Some(5);}
+    if rel>=156&&rel<180{return Some(6);}
+    if rel>=180&&rel<202{return Some(7);}
+    if rel>=202&&rel<224{return Some(8);}
+    None
+}
 fn draw_context(){
     unsafe{
         let x=CTX_X as usize;
@@ -601,7 +613,8 @@ pub fn on_click(wx:i32,wy:i32,ww:i32,wh:i32,title_h:i32,mx:i32,my:i32,right:bool
         if CONFIRM_DEL{let cx=ww/2;let cy=wh/2;if my>wy+cy+20&&my<wy+cy+60{if mx<wx+cx{delete_selected();}CONFIRM_DEL=false;}return true;}
         if CTX{
             if mx>=CTX_X&&mx<CTX_X+218&&my>=CTX_Y&&my<CTX_Y+224{
-                let r=(my-CTX_Y)/20;
+                let rel=my-CTX_Y;
+                let r=match context_item(rel){Some(v)=>v,None=>{CTX=false;return true;}};
                 match r{
                     0=>open_selected(),
                     1=>status(b"Open with is not implemented"),
