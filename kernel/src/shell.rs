@@ -274,12 +274,12 @@ fn run_line(line: &[u8], len: usize) {
     let mut s = 0usize;
     while s < len && line[s] == b' ' { s += 1; }
     let mut e = len;
-    while e > s && (line[e - 1] == b' ' || line[e - 1] == b'\\r') { e -= 1; }
+    while e > s && (line[e - 1] == b' ' || line[e - 1] == b'\r') { e -= 1; }
     let clen = e.saturating_sub(s);
     if eq(line, s, clen, b"WF") || eq(line, s, clen, b"wf") {
         cmd_wf();
     } else {
-        write_str("unknown — WF only (WiFi implementation test)\\n");
+        write_str("unknown — WF only (WiFi implementation test)\n");
     }
 }
 
