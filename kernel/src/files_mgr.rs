@@ -299,6 +299,16 @@ fn draw_context(){
     }
 }
 
+
+fn draw_confirm(wx:usize,wy:usize,ww:usize,wh:usize){
+    let x=wx+ww/2-120;let y=wy+wh/2-45;
+    graphics::fill_rect(x,y,240,90,WHITE);
+    graphics::border_rect(x,y,240,90,BORDER);
+    graphics::draw_str(x+18,y+18,"Delete selected item?",TEXT);
+    btn(x+24,y+52,70,"Delete",true);
+    btn(x+112,y+52,70,"Cancel",false);
+}
+
 pub fn draw(wx:usize,wy:usize,ww:usize,wh:usize,title_h:usize){
     let by=wy+title_h;
     graphics::fill_rect(wx+3,by,ww-6,wh.saturating_sub(title_h+3),WHITE);
