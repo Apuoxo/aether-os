@@ -1232,18 +1232,28 @@ fn handle_mouse_buttons(buttons: u8) {
                     let sw = WINS[idx].w;
                     let sh = WINS[idx].h;
                     if SETTINGS_VIEW == 0 {
-                        if mx >= sx + 16 && mx < sx + 155 && my >= sy + 66 && my < sy + 108 {
-                            SETTINGS_VIEW = 1;
-                            CURSOR_PENDING = match unsafe { CURSOR_COLOR } {
-                                0x00000000 => 1,
-                                0x00E81123 => 2,
-                                0x0000A000 => 3,
-                                0x000000CC => 4,
-                                _ => 0,
-                            };
-                            DIRTY_FULL = true;
+                        // Ten native Settings categories. Mouse is functional;
+                        // the rest open explicit future-subsystem placeholders.
+                        let mut i = 0usize;
+                        while i < 10 {
+                            let row_y = sy + 66 + (i as i32) * 25;
+                            if mx >= sx + 14 && mx < sx + 177 && my >= row_y - 2 && my < row_y + 21 {
+                                SETTINGS_VIEW = (i + 1) as u8;
+                                if i == 0 {
+                                    CURSOR_PENDING = match CURSOR_COLOR {
+                                        0x00000000 => 1,
+                                        0x00E81123 => 2,
+                                        0x0000A000 => 3,
+                                        0x000000CC => 4,
+                                        _ => 0,
+                                    };
+                                }
+                                DIRTY_FULL = true;
+                                break;
+                            }
+                            i += 1;
                         }
-                    } else {
+                    } else if SETTINGS_VIEW == 1 {
                         let colors: [u32; 5] = [0x00FFFFFF, 0x00000000, 0x00E81123, 0x0000A000, 0x000000CC];
                         let mut i = 0usize;
                         while i < 5 {
@@ -1267,6 +1277,14 @@ fn handle_mouse_buttons(buttons: u8) {
                                 CURSOR_PENDING = 0;
                                 DIRTY_FULL = true;
                             }
+                        }
+                    } else {
+                        // Future-category placeholder: Back returns to Settings home.
+                        let bx = sx + sw - 94;
+                        let by = sy + sh - 42;
+                        if mx >= bx && mx < bx + 78 && my >= by && my < by + 24 {
+                            SETTINGS_VIEW = 0;
+                            DIRTY_FULL = true;
                         }
                     }
                 } else if WINS[idx].kind == WinKind::Sound
@@ -1650,20 +1668,24 @@ fn draw_window(idx: usize) {
 fn draw_settings(wx: usize, wy: usize, ww: usize, wh: usize) {
     unsafe {
         graphics::fill_rect(wx + 3, wy + TITLE_H as usize, ww - 6, wh - TITLE_H as usize - 3, COL_CLIENT);
-        if SETTINGS_VIEW == 0 {
-            graphics::fill_rect(wx + 8, wy + 34, 145, wh - 50, 0x00FFFFFF);
-            graphics::border_rect(wx + 8, wy + 34, 145, wh - 50, 0x00808080);
-            graphics::draw_str(wx + 20, wy + 46, "Settings", COL_TEXT);
-            graphics::fill_rect(wx + 16, wy + 68, 129, 34, 0x00DCEBFA);
-            graphics::border_rect(wx + 16, wy + 68, 129, 34, 0x00316AC5);
-            graphics::draw_str(wx + 28, wy + 80, "Mouse", COL_TEXT);
-            graphics::draw_str(wx + 28, wy + 96, "Mouse and pointer", COL_TEXT_DIM);
-            graphics::border_rect(wx + 166, wy + 34, ww - 182, wh - 50, 0x00808080);
-            graphics::draw_str(wx + 182, wy + 48, "Settings", COL_TEXT);
-            graphics::draw_str(wx + 182, wy + 76, "Choose a category.", COL_TEXT_DIM);
-            graphics::draw_str(wx + 182, wy + 98, "Mouse", COL_TEXT);
-            graphics::draw_str(wx + 182, wy + 116, "Configure the mouse pointer and cursor.", COL_TEXT_DIM);
-        } else {
+
+        // Settings categories are intentionally present as native placeholders.
+        // Only Mouse is functional today; the other pages document the future
+        // driver/subsystem surfaces without pretending they are implemented.
+        let cats: [&str; 10] = [
+            "Mouse",
+            "Display",
+            "Sound",
+            "Network",
+            "Date and Time",
+            "Keyboard",
+            "Storage",
+            "Power",
+            "Devices",
+            "System",
+        ];
+
+        if SETTINGS_VIEW == 1 {
             graphics::draw_str(wx + 18, wy + 44, "Mouse", COL_TEXT);
             graphics::draw_str(wx + 18, wy + 62, "Mouse settings", COL_TEXT_DIM);
             graphics::border_rect(wx + 14, wy + 76, ww - 28, 150, 0x00808080);
@@ -1672,7 +1694,7 @@ fn draw_settings(wx: usize, wy: usize, ww: usize, wh: usize) {
             let names: [&str; 5] = ["White", "Black", "Red", "Green", "Blue"];
             let mut i = 0usize;
             while i < 5 {
-                let bx = wx + 28 + i * 88;
+                let bx = wx + 28 + (i as i32) * 88;
                 let by = wy + 112;
                 let selected = CURSOR_PENDING == i as u8;
                 graphics::fill_rect(bx, by, 68, 82, if selected { 0x00DCEBFA } else { 0x00FFFFFF });
@@ -1701,10 +1723,54 @@ fn draw_settings(wx: usize, wy: usize, ww: usize, wh: usize) {
             graphics::fill_rect(cancelx, by, 78, 24, COL_BTN_FACE);
             graphics::border_rect(cancelx, by, 78, 24, 0x00404040);
             graphics::draw_str(cancelx + 22, by + 8, "Cancel", COL_TEXT);
+            return;
+        }
+
+        if SETTINGS_VIEW == 0 {
+            graphics::fill_rect(wx + 8, wy + 34, 175, wh - 50, 0x00FFFFFF);
+            graphics::border_rect(wx + 8, wy + 34, 175, wh - 50, 0x00808080);
+            graphics::draw_str(wx + 20, wy + 44, "Settings", COL_TEXT);
+
+            let mut i = 0usize;
+            while i < cats.len() {
+                let row_y = wy + 66 + i * 25;
+                let selected = i == 0;
+                if selected {
+                    graphics::fill_rect(wx + 14, row_y - 2, 163, 23, 0x00DCEBFA);
+                    graphics::border_rect(wx + 14, row_y - 2, 163, 23, 0x00316AC5);
+                }
+                graphics::draw_str(wx + 24, row_y + 4, cats[i], COL_TEXT);
+                i += 1;
+            }
+
+            graphics::border_rect(wx + 196, wy + 34, ww - 212, wh - 50, 0x00808080);
+            graphics::draw_str(wx + 212, wy + 48, "Settings", COL_TEXT);
+            graphics::draw_str(wx + 212, wy + 76, "Configure Aether OS.", COL_TEXT_DIM);
+            graphics::draw_str(wx + 212, wy + 98, "Mouse", COL_TEXT);
+            graphics::draw_str(wx + 212, wy + 116, "Pointer and cursor settings are available.", COL_TEXT_DIM);
+            graphics::draw_str(wx + 212, wy + 150, "Other categories are prepared", COL_TEXT_DIM);
+            graphics::draw_str(wx + 212, wy + 166, "for future native drivers and services.", COL_TEXT_DIM);
+            return;
+        }
+
+        // Placeholder page for a future subsystem.
+        let idx = (SETTINGS_VIEW - 2) as usize;
+        if idx < cats.len() {
+            graphics::draw_str(wx + 18, wy + 44, cats[idx], COL_TEXT);
+            graphics::draw_str(wx + 18, wy + 62, "Settings", COL_TEXT_DIM);
+            graphics::border_rect(wx + 14, wy + 76, ww - 28, wh - 132, 0x00808080);
+            graphics::draw_str(wx + 30, wy + 104, "This section is prepared for future", COL_TEXT);
+            graphics::draw_str(wx + 30, wy + 122, "native Aether OS implementation.", COL_TEXT);
+            graphics::draw_str(wx + 30, wy + 150, "Status: not implemented yet", 0x00808000);
+            graphics::draw_str(wx + 30, wy + 178, "No fake controls are exposed.", COL_TEXT_DIM);
+            let bx = wx + ww - 94;
+            let by = wy + wh - 42;
+            graphics::fill_rect(bx, by, 78, 24, COL_BTN_FACE);
+            graphics::border_rect(bx, by, 78, 24, 0x00404040);
+            graphics::draw_str(bx + 24, by + 8, "Back", COL_TEXT);
         }
     }
 }
-
 fn draw_u32(x: usize, y: usize, n: u32, color: u32) {
     if n == 0 {
         graphics::draw_char(x, y, b'0', color);
