@@ -133,7 +133,7 @@ static mut Z_TOP: i32 = 3;
 // Terminal buffer
 const TERM_ROWS: usize = 128;
 const TERM_COLS: usize = 52;
-const TERM_VIEW_ROWS: usize = 15; // 15 history rows + 1 prompt row
+const TERM_VIEW_ROWS_MAX: usize = 48; // safety cap; actual viewport follows terminal window height
 static mut TERM_LINES: [[u8; TERM_COLS]; TERM_ROWS] = [[0; TERM_COLS]; TERM_ROWS];
 static mut TERM_LEN: [usize; TERM_ROWS] = [0; TERM_ROWS];
 static mut TERM_ROW: usize = 0;
@@ -158,9 +158,22 @@ fn term_clear() {
     }
 }
 
+fn term_visible_rows() -> usize {
+    unsafe {
+        if FOCUS < MAX_WIN && WINS[FOCUS].kind == WinKind::Terminal && WINS[FOCUS].visible {
+            let usable = (WINS[FOCUS].h - TITLE_H - 14) as usize;
+            let rows = usable / 10;
+            if rows < 2 { 2 } else if rows > TERM_VIEW_ROWS_MAX { TERM_VIEW_ROWS_MAX } else { rows }
+        } else {
+            2
+        }
+    }
+}
+
 fn term_scroll_up() {
     unsafe {
-        let max_view = if TERM_ROW + 1 > TERM_VIEW_ROWS { TERM_ROW + 1 - TERM_VIEW_ROWS } else { 0 };
+        let rows = term_visible_rows();
+        let max_view = if TERM_ROW + 1 > rows { TERM_ROW + 1 - rows } else { 0 };
         if TERM_VIEW < max_view {
             TERM_VIEW += 1;
             DIRTY_FULL = true;
@@ -918,7 +931,8 @@ fn handle_terminal_scroll_click(mx: i32, my: i32) -> bool {
             return false;
         }
         let total = TERM_ROW + 1;
-        let max_view = if total > TERM_VIEW_ROWS { total - TERM_VIEW_ROWS } else { 0 };
+        let view_rows = term_visible_rows();
+        let max_view = if total > view_rows { total - view_rows } else { 0 };
         if my < bar_top + 14 {
             term_scroll_up();
         } else if my >= bar_bottom - 14 {
@@ -1291,12 +1305,13 @@ fn draw_window(idx: usize) {
                     COL_TERM_BG,
                 );
                 let total = TERM_ROW + 1;
-                let max_start = if total > TERM_VIEW_ROWS { total - TERM_VIEW_ROWS } else { 0 };
+                let view_rows = term_visible_rows();
+                let max_start = if total > view_rows { total - view_rows } else { 0 };
                 let mut view = TERM_VIEW;
                 if view > max_start { view = max_start; }
                 let start = max_start - view;
                 let mut r = 0usize;
-                while r < TERM_VIEW_ROWS {
+                while r < view_rows {
                     let idx = start + r;
                     if idx < total {
                         let y = wy + TITLE_H as usize + 6 + r * 10;
@@ -1326,7 +1341,7 @@ fn draw_window(idx: usize) {
                     if track_bottom > track_top {
                         let track_h = track_bottom - track_top;
                         let thumb_h = if max_start == 0 { track_h } else {
-                            let h = (track_h * TERM_VIEW_ROWS) / total.max(TERM_VIEW_ROWS);
+                            let h = (track_h * view_rows) / total.max(view_rows);
                             if h < 12 { 12 } else if h > track_h { track_h } else { h }
                         };
                         let travel = track_h - thumb_h;
@@ -1338,7 +1353,7 @@ fn draw_window(idx: usize) {
                         graphics::fill_rect(bar_x + 2, thumb_y, 10, thumb_h, COL_ACCENT);
                     }
                 }
-                let y = wy + TITLE_H as usize + 6 + TERM_VIEW_ROWS * 10;
+                let y = wy + TITLE_H as usize + 6 + (view_rows.saturating_sub(1)) * 10;
                 if y + 8 < wy + wh && focused {
                     graphics::draw_str(wx + 8, y, "aether> ", 0x0000FF00);
                     let mut k = 0usize;
