@@ -241,7 +241,10 @@ fn term_write_str(s: &str) {
     for b in s.bytes() {
         term_putc(b);
     }
-    unsafe { DIRTY_FULL = true; }
+    unsafe {
+        DIRTY_FULL = true;
+        TERM_VIEW = 0; // new output follows live bottom
+    }
 }
 
 fn eq_cmd(cmd: &[u8], clen: usize, expect: &[u8]) -> bool {
