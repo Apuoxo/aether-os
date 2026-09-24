@@ -31,6 +31,21 @@ const CSR_INT_MASK: usize = 0x00C;
 const CSR_FH_INT_STATUS: usize = 0x010;
 const CSR_INT_BIT_FH_TX: u32 = 1 << 27;
 const CSR_FH_INT_TX_MASK: u32 = 0x0000_0003;
+const CSR_INT_BIT_FH_RX: u32 = 1 << 31;
+const CSR_INT_BIT_ALIVE: u32 = 1 << 0;
+const CSR_FH_INT_RX_MASK: u32 = (1 << 17) | (1 << 16);
+const FH_RSCSR_CHNL0: usize = FH_MEM_LOWER_BOUND + 0xBC0;
+const FH_RSCSR_STTS_WPTR: usize = FH_RSCSR_CHNL0 + 0x0;
+const FH_RSCSR_RBDCB_BASE: usize = FH_RSCSR_CHNL0 + 0x4;
+const FH_RSCSR_RBDCB_WPTR: usize = FH_RSCSR_CHNL0 + 0x8;
+const FH_RSCSR_RDPTR: usize = FH_RSCSR_CHNL0 + 0xC;
+const FH_RCSR_CHNL0_CONFIG: usize = FH_MEM_LOWER_BOUND + 0xC00;
+const FH_RCSR_CHNL0_FLUSH_RB_REQ: usize = FH_RCSR_CHNL0_CONFIG + 0x10;
+const FH_RSSR_RX_STATUS: usize = FH_MEM_LOWER_BOUND + 0xC40;
+const FH_RSCSR_FRAME_INVALID: u32 = 0x5555_0000;
+const FH_RX_RBD_COUNT: usize = 32;
+const FH_RX_BUF_SIZE: usize = 4096;
+const FH_RX_IRQ_VECTOR: u8 = 0x27;
 const FH_MEM_LOWER_BOUND: usize = 0x1000;
 const FH_TFDIB_CTRL0_SRVC: usize = FH_MEM_LOWER_BOUND + 0x900 + 8 * 9;
 const FH_TFDIB_CTRL1_SRVC: usize = FH_TFDIB_CTRL0_SRVC + 4;
@@ -48,6 +63,21 @@ const FH_TCSR_TB_IDX: u32 = 1 << 12;
 #[repr(align(4096))]
 struct FirmwareDmaBuf([u8; FH_MEM_TB_MAX_LENGTH]);
 static mut FW_DMA_BUF: FirmwareDmaBuf = FirmwareDmaBuf([0; FH_MEM_TB_MAX_LENGTH]);
+#[repr(align(256))]
+struct RxRbd([u32; FH_RX_RBD_COUNT]);
+#[repr(align(4096))]
+struct RxBuffers([[u8; FH_RX_BUF_SIZE]; FH_RX_RBD_COUNT]);
+#[repr(align(16))]
+struct RxStatus([u32; 2]);
+static mut RX_RBD: RxRbd = RxRbd([0; FH_RX_RBD_COUNT]);
+static mut RX_BUFFERS: RxBuffers = RxBuffers([[0; FH_RX_BUF_SIZE]; FH_RX_RBD_COUNT]);
+static mut RX_STATUS: RxStatus = RxStatus([0; 2]);
+static mut RX_READY: bool = false;
+static mut RX_READ: usize = 0;
+static mut RX_IRQ_COUNT: u32 = 0;
+static mut ALIVE_SEEN: bool = false;
+static mut ALIVE_VALID: u32 = 0;
+static mut ALIVE_SUBTYPE: u8 = 0;
 
 static mut FOUND: bool = false;
 static mut READY: bool = false; // phase1 ready = found + mapped
@@ -215,6 +245,92 @@ pub fn firmware_inst_size() -> u32 { unsafe { FW_INST_SIZE } }
 pub fn firmware_data_size() -> u32 { unsafe { FW_DATA_SIZE } }
 pub fn firmware_exec_attempted() -> bool { unsafe { FW_EXEC_ATTEMPTED } }
 pub fn firmware_exec_started() -> bool { unsafe { FW_EXEC_STARTED } }
+pub fn rx_ready() -> bool { unsafe { RX_READY } }
+pub fn rx_irq_count() -> u32 { unsafe { RX_IRQ_COUNT } }
+pub fn alive_seen() -> bool { unsafe { ALIVE_SEEN } }
+pub fn alive_valid() -> u32 { unsafe { ALIVE_VALID } }
+pub fn alive_subtype() -> u8 { unsafe { ALIVE_SUBTYPE } }
+
+unsafe fn init_rx_queue() -> bool {
+    if !MMIO_MAPPED || MMIO == 0 { return false; }
+    RX_READ = 0;
+    RX_IRQ_COUNT = 0;
+    ALIVE_SEEN = false;
+    ALIVE_VALID = 0;
+    ALIVE_SUBTYPE = 0;
+    let rbd_base = (&RX_RBD.0 as *const u32) as u64;
+    let status_base = (&RX_STATUS.0 as *const u32) as u64;
+    let mut i = 0usize;
+    while i < FH_RX_RBD_COUNT {
+        let buf = (&RX_BUFFERS.0[i][0] as *const u8) as u64;
+        RX_RBD.0[i] = (buf >> 8) as u32;
+        RX_BUFFERS.0[i][0] = 0;
+        i += 1;
+    }
+    RX_STATUS.0[0] = 0;
+    RX_STATUS.0[1] = 0;
+    core::ptr::write_volatile((MMIO + FH_RCSR_CHNL0_CONFIG) as *mut u32, 0);
+    core::ptr::write_volatile((MMIO + FH_RSCSR_RBDCB_WPTR) as *mut u32, 0);
+    core::ptr::write_volatile((MMIO + FH_RCSR_CHNL0_FLUSH_RB_REQ) as *mut u32, 0);
+    core::ptr::write_volatile((MMIO + FH_RSCSR_RDPTR) as *mut u32, 0);
+    core::ptr::write_volatile((MMIO + FH_RSCSR_RBDCB_BASE) as *mut u32, (rbd_base >> 8) as u32);
+    core::ptr::write_volatile((MMIO + FH_RSCSR_STTS_WPTR) as *mut u32, (status_base >> 4) as u32);
+    core::ptr::write_volatile((MMIO + FH_RSCSR_RBDCB_WPTR) as *mut u32, FH_RX_RBD_COUNT as u32);
+    core::ptr::write_volatile((MMIO + CSR_FH_INT_STATUS) as *mut u32, CSR_FH_INT_RX_MASK);
+    core::ptr::write_volatile((MMIO + CSR_INT) as *mut u32, CSR_INT_BIT_FH_RX | CSR_INT_BIT_ALIVE);
+    core::ptr::write_volatile((MMIO + CSR_INT_MASK) as *mut u32, CSR_INT_BIT_FH_RX | CSR_INT_BIT_ALIVE);
+    // 32 RBDs, 4 KiB buffers, host IRQ destination, ~0.5 ms timeout, DMA enabled.
+    let cfg = 0x8000_0000u32 | (5u32 << 20) | 0x0000_1000 | (0x11u32 << 4) | 0x0000_0004;
+    core::ptr::write_volatile((MMIO + FH_RCSR_CHNL0_CONFIG) as *mut u32, cfg);
+    RX_READY = true;
+    serial::write_str("[WIFI] RX-RING READY RBD=32 BUF=4K IRQ=HOST\n");
+    true
+}
+
+pub unsafe fn irq_handler() {
+    if !MMIO_MAPPED || MMIO == 0 { return; }
+    let inta = core::ptr::read_volatile((MMIO + CSR_INT) as *const u32);
+    if inta == 0 { return; }
+    RX_IRQ_COUNT = RX_IRQ_COUNT.wrapping_add(1);
+    let fh = core::ptr::read_volatile((MMIO + CSR_FH_INT_STATUS) as *const u32);
+    if (inta & CSR_INT_BIT_FH_RX) != 0 || (fh & CSR_FH_INT_RX_MASK) != 0 {
+        let hw = core::ptr::read_volatile((MMIO + FH_RSCSR_RDPTR) as *const u32) as usize & (FH_RX_RBD_COUNT - 1);
+        while RX_READ != hw {
+            let p = &RX_BUFFERS.0[RX_READ][0] as *const u8;
+            let len_flags = core::ptr::read_volatile(p as *const u32);
+            if len_flags != FH_RSCSR_FRAME_INVALID {
+                let len = (len_flags & 0x3FFF) as usize;
+                if len >= 8 && len <= FH_RX_BUF_SIZE - 4 {
+                    let cmd = core::ptr::read_volatile(p.add(4));
+                    if cmd == 1 {
+                        let subtype = core::ptr::read_volatile(p.add(4 + 10));
+                        let valid = core::ptr::read_volatile(p.add(4 + 20));
+                        ALIVE_SEEN = true;
+                        ALIVE_SUBTYPE = subtype;
+                        ALIVE_VALID = valid;
+                        serial::write_str("[WIFI] ALIVE cmd=1 subtype=");
+                        serial::write_usize(subtype as usize);
+                        serial::write_str(" valid=");
+                        serial::write_hex(valid as usize);
+                        serial::write_str(if valid == 1 { " RESULT=VALID\n" } else { " RESULT=INVALID\n" });
+                    } else {
+                        serial::write_str("[WIFI] RX cmd=");
+                        serial::write_hex(cmd as usize);
+                        serial::write_str(" len=");
+                        serial::write_usize(len);
+                        serial::write_str("\n");
+                    }
+                }
+            }
+            core::ptr::write_volatile(RX_BUFFERS.0[RX_READ].as_mut_ptr() as *mut u32, FH_RSCSR_FRAME_INVALID);
+            RX_READ = (RX_READ + 1) & (FH_RX_RBD_COUNT - 1);
+        }
+        core::ptr::write_volatile((MMIO + FH_RSCSR_RBDCB_WPTR) as *mut u32, RX_READ as u32 + FH_RX_RBD_COUNT as u32 - 1);
+        core::ptr::write_volatile((MMIO + CSR_FH_INT_STATUS) as *mut u32, CSR_FH_INT_RX_MASK);
+    }
+    core::ptr::write_volatile((MMIO + CSR_INT) as *mut u32, inta);
+}
+
 
 fn fw_le32(b: &[u8], off: usize) -> u32 {
     (b[off] as u32) | ((b[off + 1] as u32) << 8) |
@@ -399,6 +515,10 @@ pub fn start_firmware() -> bool {
             return false;
         }
         FW_EXEC_ATTEMPTED = true;
+        if !init_rx_queue() {
+            serial::write_str("[WIFI] RX-RING INIT=FAILED\n");
+            return false;
+        }
         let gp1_clr = (MMIO + 0x05C) as *mut u32;
         let csr = (MMIO + CSR_RESET) as *mut u32;
         core::ptr::write_volatile(gp1_clr, 0x0000_0006);
