@@ -278,6 +278,18 @@ fn cmd_wf() {
     write_usize(crate::drivers::wifi::firmware_data_size() as usize);
     write_str("\n");
     let fw_exec_ok = crate::drivers::wifi::start_firmware();
+    let cmdq_ok = if fw_exec_ok && crate::drivers::wifi::alive_seen() {
+        crate::drivers::wifi::init_command_queue()
+    } else { false };
+    write_str("  CMDQ=");
+    write_str(if cmdq_ok { "READY" } else { "NOT-READY" });
+    write_str("\n");
+    let scan_ok = if cmdq_ok {
+        crate::drivers::wifi::scan_24ghz()
+    } else { false };
+    write_str("  SCAN24=");
+    write_str(if scan_ok { "SUBMITTED" } else { "NOT-SUBMITTED" });
+    write_str("\n");
     write_str("  RX-RING="); write_str(if crate::drivers::wifi::rx_ready() { "READY" } else { "NOT-READY" }); write_str(" IRQ_COUNT="); write_usize(crate::drivers::wifi::rx_irq_count() as usize); write_str(" ALIVE="); write_str(if crate::drivers::wifi::alive_seen() { "SEEN" } else { "NOT-SEEN" }); write_str(" VALID="); write_hex(crate::drivers::wifi::alive_valid() as usize); write_str(" SUBTYPE="); write_usize(crate::drivers::wifi::alive_subtype() as usize); write_str("\n");
     write_str("  FIRMWARE_EXECUTION=");
     write_str(if fw_exec_ok { "STARTED" } else { "FAILED/NOT-ATTEMPTED" });
