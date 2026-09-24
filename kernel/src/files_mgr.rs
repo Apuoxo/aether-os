@@ -57,6 +57,7 @@ pub const VIEW_NTFS:u8=6;
 static mut VIEW:u8=VIEW_COMPUTER;
 static mut SEL:i32=-1;
 static mut HOVER:i32=-1;
+static mut COMPUTER_SEL:i32=-1;
 static mut FOCUS_ADDR:bool=false;
 static mut CTX:bool=false;
 static mut CTX_X:i32=0;
@@ -271,7 +272,7 @@ fn btn(x:usize,y:usize,w:usize,label:&str,hot:bool){
     graphics::draw_str(x+8,y+8,label,TEXT);
 }
 
-pub fn reset(){unsafe{VIEW=VIEW_COMPUTER;SEL=-1;HOVER=-1;FOCUS_ADDR=false;CTX=false;CONFIRM_DEL=false;HIST_N=0;HIST_I=0;CWD[0]=b'/';CWD_LEN=1;NTFS_CWD_REF=5;NTFS_DEPTH=0;NTFS_VIEW_COUNT=0;NTFS_SCROLL=0;NTFS_VISIBLE_ROWS=1;NTFS_VIEW_DIRTY=true;PREVIEW_LEN=0;PROPS_OPEN=false;}status(b"Ready");}
+pub fn reset(){unsafe{VIEW=VIEW_COMPUTER;SEL=-1;HOVER=-1;COMPUTER_SEL=-1;FOCUS_ADDR=false;CTX=false;CONFIRM_DEL=false;HIST_N=0;HIST_I=0;CWD[0]=b'/';CWD_LEN=1;NTFS_CWD_REF=5;NTFS_DEPTH=0;NTFS_VIEW_COUNT=0;NTFS_SCROLL=0;NTFS_VISIBLE_ROWS=1;NTFS_VIEW_DIRTY=true;PREVIEW_LEN=0;PROPS_OPEN=false;}status(b"Ready");}
 
 fn draw_header(wx:usize,wy:usize,ww:usize,body_y:usize){
     // Modern, compact Aether Explorer chrome. Designed for the real 800x600 target.
@@ -373,8 +374,9 @@ fn draw_computer(wx:usize,y:usize,ww:usize,h:usize){
     while d<8{
         if disks[d]{
             let cy=y+45+row*82;
-            graphics::fill_rect(wx,cy,ww,74,WHITE);
-            graphics::border_rect(wx,cy,ww,74,BORDER);
+            let selected=unsafe{COMPUTER_SEL==d as i32};
+            if selected{graphics::fill_rect(wx,cy,ww,74,SELECT);}else{graphics::fill_rect(wx,cy,ww,74,WHITE);}
+            graphics::border_rect(wx,cy,ww,74,if selected{0x007DA2CE}else{BORDER});
             icon::blit(icon::IconId::MyComputer,wx+10,cy+11,false);
 
             if d==0{
@@ -410,8 +412,9 @@ fn draw_computer(wx:usize,y:usize,ww:usize,h:usize){
     }
 
     let ay=y+45+row*82;
-    graphics::fill_rect(wx,ay,ww,74,WHITE);
-    graphics::border_rect(wx,ay,ww,74,BORDER);
+    let selected_a=unsafe{COMPUTER_SEL==8};
+    if selected_a{graphics::fill_rect(wx,ay,ww,74,SELECT);}else{graphics::fill_rect(wx,ay,ww,74,WHITE);}
+    graphics::border_rect(wx,ay,ww,74,if selected_a{0x007DA2CE}else{BORDER});
     icon::blit(icon::IconId::MyComputer,wx+10,ay+11,false);
     graphics::draw_str(wx+52,ay+12,"AetherFS (A:)",TEXT);
     graphics::draw_str(wx+52,ay+30,"RAM filesystem • Read/Write",DIM);
@@ -652,7 +655,6 @@ pub fn on_click(wx:i32,wy:i32,ww:i32,wh:i32,title_h:i32,mx:i32,my:i32,right:bool
         let side=150i32.min(ww/3);let list_top=by+40;
         if mx>=wx+side+8&&my>=list_top{
             if VIEW==VIEW_COMPUTER{
-                // Physical disk cards: clicking any disk opens the partition view.
                 let pn=part::count();
                 let mut disks=[false;8];
                 let mut d=0usize;
@@ -670,30 +672,36 @@ pub fn on_click(wx:i32,wy:i32,ww:i32,wh:i32,title_h:i32,mx:i32,my:i32,right:bool
                     if disks[dd]{
                         let top=list_top+45+(card*82) as i32;
                         if my>=top&&my<top+74{
-                            // Select the first partition belonging to this physical disk.
-                            let mut j=0usize;
-                            while j<pn{
-                                if let Some(p)=part::get(j){
-                                    if p.disk as usize==dd{
-                                        SEL=j as i32;
-                                        VIEW=VIEW_DISK;
-                                        status(b"Physical disk opened");
-                                        return true;
+                            if double_click && unsafe{COMPUTER_SEL==dd as i32}{
+                                let mut j=0usize;
+                                while j<pn{
+                                    if let Some(p)=part::get(j){
+                                        if p.disk as usize==dd{
+                                            SEL=j as i32; VIEW=VIEW_DISK;
+                                            status(b"Physical disk opened");
+                                            return true;
+                                        }
                                     }
+                                    j+=1;
                                 }
-                                j+=1;
                             }
+                            COMPUTER_SEL=dd as i32;
+                            SEL=-1;
+                            status(b"Selected");
+                            return true;
                         }
                         card+=1;
                     }
                     dd+=1;
                 }
-                // AetherFS card.
                 let atop=list_top+45+(card*82) as i32;
                 if my>=atop&&my<atop+74{
-                    push_hist();
-                    set_root();
-                    status(b"AetherFS (A:) opened");
+                    if double_click && unsafe{COMPUTER_SEL==8}{
+                        push_hist(); set_root(); status(b"AetherFS (A:) opened"); return true;
+                    }
+                    COMPUTER_SEL=8;
+                    SEL=-1;
+                    status(b"Selected");
                     return true;
                 }
             }
@@ -702,10 +710,32 @@ pub fn on_click(wx:i32,wy:i32,ww:i32,wh:i32,title_h:i32,mx:i32,my:i32,right:bool
                 if my<list_top+52{return false;}
                 let row=((my-list_top-52)/ROW_H)as i32;
                 if row>=0&&row<n as i32{
+                    let was_selected=SEL==row;
                     SEL=row;
+                    if double_click && was_selected{
+                        if let Some(p)=part::get(row as usize){
+                            trace_partition_click(mx,my,row,p.index as i32);
+                            log(b"partition open requested");
+                            if p.ptype==0x07{
+                                if fs_ntfs::mount_partition(row as usize){
+                                    VIEW=VIEW_NTFS;SEL=-1;NTFS_CWD_REF=5;NTFS_DEPTH=0;NTFS_VIEW_DIRTY=true;NTFS_SCROLL=0;
+                                    trace_ntfs(b"OPEN");
+                                }else{status(b"NTFS mount failed - read-only");}
+                            }else if p.ptype==0x0B||p.ptype==0x0C||p.ptype==0x06||p.ptype==0x0E||p.ptype==0x04{
+                                if fs_fat::mount_partition(row as usize){VIEW=VIEW_FAT;SEL=-1;status(b"FAT root opened read-only");}
+                                else{status(b"FAT mount failed - read-only");}
+                            }else{status(b"Linux/ext4 filesystem not implemented");}
+                        }
+                        return true;
+                    }
+                    status(b"Selected");
                     if let Some(p)=part::get(row as usize){
                         trace_partition_click(mx,my,row,p.index as i32);
-                        log(b"partition open requested");
+                        return true;
+                    }
+                    return true;
+                }
+                if false{
                         if p.ptype==0x07{
                             if fs_ntfs::mount_partition(row as usize){
                                 VIEW=VIEW_NTFS;SEL=-1;NTFS_CWD_REF=5;NTFS_DEPTH=0;NTFS_VIEW_DIRTY=true;NTFS_SCROLL=0;
