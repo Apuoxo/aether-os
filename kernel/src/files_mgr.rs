@@ -63,104 +63,104 @@ fn btn(x:usize,y:usize,w:usize,label:&str,hot:bool){graphics::fill_rect(x,y,w,24
 pub fn reset(){unsafe{VIEW=VIEW_COMPUTER;SEL=-1;HOVER=-1;FOCUS_ADDR=false;CTX=false;CONFIRM_DEL=false;HIST_N=0;HIST_I=0;CWD[0]=b'/';CWD_LEN=1;NTFS_CWD_REF=5;NTFS_DEPTH=0;PREVIEW_LEN=0;}status(b"Ready");}
 
 fn draw_header(wx:usize,wy:usize,ww:usize,body_y:usize){
-    // Native Aether rendering of a Windows 7-style Explorer chrome:
-    // command bar, navigation buttons, breadcrumb address bar and search box.
-    graphics::fill_rect(wx+3,body_y,ww-6,36,TOOL);
-    graphics::fill_rect(wx+3,body_y,ww-6,2,BLUE);
-    btn(wx+8,body_y+6,30,"<",false);
-    btn(wx+40,body_y+6,30,">",false);
-    btn(wx+72,body_y+6,30,"Up",false);
-    graphics::fill_rect(wx+108,body_y+6,1,24,BORDER);
-    btn(wx+116,body_y+6,62,"Organize",false);
-    btn(wx+182,body_y+6,54,"Views",false);
-    btn(wx+240,body_y+6,54,"Share",false);
+    // Modern, compact Aether Explorer chrome. Designed for the real 800x600 target.
+    graphics::fill_rect(wx+3,body_y,ww-6,34,TOOL);
+    graphics::fill_rect(wx+3,body_y,ww-6,1,BLUE);
 
-    let ax=wx+300;
-    let search_w=112usize.min(ww.saturating_sub(320));
-    let aw=ww.saturating_sub(306+search_w);
-    graphics::fill_rect(ax,body_y+6,aw,24,WHITE);
-    graphics::border_rect(ax,body_y+6,aw,24,BORDER);
-    graphics::draw_str(ax+7,body_y+14,"Computer",DIM);
+    btn(wx+8,body_y+5,28,"<",false);
+    btn(wx+38,body_y+5,28,">",false);
+    btn(wx+68,body_y+5,32,"Up",false);
+
+    let ax=wx+106;
+    let search_w=126usize.min(ww.saturating_sub(250));
+    let aw=ww.saturating_sub(118+search_w);
+    graphics::fill_rect(ax,body_y+5,aw,24,WHITE);
+    graphics::border_rect(ax,body_y+5,aw,24,BORDER);
+    graphics::draw_str(ax+8,body_y+13,"Computer",DIM);
     unsafe{
-        if VIEW==VIEW_COMPUTER {
-            graphics::draw_str(ax+76,body_y+14,">",DIM);
-        } else if VIEW==VIEW_NTFS {
-            graphics::draw_str(ax+76,body_y+14,">",DIM);
-            graphics::draw_str(ax+88,body_y+14,"Local Disk (C:)",TEXT);
-        } else if VIEW==VIEW_ROOT {
-            graphics::draw_str(ax+76,body_y+14,">",DIM);
-            graphics::draw_str(ax+88,body_y+14,"AetherFS (A:)",TEXT);
-        } else if VIEW==VIEW_FAT {
-            graphics::draw_str(ax+76,body_y+14,">",DIM);
-            graphics::draw_str(ax+88,body_y+14,"Removable Disk",TEXT);
-        } else {
-            graphics::draw_str(ax+76,body_y+14,">",DIM);
-            graphics::draw_str(ax+88,body_y+14,"Computer",TEXT);
+        if VIEW==VIEW_NTFS{
+            graphics::draw_str(ax+76,body_y+13,">",DIM);
+            graphics::draw_str(ax+88,body_y+13,"Local Disk (C:)",TEXT);
+        }else if VIEW==VIEW_ROOT{
+            graphics::draw_str(ax+76,body_y+13,">",DIM);
+            graphics::draw_str(ax+88,body_y+13,"AetherFS (A:)",TEXT);
+        }else if VIEW==VIEW_FAT{
+            graphics::draw_str(ax+76,body_y+13,">",DIM);
+            graphics::draw_str(ax+88,body_y+13,"FAT volume",TEXT);
+        }else if VIEW==VIEW_DISK{
+            graphics::draw_str(ax+76,body_y+13,">",DIM);
+            graphics::draw_str(ax+88,body_y+13,"Partitions",TEXT);
+        }else if VIEW==VIEW_PROPS{
+            graphics::draw_str(ax+76,body_y+13,">",DIM);
+            graphics::draw_str(ax+88,body_y+13,"Properties",TEXT);
+        }else{
+            graphics::draw_str(ax+76,body_y+13,">",DIM);
+            graphics::draw_str(ax+88,body_y+13,"Computer",TEXT);
         }
     }
-    let sx=wx+ww.saturating_sub(search_w+6);
-    graphics::fill_rect(sx,body_y+6,search_w,24,WHITE);
-    graphics::border_rect(sx,body_y+6,search_w,24,BORDER);
-    graphics::draw_str(sx+8,body_y+14,"Search",DIM);
-    if search_w>70{graphics::draw_str(sx+search_w-18,body_y+14,"?",DIM);}
+
+    let sx=wx+ww.saturating_sub(search_w+8);
+    graphics::fill_rect(sx,body_y+5,search_w,24,WHITE);
+    graphics::border_rect(sx,body_y+5,search_w,24,BORDER);
+    graphics::draw_str(sx+8,body_y+13,"Search",DIM);
+    graphics::draw_str(sx+search_w-18,body_y+13,"?",DIM);
     let _=wy;
 }
-
 fn draw_sidebar(wx:usize,y:usize,w:usize,h:usize){
-    // Explorer navigation pane: compact tree with section headers and volume icons.
     graphics::fill_rect(wx+3,y,w,h,GLASS);
     graphics::border_rect(wx+3,y,w,h,BORDER);
-    graphics::draw_str(wx+14,y+14,"Favorites",BLUE);
-    icon::blit(icon::IconId::Folder,wx+10,y+27,false);
-    graphics::draw_str(wx+32,y+35,"Desktop",TEXT);
-    icon::blit(icon::IconId::Folder,wx+10,y+45,false);
-    graphics::draw_str(wx+32,y+53,"Downloads",TEXT);
-    icon::blit(icon::IconId::Folder,wx+10,y+63,false);
-    graphics::draw_str(wx+32,y+71,"Documents",TEXT);
 
-    graphics::draw_str(wx+14,y+100,"Libraries",BLUE);
-    icon::blit(icon::IconId::Folder,wx+10,y+113,false);
-    graphics::draw_str(wx+32,y+121,"Documents",TEXT);
-    icon::blit(icon::IconId::Folder,wx+10,y+131,false);
-    graphics::draw_str(wx+32,y+139,"Pictures",TEXT);
-    icon::blit(icon::IconId::Folder,wx+10,y+149,false);
-    graphics::draw_str(wx+32,y+157,"Music",TEXT);
-    icon::blit(icon::IconId::Folder,wx+10,y+167,false);
-    graphics::draw_str(wx+32,y+175,"Videos",TEXT);
+    graphics::draw_str(wx+14,y+14,"QUICK ACCESS",DIM);
+    icon::blit(icon::IconId::Folder,wx+10,y+28,false);
+    graphics::draw_str(wx+32,y+36,"Desktop",TEXT);
+    icon::blit(icon::IconId::Folder,wx+10,y+48,false);
+    graphics::draw_str(wx+32,y+56,"Documents",TEXT);
+    icon::blit(icon::IconId::Folder,wx+10,y+68,false);
+    graphics::draw_str(wx+32,y+76,"Downloads",TEXT);
 
-    graphics::draw_str(wx+14,y+204,"Computer",BLUE);
-    icon::blit(icon::IconId::MyComputer,wx+10,y+217,false);
-    graphics::draw_str(wx+32,y+225,"Local Disk (C:)",TEXT);
+    graphics::draw_str(wx+14,y+106,"THIS PC",DIM);
+    icon::blit(icon::IconId::MyComputer,wx+10,y+121,false);
+    graphics::draw_str(wx+32,y+129,"Computer",TEXT);
+    icon::blit(icon::IconId::MyComputer,wx+10,y+141,false);
+    graphics::draw_str(wx+32,y+149,"Local Disk (C:)",TEXT);
+    icon::blit(icon::IconId::MyComputer,wx+10,y+161,false);
+    graphics::draw_str(wx+32,y+169,"AetherFS (A:)",TEXT);
+
+    graphics::draw_str(wx+14,y+200,"SYSTEM",DIM);
+    icon::blit(icon::IconId::MyComputer,wx+10,y+215,false);
+    graphics::draw_str(wx+32,y+223,"Network",TEXT);
     icon::blit(icon::IconId::MyComputer,wx+10,y+235,false);
-    graphics::draw_str(wx+32,y+243,"AetherFS (A:)",TEXT);
-
-    graphics::draw_str(wx+14,y+272,"Network",BLUE);
-    icon::blit(icon::IconId::MyComputer,wx+10,y+285,false);
-    graphics::draw_str(wx+32,y+293,"Network",TEXT);
+    graphics::draw_str(wx+32,y+243,"Devices",TEXT);
     let _=h;
 }
-
 fn draw_drive(wx:usize,y:usize,name:&str,sub:&str,sel:bool){
-    if sel{graphics::fill_rect(wx,y,250,62,SELECT);}
-    icon::blit(icon::IconId::MyComputer,wx+10,y+8,false);
-    graphics::draw_str(wx+52,y+11,name,TEXT);
-    graphics::draw_str(wx+52,y+28,sub,DIM);
-    graphics::fill_rect(wx+52,y+45,178,8,TOOL2);
-    graphics::fill_rect(wx+52,y+45,96,8,BLUE);
-    graphics::border_rect(wx+52,y+45,178,8,BORDER);
+    if sel{graphics::fill_rect(wx,y,252,72,SELECT);}
+    icon::blit(icon::IconId::MyComputer,wx+12,y+10,false);
+    graphics::draw_str(wx+54,y+12,name,TEXT);
+    graphics::draw_str(wx+54,y+29,sub,DIM);
+    graphics::fill_rect(wx+54,y+49,178,8,TOOL2);
+    graphics::fill_rect(wx+54,y+49,96,8,BLUE);
+    graphics::border_rect(wx+54,y+49,178,8,BORDER);
 }
-
 fn draw_computer(wx:usize,y:usize,ww:usize,h:usize){
-    graphics::draw_str(wx,y+8,"Computer",TEXT);
-    graphics::draw_str(wx,y+30,"Hard Disk Drives",BLUE);
-    draw_drive(wx,y+44,"Local Disk (C:)","NTFS — read-only",false);
-    draw_drive(wx,y+112,"AetherFS (A:)","Aether RAM — read/write",false);
-    graphics::draw_str(wx,y+190,"Devices with Removable Storage",BLUE);
-    graphics::draw_str(wx+12,y+214,"No removable volumes mounted.",DIM);
-    graphics::fill_rect(wx,y+h.saturating_sub(38),ww,1,BORDER);
-    graphics::draw_str(wx,y+h.saturating_sub(26),"Select an item to see its details.",DIM);
-}
+    graphics::draw_str(wx,y+8,"This PC",TEXT);
+    graphics::draw_str(wx,y+31,"Drives",DIM);
 
+    graphics::fill_rect(wx,y+45,ww,78,WHITE);
+    graphics::border_rect(wx,y+45,ww,78,BORDER);
+    draw_drive(wx+8,y+50,"Local Disk (C:)","NTFS • Read-only",false);
+
+    graphics::fill_rect(wx,y+132,ww,78,WHITE);
+    graphics::border_rect(wx,y+132,ww,78,BORDER);
+    draw_drive(wx+8,y+137,"AetherFS (A:)","RAM filesystem • Read/Write",false);
+
+    graphics::draw_str(wx,y+229,"Devices",DIM);
+    graphics::fill_rect(wx,y+243,ww,46,TOOL);
+    graphics::border_rect(wx,y+243,ww,46,BORDER);
+    graphics::draw_str(wx+14,y+261,"No removable volumes mounted",DIM);
+
+    graphics::draw_str(wx,y+h.saturating_sub(18),"Aether Explorer • native storage view",DIM);
+}
 fn draw_disk(wx:usize,y:usize,ww:usize,h:usize){
     graphics::fill_rect(wx,y,ww,h,WHITE);
     graphics::draw_str(wx+8,y+8,"Local Disk (C:) — Partitions",TEXT);
@@ -200,34 +200,47 @@ fn draw_disk(wx:usize,y:usize,ww:usize,h:usize){
 }
 fn draw_fat(wx:usize,y:usize,ww:usize,h:usize){
     graphics::fill_rect(wx,y,ww,h,WHITE);
-    graphics::draw_str(wx+8,y+8,"FAT volume — read-only",TEXT);
+    graphics::fill_rect(wx,y,ww,28,TOOL2);
+    graphics::draw_str(wx+10,y+9,"Name",TEXT);
+    graphics::draw_str(wx+250,y+9,"Type",TEXT);
+    graphics::draw_str(wx+350,y+9,"Size",TEXT);
     let n=fs_fat::entry_count();
-    if n==0{graphics::draw_str(wx+10,y+34,"This volume is empty or unreadable.",DIM);return;}
+    if n==0{graphics::draw_str(wx+16,y+52,"This volume is empty or unreadable.",DIM);return;}
     let mut i=0usize;
     while i<n&&i<32{
         if let Some(e)=fs_fat::entry(i){
-            let ry=y+28+i*20;
-            unsafe{if SEL==i as i32{graphics::fill_rect(wx,ry,ww,20,SELECT);}}
-            if e.is_dir{icon::blit(icon::IconId::Folder,wx+4,ry-6,false);}else{icon::blit(icon::IconId::File,wx+4,ry-6,false);}
-            let mut k=0;while k<e.name_len&&k<13{graphics::draw_char(wx+38+k*8,ry+6,e.name[k],TEXT);k+=1;}
-            if !e.is_dir{draw_num(wx+210,ry+6,e.size);}
+            let ry=y+30+i*24;
+            unsafe{if SEL==i as i32{graphics::fill_rect(wx,ry,ww,24,SELECT);}}
+            if e.is_dir{icon::blit(icon::IconId::Folder,wx+7,ry-2,false);}else{icon::blit(icon::IconId::File,wx+7,ry-2,false);}
+            let mut k=0;while k<e.name_len&&k<27{graphics::draw_char(wx+42+k*8,ry+8,e.name[k],TEXT);k+=1;}
+            graphics::draw_str(wx+250,ry+8,if e.is_dir{"Folder"}else{"File"},DIM);
+            if !e.is_dir{draw_num(wx+350,ry+8,e.size);}
         }
         i+=1;
     }
 }
 fn draw_ntfs(wx:usize,y:usize,ww:usize,h:usize){
     graphics::fill_rect(wx,y,ww,h,WHITE);
-    graphics::draw_str(wx+8,y+8,"NTFS volume — read-only",TEXT);
+    graphics::fill_rect(wx,y,ww,28,TOOL2);
+    graphics::draw_str(wx+10,y+9,"Name",TEXT);
+    graphics::draw_str(wx+250,y+9,"Type",TEXT);
+    graphics::draw_str(wx+350,y+9,"Size",TEXT);
     let n=fs_ntfs::entry_count();
-    if n==0{graphics::draw_str(wx+10,y+34,"Root directory is empty or unavailable.",DIM);return;}
+    if n==0{
+        graphics::draw_str(wx+16,y+52,"This folder is empty or unavailable.",DIM);
+        graphics::draw_str(wx+16,y+70,"NTFS is currently mounted read-only.",DIM);
+        return;
+    }
     let mut i=0usize;
     while i<n&&i<32{
         if let Some(e)=fs_ntfs::entry(i){
-            let ry=y+28+i*20;
-            unsafe{if SEL==i as i32{graphics::fill_rect(wx,ry,ww,20,SELECT);}}
-            if e.is_dir{icon::blit(icon::IconId::Folder,wx+4,ry-6,false);}else{icon::blit(icon::IconId::File,wx+4,ry-6,false);}
-            let mut k=0;while k<e.name_len&&k<28{graphics::draw_char(wx+38+k*8,ry+6,e.name[k],TEXT);k+=1;}
-            if !e.is_dir{draw_num(wx+300,ry+6,if e.size>0xFFFF_FFFF{0xFFFF_FFFF}else{e.size as u32});}
+            let ry=y+30+i*24;
+            unsafe{if SEL==i as i32{graphics::fill_rect(wx,ry,ww,24,SELECT);}if HOVER==i as i32{graphics::border_rect(wx,ry,ww,24,BLUE);}}
+            if e.is_dir{icon::blit(icon::IconId::Folder,wx+7,ry-2,false);}else{icon::blit(icon::IconId::File,wx+7,ry-2,false);}
+            let col=unsafe{if SEL==i as i32{BLUE}else{TEXT}};
+            let mut k=0;while k<e.name_len&&k<27{graphics::draw_char(wx+42+k*8,ry+8,e.name[k],col);k+=1;}
+            graphics::draw_str(wx+250,ry+8,if e.is_dir{"Folder"}else{"File"},DIM);
+            if !e.is_dir{draw_num(wx+350,ry+8,if e.size>0xFFFF_FFFF{0xFFFF_FFFF}else{e.size as u32});}
         }
         i+=1;
     }
@@ -237,28 +250,30 @@ fn draw_list(wx:usize,y:usize,ww:usize,h:usize){
     let mut a=[fs::ListItem{name:[0;24],name_len:0,size:0,is_dir:false};16];
     let n=unsafe{fs::list_ex_path(core::str::from_utf8_unchecked(&CWD[..CWD_LEN]),&mut a)};
     graphics::fill_rect(wx,y,ww,h,WHITE);
-    // Details header.
-    graphics::fill_rect(wx,y,ww,22,TOOL2);
-    graphics::draw_str(wx+8,y+7,"Name",TEXT);
-    graphics::draw_str(wx+210,y+7,"Type",TEXT);
-    graphics::draw_str(wx+300,y+7,"Size",TEXT);
-    if n==0{graphics::draw_str(wx+10,y+34,"This folder is empty.",DIM);return;}
+    graphics::fill_rect(wx,y,ww,28,TOOL2);
+    graphics::draw_str(wx+10,y+9,"Name",TEXT);
+    graphics::draw_str(wx+220,y+9,"Type",TEXT);
+    graphics::draw_str(wx+310,y+9,"Size",TEXT);
+    if n==0{
+        graphics::draw_str(wx+16,y+52,"This folder is empty.",DIM);
+        graphics::draw_str(wx+16,y+70,"Create a folder or file from the context menu.",DIM);
+        return;
+    }
     unsafe{
         let mut i=0;
         while i<n{
-            let ry=y+24+i*20;
-            if SEL==i as i32{graphics::fill_rect(wx,ry,ww,20,SELECT);}
-            if HOVER==i as i32{graphics::border_rect(wx,ry,ww,20,BLUE);}
-            if a[i].is_dir{icon::blit(icon::IconId::Folder,wx+4,ry-6,false);}else{icon::blit(icon::IconId::File,wx+4,ry-6,false);}
+            let ry=y+30+i*24;
+            if SEL==i as i32{graphics::fill_rect(wx,ry,ww,24,SELECT);}
+            if HOVER==i as i32{graphics::border_rect(wx,ry,ww,24,BLUE);}
+            if a[i].is_dir{icon::blit(icon::IconId::Folder,wx+7,ry-2,false);}else{icon::blit(icon::IconId::File,wx+7,ry-2,false);}
             let col=if SEL==i as i32{BLUE}else{TEXT};
-            let mut k=0;while k<a[i].name_len&&k<22{graphics::draw_char(wx+40+k*8,ry+6,a[i].name[k],col);k+=1;}
-            graphics::draw_str(wx+210,ry+6,if a[i].is_dir{"Folder"}else{"File"},DIM);
-            if !a[i].is_dir{draw_num(wx+300,ry+6,a[i].size);}
+            let mut k=0;while k<a[i].name_len&&k<22{graphics::draw_char(wx+42+k*8,ry+8,a[i].name[k],col);k+=1;}
+            graphics::draw_str(wx+220,ry+8,if a[i].is_dir{"Folder"}else{"File"},DIM);
+            if !a[i].is_dir{draw_num(wx+310,ry+8,a[i].size);}
             i+=1;
         }
     }
 }
-
 fn draw_text(wx:usize,y:usize,ww:usize,h:usize){
     graphics::fill_rect(wx,y,ww,h,WHITE);
     graphics::draw_str(wx+10,y+10,"Preview",BLUE);
@@ -273,33 +288,27 @@ fn draw_props(wx:usize,y:usize,ww:usize,h:usize){
 // Recreated Explorer shell: keep the visual layer self-contained and native to Aether.
 fn draw_context(){
     unsafe{
-        // Windows 7-style light context menu with separators and disabled
-        // read-only operations. The menu remains native Aether UI.
         let x=CTX_X as usize;
         let y=CTX_Y as usize;
-        let w=218usize;
+        let w=224usize;
         let h=224usize;
         graphics::fill_rect(x+3,y+3,w,h,0x00202020);
         graphics::fill_rect(x,y,w,h,WHITE);
         graphics::border_rect(x,y,w,h,BORDER);
-        graphics::fill_rect(x+1,y+1,3,h-2,BLUE2);
-        graphics::draw_str(x+16,y+11,"Open",TEXT);
-        graphics::draw_str(x+16,y+31,"Open with",TEXT);
-        graphics::fill_rect(x+10,y+50,w-20,1,BORDER);
-        graphics::draw_str(x+16,y+61,"Copy",TEXT);
-        graphics::draw_str(x+16,y+81,"Cut",DIM);
-        graphics::draw_str(x+16,y+101,"Rename",DIM);
-        graphics::draw_str(x+16,y+121,"Delete",DIM);
-        graphics::fill_rect(x+10,y+140,w-20,1,BORDER);
-        graphics::draw_str(x+16,y+151,"Properties",TEXT);
-        graphics::draw_str(x+16,y+171,"Refresh",TEXT);
-        graphics::fill_rect(x+10,y+190,w-20,1,BORDER);
-        graphics::draw_str(x+16,y+201,"New folder",DIM);
-        graphics::draw_str(x+16,y+221,"New text file",DIM);
+        graphics::fill_rect(x+1,y+1,3,h-2,BLUE);
+        graphics::draw_str(x+16,y+13,"Open",TEXT);
+        graphics::draw_str(x+16,y+35,"Open with",TEXT);
+        graphics::fill_rect(x+10,y+53,w-20,1,BORDER);
+        graphics::draw_str(x+16,y+67,"Copy",TEXT);
+        graphics::draw_str(x+16,y+89,"Cut",DIM);
+        graphics::draw_str(x+16,y+111,"Rename",DIM);
+        graphics::draw_str(x+16,y+133,"Delete",DIM);
+        graphics::fill_rect(x+10,y+151,w-20,1,BORDER);
+        graphics::draw_str(x+16,y+165,"Properties",TEXT);
+        graphics::draw_str(x+16,y+187,"Refresh",TEXT);
+        graphics::draw_str(x+16,y+209,"New folder",DIM);
     }
 }
-
-
 fn draw_confirm(wx:usize,wy:usize,ww:usize,wh:usize){
     let x=wx+ww/2-120;let y=wy+wh/2-45;
     graphics::fill_rect(x,y,240,90,WHITE);
