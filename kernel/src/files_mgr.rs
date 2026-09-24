@@ -13,9 +13,10 @@ const WHITE:u32=0x00FFFFFF;
 const TEXT:u32=0x001F1F1F;
 const DIM:u32=0x005A5A5A;
 const BORDER:u32=0x00B7B7B7;
-const TOOL:u32=0x00F4F4F4;
-const TOOL2:u32=0x00E7E7E7;
-const BLUE:u32=0x003A7CC1;
+const TOOL:u32=0x00F6F9FC;
+const TOOL2:u32=0x00E8EEF5;
+const GLASS:u32=0x00EEF5FC;
+const BLUE:u32=0x003A72B8;
 const BLUE2:u32=0x00DCEEFF;
 const SELECT:u32=0x00CDE7FA;
 const SIDE:u32=0x00F7F7F7;
@@ -62,65 +63,102 @@ fn btn(x:usize,y:usize,w:usize,label:&str,hot:bool){graphics::fill_rect(x,y,w,24
 pub fn reset(){unsafe{VIEW=VIEW_COMPUTER;SEL=-1;HOVER=-1;FOCUS_ADDR=false;CTX=false;CONFIRM_DEL=false;HIST_N=0;HIST_I=0;CWD[0]=b'/';CWD_LEN=1;NTFS_CWD_REF=5;NTFS_DEPTH=0;PREVIEW_LEN=0;}status(b"Ready");}
 
 fn draw_header(wx:usize,wy:usize,ww:usize,body_y:usize){
-    // Windows 7-like command bar.
-    graphics::fill_rect(wx+3,body_y,ww-6,34,TOOL);
-    btn(wx+8,body_y+5,34,"<",false);
-    btn(wx+44,body_y+5,34,">",false);
-    btn(wx+80,body_y+5,34,"Up",false);
-    btn(wx+118,body_y+5,62,"Organize",false);
-    btn(wx+184,body_y+5,58,"Views",false);
-    btn(wx+246,body_y+5,62,"Share",false);
-    // address bar
-    let ax=wx+314; let aw=ww.saturating_sub(414);
-    graphics::fill_rect(ax,body_y+5,aw,24,WHITE);
-    graphics::border_rect(ax,body_y+5,aw,24,BORDER);
-    graphics::draw_str(ax+8,body_y+13,"Computer",DIM);
-    if aw>90{graphics::draw_str(ax+76,body_y+13,">",DIM);unsafe{
-        if VIEW==VIEW_ROOT{graphics::draw_str(ax+90,body_y+13,"AetherFS (A:)",TEXT);}
-        else if VIEW==VIEW_DISK{graphics::draw_str(ax+90,body_y+13,"Local Disk (C:)",TEXT);}
-    }}
-    let sx=wx+ww.saturating_sub(94);
-    graphics::fill_rect(sx,body_y+5,82,24,WHITE);graphics::border_rect(sx,body_y+5,82,24,BORDER);
-    graphics::draw_str(sx+8,body_y+13,"Search",DIM);
+    // Native Aether rendering of a Windows 7-style Explorer chrome:
+    // command bar, navigation buttons, breadcrumb address bar and search box.
+    graphics::fill_rect(wx+3,body_y,ww-6,36,TOOL);
+    graphics::fill_rect(wx+3,body_y,ww-6,2,BLUE);
+    btn(wx+8,body_y+6,30,"<",false);
+    btn(wx+40,body_y+6,30,">",false);
+    btn(wx+72,body_y+6,30,"Up",false);
+    graphics::fill_rect(wx+108,body_y+6,1,24,BORDER);
+    btn(wx+116,body_y+6,62,"Organize",false);
+    btn(wx+182,body_y+6,54,"Views",false);
+    btn(wx+240,body_y+6,54,"Share",false);
+
+    let ax=wx+300;
+    let search_w=112usize.min(ww.saturating_sub(320));
+    let aw=ww.saturating_sub(306+search_w);
+    graphics::fill_rect(ax,body_y+6,aw,24,WHITE);
+    graphics::border_rect(ax,body_y+6,aw,24,BORDER);
+    graphics::draw_str(ax+7,body_y+14,"Computer",DIM);
+    unsafe{
+        if VIEW==VIEW_COMPUTER {
+            graphics::draw_str(ax+76,body_y+14,">",DIM);
+        } else if VIEW==VIEW_NTFS {
+            graphics::draw_str(ax+76,body_y+14,">",DIM);
+            graphics::draw_str(ax+88,body_y+14,"Local Disk (C:)",TEXT);
+        } else if VIEW==VIEW_ROOT {
+            graphics::draw_str(ax+76,body_y+14,">",DIM);
+            graphics::draw_str(ax+88,body_y+14,"AetherFS (A:)",TEXT);
+        } else if VIEW==VIEW_FAT {
+            graphics::draw_str(ax+76,body_y+14,">",DIM);
+            graphics::draw_str(ax+88,body_y+14,"Removable Disk",TEXT);
+        } else {
+            graphics::draw_str(ax+76,body_y+14,">",DIM);
+            graphics::draw_str(ax+88,body_y+14,"Computer",TEXT);
+        }
+    }
+    let sx=wx+ww.saturating_sub(search_w+6);
+    graphics::fill_rect(sx,body_y+6,search_w,24,WHITE);
+    graphics::border_rect(sx,body_y+6,search_w,24,BORDER);
+    graphics::draw_str(sx+8,body_y+14,"Search",DIM);
+    if search_w>70{graphics::draw_str(sx+search_w-18,body_y+14,"?",DIM);}
     let _=wy;
 }
 
 fn draw_sidebar(wx:usize,y:usize,w:usize,h:usize){
-    graphics::fill_rect(wx+3,y,w,h,SIDE);
+    // Explorer navigation pane: compact tree with section headers and volume icons.
+    graphics::fill_rect(wx+3,y,w,h,GLASS);
     graphics::border_rect(wx+3,y,w,h,BORDER);
     graphics::draw_str(wx+14,y+14,"Favorites",BLUE);
-    graphics::draw_str(wx+24,y+34,"Desktop",TEXT);
-    graphics::draw_str(wx+24,y+52,"Downloads",TEXT);
-    graphics::draw_str(wx+24,y+70,"Documents",TEXT);
+    icon::blit(icon::IconId::Folder,wx+10,y+27,false);
+    graphics::draw_str(wx+32,y+35,"Desktop",TEXT);
+    icon::blit(icon::IconId::Folder,wx+10,y+45,false);
+    graphics::draw_str(wx+32,y+53,"Downloads",TEXT);
+    icon::blit(icon::IconId::Folder,wx+10,y+63,false);
+    graphics::draw_str(wx+32,y+71,"Documents",TEXT);
+
     graphics::draw_str(wx+14,y+100,"Libraries",BLUE);
-    graphics::draw_str(wx+24,y+120,"Documents",TEXT);
-    graphics::draw_str(wx+24,y+138,"Pictures",TEXT);
-    graphics::draw_str(wx+24,y+156,"Music",TEXT);
-    graphics::draw_str(wx+24,y+174,"Videos",TEXT);
+    icon::blit(icon::IconId::Folder,wx+10,y+113,false);
+    graphics::draw_str(wx+32,y+121,"Documents",TEXT);
+    icon::blit(icon::IconId::Folder,wx+10,y+131,false);
+    graphics::draw_str(wx+32,y+139,"Pictures",TEXT);
+    icon::blit(icon::IconId::Folder,wx+10,y+149,false);
+    graphics::draw_str(wx+32,y+157,"Music",TEXT);
+    icon::blit(icon::IconId::Folder,wx+10,y+167,false);
+    graphics::draw_str(wx+32,y+175,"Videos",TEXT);
+
     graphics::draw_str(wx+14,y+204,"Computer",BLUE);
-    graphics::draw_str(wx+24,y+224,"Local Disk (C:)",TEXT);
-    graphics::draw_str(wx+24,y+242,"AetherFS (A:)",TEXT);
+    icon::blit(icon::IconId::MyComputer,wx+10,y+217,false);
+    graphics::draw_str(wx+32,y+225,"Local Disk (C:)",TEXT);
+    icon::blit(icon::IconId::MyComputer,wx+10,y+235,false);
+    graphics::draw_str(wx+32,y+243,"AetherFS (A:)",TEXT);
+
     graphics::draw_str(wx+14,y+272,"Network",BLUE);
-    graphics::draw_str(wx+24,y+292,"Network",TEXT);
+    icon::blit(icon::IconId::MyComputer,wx+10,y+285,false);
+    graphics::draw_str(wx+32,y+293,"Network",TEXT);
     let _=h;
 }
 
 fn draw_drive(wx:usize,y:usize,name:&str,sub:&str,sel:bool){
-    if sel{graphics::fill_rect(wx,y,250,52,SELECT);}
-    icon::blit(icon::IconId::MyComputer,wx+8,y+8,false);
-    graphics::draw_str(wx+50,y+12,name,TEXT);
-    graphics::draw_str(wx+50,y+29,sub,DIM);
+    if sel{graphics::fill_rect(wx,y,250,62,SELECT);}
+    icon::blit(icon::IconId::MyComputer,wx+10,y+8,false);
+    graphics::draw_str(wx+52,y+11,name,TEXT);
+    graphics::draw_str(wx+52,y+28,sub,DIM);
+    graphics::fill_rect(wx+52,y+45,178,8,TOOL2);
+    graphics::fill_rect(wx+52,y+45,96,8,BLUE);
+    graphics::border_rect(wx+52,y+45,178,8,BORDER);
 }
 
 fn draw_computer(wx:usize,y:usize,ww:usize,h:usize){
     graphics::draw_str(wx,y+8,"Computer",TEXT);
-    graphics::draw_str(wx,y+28,"Hard Disk Drives",DIM);
-    draw_drive(wx,y+42,"Local Disk (C:)","NTFS system volume — read-only",false);
-    draw_drive(wx,y+98,"AetherFS (A:)","Aether RAM volume — read/write",false);
-    graphics::draw_str(wx,y+166,"Devices with Removable Storage",DIM);
-    graphics::draw_str(wx+8,y+188,"No removable volumes mounted.",DIM);
-    graphics::draw_str(wx,y+h.saturating_sub(20),"Double-click a volume to browse its contents.",DIM);
-    let _=ww;
+    graphics::draw_str(wx,y+30,"Hard Disk Drives",BLUE);
+    draw_drive(wx,y+44,"Local Disk (C:)","NTFS — read-only",false);
+    draw_drive(wx,y+112,"AetherFS (A:)","Aether RAM — read/write",false);
+    graphics::draw_str(wx,y+190,"Devices with Removable Storage",BLUE);
+    graphics::draw_str(wx+12,y+214,"No removable volumes mounted.",DIM);
+    graphics::fill_rect(wx,y+h.saturating_sub(38),ww,1,BORDER);
+    graphics::draw_str(wx,y+h.saturating_sub(26),"Select an item to see its details.",DIM);
 }
 
 fn draw_disk(wx:usize,y:usize,ww:usize,h:usize){
@@ -234,27 +272,30 @@ fn draw_props(wx:usize,y:usize,ww:usize,h:usize){
 
 fn draw_context(){
     unsafe{
+        // Windows 7-style light context menu with separators and disabled
+        // read-only operations. The menu remains native Aether UI.
         let x=CTX_X as usize;
         let y=CTX_Y as usize;
-        let w=210usize;
-        let h=216usize;
+        let w=218usize;
+        let h=224usize;
+        graphics::fill_rect(x+3,y+3,w,h,0x00202020);
         graphics::fill_rect(x,y,w,h,WHITE);
         graphics::border_rect(x,y,w,h,BORDER);
-        graphics::draw_str(x+10,y+10,"Open",TEXT);
-        graphics::draw_str(x+10,y+30,"Open with",TEXT);
-        graphics::draw_str(x+10,y+50,"Copy",TEXT);
-        graphics::draw_str(x+10,y+70,"Cut",DIM);
-        graphics::draw_str(x+10,y+90,"Rename",DIM);
-        graphics::draw_str(x+10,y+110,"Delete",DIM);
-        graphics::draw_str(x+10,y+130,"Properties",TEXT);
-        graphics::draw_str(x+10,y+150,"Refresh",TEXT);
-        graphics::fill_rect(x+6,y+169,w-12,1,BORDER);
-        graphics::draw_str(x+10,y+180,"New folder",DIM);
-        graphics::draw_str(x+10,y+200,"New text file",DIM);
+        graphics::fill_rect(x+1,y+1,3,h-2,BLUE2);
+        graphics::draw_str(x+16,y+11,"Open",TEXT);
+        graphics::draw_str(x+16,y+31,"Open with",TEXT);
+        graphics::fill_rect(x+10,y+50,w-20,1,BORDER);
+        graphics::draw_str(x+16,y+61,"Copy",TEXT);
+        graphics::draw_str(x+16,y+81,"Cut",DIM);
+        graphics::draw_str(x+16,y+101,"Rename",DIM);
+        graphics::draw_str(x+16,y+121,"Delete",DIM);
+        graphics::fill_rect(x+10,y+140,w-20,1,BORDER);
+        graphics::draw_str(x+16,y+151,"Properties",TEXT);
+        graphics::draw_str(x+16,y+171,"Refresh",TEXT);
+        graphics::fill_rect(x+10,y+190,w-20,1,BORDER);
+        graphics::draw_str(x+16,y+201,"New folder",DIM);
+        graphics::draw_str(x+16,y+221,"New text file",DIM);
     }
-}
-fn draw_confirm(wx:usize,wy:usize,ww:usize,wh:usize){
-    let x=wx+ww/2-120;let y=wy+wh/2-45;graphics::fill_rect(x,y,240,90,WHITE);graphics::border_rect(x,y,240,90,BORDER);graphics::draw_str(x+18,y+18,"Delete selected item?",TEXT);btn(x+24,y+52,70,"Delete",true);btn(x+112,y+52,70,"Cancel",false);
 }
 
 pub fn draw(wx:usize,wy:usize,ww:usize,wh:usize,title_h:usize){
