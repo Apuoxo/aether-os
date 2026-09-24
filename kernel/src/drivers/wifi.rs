@@ -221,58 +221,137 @@ pub fn load_firmware() -> bool {
             serial::write_str("[WIFI] FW=NOT-ATTEMPTED activation prerequisite missing\n");
             return false;
         }
-        if IWL2030_FW.len() < 28 {
+        if IWL2030_FW.len() < 76 {
             serial::write_str("[WIFI] FW=INVALID file too small\n");
             return false;
         }
-        let ver = fw_le32(IWL2030_FW, 0);
+
+        // iwlwifi-2030-6 is a TLV-format image. Linux distinguishes this
+        // format by zero at offset 0 and IWL_TLV_UCODE_MAGIC at offset 4.
+        // The TLV header is 76 bytes: zero, magic, 64-byte human string,
+        // version, build and 64-bit reserved field.
+        let magic = fw_le32(IWL2030_FW, 4);
+        const IWL_TLV_UCODE_MAGIC: u32 = 0x0A4C5749;
+        let tlv_format = fw_le32(IWL2030_FW, 0) == 0 && magic == IWL_TLV_UCODE_MAGIC;
+        if !tlv_format {
+            serial::write_str("[WIFI] FW=UNSUPPORTED_FORMAT MAGIC=");
+            serial::write_hex(magic as usize);
+            serial::write_str("\n");
+            return false;
+        }
+
+        let ver = fw_le32(IWL2030_FW, 68);
+        let build = fw_le32(IWL2030_FW, 72);
         let api = (ver >> 8) & 0xFF;
-        let inst = fw_le32(IWL2030_FW, 8);
-        let data = fw_le32(IWL2030_FW, 12);
-        let init = fw_le32(IWL2030_FW, 16);
-        let init_data = fw_le32(IWL2030_FW, 20);
-        let boot = fw_le32(IWL2030_FW, 24);
-        let payload = inst as usize + data as usize + init as usize + init_data as usize + boot as usize;
         FW_VER = ver;
-        FW_INST_SIZE = inst;
-        FW_DATA_SIZE = data;
-        serial::write_str("[WIFI] FW=iwlwifi-2030-6.ucode BYTES=");
-        serial::write_usize(IWL2030_FW.len());
+        FW_INST_SIZE = 0;
+        FW_DATA_SIZE = 0;
+
+        serial::write_str("[WIFI] FW FORMAT=TLV MAGIC=");
+        serial::write_hex(magic as usize);
+        serial::write_str(" VER=");
+        serial::write_hex(ver as usize);
         serial::write_str(" API=");
         serial::write_usize(api as usize);
-        serial::write_str(" INST=");
-        serial::write_usize(inst as usize);
-        serial::write_str(" DATA=");
-        serial::write_usize(data as usize);
-        serial::write_str(" INIT=");
-        serial::write_usize(init as usize);
-        serial::write_str(" INIT_DATA=");
-        serial::write_usize(init_data as usize);
-        serial::write_str(" BOOT=");
-        serial::write_usize(boot as usize);
+        serial::write_str(" BUILD=");
+        serial::write_usize(build as usize);
         serial::write_str("\n");
-        if api != 6 || payload != IWL2030_FW.len() - 28 || (inst & 3) != 0 || (data & 3) != 0 {
-            serial::write_str("[WIFI] FW=HEADER_INVALID\n");
+
+        let mut pos = 76usize;
+        let mut inst_seen = false;
+        let mut data_seen = false;
+        let mut inst_size = 0usize;
+        let mut data_size = 0usize;
+
+        while pos + 8 <= IWL2030_FW.len() {
+            let tlv_type = fw_le32(IWL2030_FW, pos);
+            let tlv_len = fw_le32(IWL2030_FW, pos + 4) as usize;
+            let data_start = pos + 8;
+            let data_end = match data_start.checked_add(tlv_len) {
+                Some(v) => v,
+                None => {
+                    serial::write_str("[WIFI] FW TLV=BOUNDS_INVALID\n");
+                    return false;
+                }
+            };
+            if data_end > IWL2030_FW.len() {
+                serial::write_str("[WIFI] FW TLV=BOUNDS_INVALID\n");
+                return false;
+            }
+
+            // Linux aligns every TLV payload to 4 bytes before advancing.
+            let aligned_len = (tlv_len + 3) & !3usize;
+            let next = match data_start.checked_add(aligned_len) {
+                Some(v) => v,
+                None => {
+                    serial::write_str("[WIFI] FW TLV=ALIGN_OVERFLOW\n");
+                    return false;
+                }
+            };
+            if next > IWL2030_FW.len() {
+                serial::write_str("[WIFI] FW TLV=ALIGN_BOUNDS_INVALID\n");
+                return false;
+            }
+
+            match tlv_type {
+                1 => {
+                    if !inst_seen {
+                        if (tlv_len & 3) != 0 {
+                            serial::write_str("[WIFI] FW INST=UNALIGNED\n");
+                            return false;
+                        }
+                        if tlv_len == 0 {
+                            serial::write_str("[WIFI] FW INST=EMPTY\n");
+                            return false;
+                        }
+                        inst_seen = true;
+                        inst_size = tlv_len;
+                        if !write_target_mem(IWLAGN_RTC_INST_LOWER_BOUND, &IWL2030_FW[data_start..data_end]) {
+                            serial::write_str("[WIFI] FW INST WRITE=FAIL\n");
+                            return false;
+                        }
+                        serial::write_str("[WIFI] FW TLV INST BYTES=");
+                        serial::write_usize(tlv_len);
+                        serial::write_str("\n");
+                    }
+                }
+                2 => {
+                    if !data_seen {
+                        if (tlv_len & 3) != 0 {
+                            serial::write_str("[WIFI] FW DATA=UNALIGNED\n");
+                            return false;
+                        }
+                        if tlv_len == 0 {
+                            serial::write_str("[WIFI] FW DATA=EMPTY\n");
+                            return false;
+                        }
+                        data_seen = true;
+                        data_size = tlv_len;
+                        if !write_target_mem(IWLAGN_RTC_DATA_LOWER_BOUND, &IWL2030_FW[data_start..data_end]) {
+                            serial::write_str("[WIFI] FW DATA WRITE=FAIL\n");
+                            return false;
+                        }
+                        serial::write_str("[WIFI] FW TLV DATA BYTES=");
+                        serial::write_usize(tlv_len);
+                        serial::write_str("\n");
+                    }
+                }
+                _ => {}
+            }
+
+            pos = next;
+        }
+
+        if !inst_seen || !data_seen {
+            serial::write_str("[WIFI] FW TLV=RUNTIME_SECTIONS_MISSING\n");
             return false;
         }
-        let inst_start = 28usize;
-        let data_start = inst_start + inst as usize;
-        let data_end = data_start + data as usize;
-        if data_end > IWL2030_FW.len() {
-            serial::write_str("[WIFI] FW=BOUNDS_INVALID\n");
-            return false;
-        }
-        if !write_target_mem(IWLAGN_RTC_INST_LOWER_BOUND, &IWL2030_FW[inst_start..data_start]) {
-            serial::write_str("[WIFI] FW INST WRITE=FAIL\n");
-            return false;
-        }
-        if !write_target_mem(IWLAGN_RTC_DATA_LOWER_BOUND, &IWL2030_FW[data_start..data_end]) {
-            serial::write_str("[WIFI] FW DATA WRITE=FAIL\n");
-            return false;
-        }
+
+        FW_INST_SIZE = inst_size as u32;
+        FW_DATA_SIZE = data_size as u32;
         FW_LOADED = true;
         NEEDS_FW = false;
-        serial::write_str("[WIFI] FW LOAD=OK runtime INST+DATA written to SRAM\n");
+        serial::write_str("[WIFI] FW LOAD=OK runtime TLV INST+DATA written to SRAM\n");
         serial::write_str("[WIFI] FW EXECUTION=NOT-YET IRQ/RX/TX=NOT-STARTED\n");
         true
     }
