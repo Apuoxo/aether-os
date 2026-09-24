@@ -356,7 +356,7 @@ pub fn load_firmware() -> bool {
                         &IWL2030_FW[data_start + off..data_start + off + chunk]
                     ) {
                         serial::write_str("[WIFI] FW SERVICE-DMA=TIMEOUT dst=");
-                        serial::write_hex((dst + off) as usize);
+                        serial::write_hex((dst + off as u32) as usize);
                         serial::write_str("\n");
                         return false;
                     }
