@@ -12,6 +12,7 @@ const STAT_MOUSE: u8 = 1 << 5;
 static mut KBD_READY: bool = false;
 static mut MOUSE_READY: bool = false;
 static mut LAST_KEY: u8 = 0;
+static mut LAST_KEY_EXTENDED: bool = false;
 static mut SHIFT_DOWN: bool = false;
 static mut NUMLOCK_ON: bool = true; // default ON for laptop usability
 static mut EXTENDED: bool = false; // E0 prefix
@@ -268,7 +269,11 @@ pub fn poll() {
                     }
                 }
             } else {
-                LAST_KEY = data;
+                if data == 0xE0 {
+                    LAST_KEY_EXTENDED = true;
+                } else {
+                    LAST_KEY = data;
+                }
             }
             n += 1;
         }
@@ -286,6 +291,14 @@ pub fn last_scancode() -> u8 {
         let k = LAST_KEY;
         LAST_KEY = 0;
         k
+    }
+}
+
+pub fn last_scancode_extended() -> bool {
+    unsafe {
+        let ext = LAST_KEY_EXTENDED;
+        LAST_KEY_EXTENDED = false;
+        ext
     }
 }
 
