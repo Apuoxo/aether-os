@@ -500,12 +500,12 @@ pub fn entry(i: usize) -> Option<NtfsEntry> {
 
 /// NTFS diagnostic for the GUI terminal (read-only).
 /// This intentionally exercises the filesystem parser path, not the DSK RAW/MBR probe.
-pub fn diagnostic() {
-    serial::write_str("[NTFSDIAG] begin\n");
+fn diag_str(s: &str) {\n    crate::desktop::terminal_write(s);\n    serial::write_str(s);\n}\n\nfn diag_usize(mut v: usize) {\n    let mut buf = [0u8; 20];\n    let mut n = 0usize;\n    if v == 0 { diag_str("0"); return; }\n    while v > 0 { buf[n] = b'0' + (v % 10) as u8; n += 1; v /= 10; }\n    let mut out = [0u8; 20];\n    let mut i = 0usize;\n    while i < n { out[i] = buf[n - 1 - i]; i += 1; }\n    let s = unsafe { core::str::from_utf8_unchecked(&out[..n]) };\n    diag_str(s);\n}\n\npub fn diagnostic() {
+    diag_str("[NTFSDIAG] begin\n");
     let np = part::count();
-    serial::write_str("[NTFSDIAG] partitions=");
-    serial::write_usize(np);
-    serial::write_str("\n");
+    diag_str("[NTFSDIAG] partitions=");
+    diag_usize(np);
+    diag_str("\n");
 
     let mut i = 0usize;
     let mut found = 0usize;
@@ -513,24 +513,24 @@ pub fn diagnostic() {
         if let Some(p) = part::get(i) {
             if p.ptype == 0x07 {
                 found += 1;
-                serial::write_str("[NTFSDIAG] NTFS part index=");
-                serial::write_usize(i);
-                serial::write_str(" disk=");
-                serial::write_usize(p.disk as usize);
-                serial::write_str(" start_lba=");
-                serial::write_usize(p.lba_start as usize);
-                serial::write_str(" sectors=");
-                serial::write_usize(p.sectors as usize);
-                serial::write_str("\n");
+                diag_str("[NTFSDIAG] NTFS part index=");
+                diag_usize(i);
+                diag_str(" disk=");
+                diag_usize(p.disk as usize);
+                diag_str(" start_lba=");
+                diag_usize(p.lba_start as usize);
+                diag_str(" sectors=");
+                diag_usize(p.sectors as usize);
+                diag_str("\n");
 
                 let mut boot = [0u8; 512];
                 if !block::read(p.disk, p.lba_start, 1, &mut boot) {
-                    serial::write_str("[NTFSDIAG] BOOT_READ=FAIL\n");
+                    diag_str("[NTFSDIAG] BOOT_READ=FAIL\n");
                 } else {
                     let ntfs = boot[3]==b'N' && boot[4]==b'T' && boot[5]==b'F' && boot[6]==b'S';
-                    serial::write_str("[NTFSDIAG] BOOT_NTFS=");
-                    serial::write_str(if ntfs { "OK" } else { "FAIL" });
-                    serial::write_str("\n");
+                    diag_str("[NTFSDIAG] BOOT_NTFS=");
+                    diag_str(if ntfs { "OK" } else { "FAIL" });
+                    diag_str("\n");
                     if ntfs {
                         let bps = u16::from_le_bytes([boot[11],boot[12]]);
                         let spc = boot[13];
@@ -543,18 +543,18 @@ pub fn diagnostic() {
                         } else if cpm < 0 {
                             1u32 << ((-cpm) as u32)
                         } else { 0 };
-                        serial::write_str("[NTFSDIAG] BPS=");
-                        serial::write_usize(bps as usize);
-                        serial::write_str(" SPC=");
-                        serial::write_usize(spc as usize);
-                        serial::write_str(" MFT_LCN=");
-                        serial::write_usize(mft as usize);
-                        serial::write_str(" REC_SIZE=");
-                        serial::write_usize(rec as usize);
-                        serial::write_str("\n");
+                        diag_str("[NTFSDIAG] BPS=");
+                        diag_usize(bps as usize);
+                        diag_str(" SPC=");
+                        diag_usize(spc as usize);
+                        diag_str(" MFT_LCN=");
+                        diag_usize(mft as usize);
+                        diag_str(" REC_SIZE=");
+                        diag_usize(rec as usize);
+                        diag_str("\n");
 
                         if bps != 512 || spc == 0 || rec < 512 || rec > 4096 {
-                            serial::write_str("[NTFSDIAG] GEOMETRY=INVALID\n");
+                            diag_str("[NTFSDIAG] GEOMETRY=INVALID\n");
                         } else {
                             unsafe {
                                 DISK=p.disk; PART_LBA=p.lba_start; BPS=bps; SPC=spc;
@@ -562,19 +562,19 @@ pub fn diagnostic() {
                             }
                             let mut r0=[0u8;1024];
                             if read_mft_record_contiguous(0,&mut r0[..rec as usize]) {
-                                serial::write_str("[NTFSDIAG] MFT0=OK\n");
+                                diag_str("[NTFSDIAG] MFT0=OK\n");
                                 let mut r5=[0u8;1024];
                                 if read_mft_record(5,&mut r5[..rec as usize]) {
-                                    serial::write_str("[NTFSDIAG] MFT5=OK\n");
+                                    diag_str("[NTFSDIAG] MFT5=OK\n");
                                     let _ = list_directory(5);
-                                    serial::write_str("[NTFSDIAG] ROOT_ENTRIES=");
-                                    serial::write_usize(entry_count());
-                                    serial::write_str("\n");
+                                    diag_str("[NTFSDIAG] ROOT_ENTRIES=");
+                                    diag_usize(entry_count());
+                                    diag_str("\n");
                                 } else {
-                                    serial::write_str("[NTFSDIAG] MFT5=FAIL\n");
+                                    diag_str("[NTFSDIAG] MFT5=FAIL\n");
                                 }
                             } else {
-                                serial::write_str("[NTFSDIAG] MFT0=FAIL\n");
+                                diag_str("[NTFSDIAG] MFT0=FAIL\n");
                             }
                             unsafe { MOUNTED=false; }
                         }
@@ -584,9 +584,9 @@ pub fn diagnostic() {
         }
         i += 1;
     }
-    serial::write_str("[NTFSDIAG] NTFS_PARTITIONS=");
-    serial::write_usize(found);
-    serial::write_str("\n[NTFSDIAG] end\n");
+    diag_str("[NTFSDIAG] NTFS_PARTITIONS=");
+    diag_usize(found);
+    diag_str("\n[NTFSDIAG] end\n");
 }
 
 pub fn remount_list() -> bool {
