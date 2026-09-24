@@ -1213,13 +1213,19 @@ fn draw_window(idx: usize) {
                     graphics::draw_str(wx + 12, wy + 36, "Ethernet: not found", 0x00800000);
                     graphics::draw_str(wx + 12, wy + 50, "Status: Disconnected", COL_TEXT);
                 }
+                graphics::draw_str(wx + 12, wy + 82, "Wireless Network", COL_TEXT);
+                graphics::border_rect(wx + 10, wy + 94, ww - 20, 72, 0x00808080);
                 if crate::drivers::wifi::found() {
-                    graphics::draw_str(wx + 12, wy + 84, "Wi-Fi: Centrino-N-2230", 0x00008000);
+                    graphics::draw_str(wx + 18, wy + 106, "Intel Centrino-N-2230", 0x00008000);
+                    graphics::draw_str(wx + 18, wy + 120, "PCI 8:0.0  8086:0887", COL_TEXT_DIM);
+                    graphics::draw_str(wx + 18, wy + 134, "PCIe Gen1 x1  |  MSI ready", COL_TEXT_DIM);
                     if crate::drivers::wifi::needs_firmware() {
-                        graphics::draw_str(wx + 12, wy + 98, "FW required — not Connected", 0x00800000);
+                        graphics::draw_str(wx + 18, wy + 150, "Firmware required", 0x00800000);
+                    } else {
+                        graphics::draw_str(wx + 18, wy + 150, "Firmware loaded", 0x00008000);
                     }
                 } else {
-                    graphics::draw_str(wx + 12, wy + 84, "Wi-Fi: not detected", COL_TEXT_DIM);
+                    graphics::draw_str(wx + 18, wy + 106, "Wi-Fi adapter not detected", COL_TEXT_DIM);
                 }
                 if crate::drivers::net::eth_mac_ok() {
                     graphics::draw_str(wx + 12, wy + 120, "MAC:", COL_TEXT_DIM);
