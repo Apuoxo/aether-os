@@ -60,6 +60,14 @@ static mut RESET_AFTER: u32 = 0;
 
 const CSR_RESET: usize = 0x020;
 const CSR_RESET_SW_RESET: u32 = 0x0000_0080;
+const CSR_GP_CNTRL: usize = 0x024;
+const CSR_GP_CNTRL_INIT_DONE: u32 = 0x0000_0004;
+const CSR_GP_CNTRL_MAC_CLOCK_READY: u32 = 0x0000_0001;
+
+static mut ACTIVATE_ATTEMPTED: bool = false;
+static mut ACTIVATE_OK: bool = false;
+static mut ACTIVATE_BEFORE: u32 = 0;
+static mut ACTIVATE_AFTER: u32 = 0;
 
 
 
@@ -161,6 +169,49 @@ pub fn reset_attempted() -> bool { unsafe { RESET_ATTEMPTED } }
 pub fn reset_ok() -> bool { unsafe { RESET_OK } }
 pub fn reset_before() -> u32 { unsafe { RESET_BEFORE } }
 pub fn reset_after() -> u32 { unsafe { RESET_AFTER } }
+pub fn activate_attempted() -> bool { unsafe { ACTIVATE_ATTEMPTED } }
+pub fn activate_ok() -> bool { unsafe { ACTIVATE_OK } }
+pub fn activate_before() -> u32 { unsafe { ACTIVATE_BEFORE } }
+pub fn activate_after() -> u32 { unsafe { ACTIVATE_AFTER } }
+
+/// Wake the pre-8000 Intel MAC after reset, matching iwlwifi's gen1/gen2
+/// activate_nic stage: set INIT_DONE and wait for MAC_CLOCK_READY.
+pub fn activate_nic() -> bool {
+    unsafe {
+        ACTIVATE_ATTEMPTED = false;
+        ACTIVATE_OK = false;
+        ACTIVATE_BEFORE = 0;
+        ACTIVATE_AFTER = 0;
+        if !RESET_OK || MMIO == 0 || !MMIO_MAPPED {
+            serial::write_str("[WIFI] ACTIVATE=NOT-ATTEMPTED reset prerequisite missing\\n");
+            return false;
+        }
+        let gp = (MMIO + CSR_GP_CNTRL) as *mut u32;
+        let before = core::ptr::read_volatile(gp);
+        ACTIVATE_BEFORE = before;
+        ACTIVATE_ATTEMPTED = true;
+        core::ptr::write_volatile(gp, before | CSR_GP_CNTRL_INIT_DONE);
+        let mut ready = 0u32;
+        let mut n = 0usize;
+        while n < 50_000_000 {
+            ready = core::ptr::read_volatile(gp);
+            if (ready & CSR_GP_CNTRL_MAC_CLOCK_READY) != 0 { break; }
+            core::hint::spin_loop();
+            n += 1;
+        }
+        ACTIVATE_AFTER = ready;
+        ACTIVATE_OK = (ready & CSR_GP_CNTRL_MAC_CLOCK_READY) != 0;
+        serial::write_str("[WIFI] ACTIVATE INIT_DONE=SET BEFORE=");
+        serial::write_hex(before as usize);
+        serial::write_str(" AFTER=");
+        serial::write_hex(ready as usize);
+        serial::write_str(" RESULT=");
+        serial::write_str(if ACTIVATE_OK { "MAC_CLOCK_READY" } else { "TIMEOUT" });
+        serial::write_str("\\n");
+        ACTIVATE_OK
+    }
+}
+
 
 /// Execute the device-specific Intel 2000/2030-family software reset used by
 /// iwlwifi for pre-8000 devices. The Linux driver writes SW_RESET to CSR_RESET
