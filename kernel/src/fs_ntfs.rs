@@ -563,6 +563,13 @@ fn diag_str(s: &str) {\n    crate::desktop::terminal_write(s);\n    serial::writ
                             let mut r0=[0u8;1024];
                             if read_mft_record_contiguous(0,&mut r0[..rec as usize]) {
                                 diag_str("[NTFSDIAG] MFT0=OK\n");
+                                if init_mft_runs() {
+                                    diag_str("[NTFSDIAG] MFT_RUNS=");
+                                    unsafe { diag_usize(MFT_RUN_COUNT); }
+                                    diag_str("\n");
+                                } else {
+                                    diag_str("[NTFSDIAG] MFT_RUNS=FAIL\n");
+                                }
                                 let mut r5=[0u8;1024];
                                 if read_mft_record(5,&mut r5[..rec as usize]) {
                                     diag_str("[NTFSDIAG] MFT5=OK\n");
