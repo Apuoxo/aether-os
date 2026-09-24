@@ -244,6 +244,13 @@ fn cmd_wf() {
     write_str(" 64BIT=");
     write_str(if (crate::drivers::wifi::msi_ctrl() & 0x0080) != 0 { "YES" } else { "NO" });
     write_str("\n");
+    write_str("  PCIE_LINK SPEED=");
+    write_hex(crate::drivers::wifi::pcie_link_speed() as usize);
+    write_str(" WIDTH=");
+    write_hex(crate::drivers::wifi::pcie_link_width() as usize);
+    write_str(" TRAIN=");
+    write_str(if (crate::drivers::wifi::pcie_link_status() & 0x0800) != 0 { "YES" } else { "NO" });
+    write_str("\n");
     write_str("  MSI_CTRL=");    write_hex(crate::drivers::wifi::msi_ctrl() as usize);
     write_str(" PCIE=");
     write_str(if crate::drivers::wifi::pcie_cap() { "YES" } else { "NO" });
