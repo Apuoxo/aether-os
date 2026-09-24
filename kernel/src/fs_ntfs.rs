@@ -25,6 +25,11 @@ static mut MFT_REC_SIZE: u32 = 1024;
 // Real NTFS volumes may fragment $MFT, so record lookup must follow these runs.
 static mut MFT_RUNS: [(u64, u64); 32] = [(0, 0); 32]; // (LCN, cluster_count)
 static mut MFT_RUN_COUNT: usize = 0;
+static mut INDEX_RUNS: [(u64, u64); 32] = [(0, 0); 32];
+static mut INDEX_RUN_COUNT: usize = 0;
+static mut INDEX_BLOCK_SIZE: u32 = 4096;
+static mut INDEX_REAL_SIZE: u64 = 0;
+static mut INDEX_BUFFERS_READ: usize = 0;
 static mut ENTRIES: [NtfsEntry; 32] = [NtfsEntry {
     name: [0; 48], name_len: 0, size: 0, is_dir: false, mft_ref: 0,
 }; 32];
@@ -362,8 +367,155 @@ fn read_mft_record(ref_num: u32, out: &mut [u8]) -> bool {
     true
 }
 
+fn parse_runlist(rec: &[u8], attr_off: usize, alen: usize, runs: &mut [(u64, u64); 32], count: &mut usize) {
+    *count = 0;
+    if attr_off + 8 > rec.len() || attr_off + alen > rec.len() || alen < 64 || rec[attr_off + 8] == 0 {
+        return;
+    }
+    let run_off = u16::from_le_bytes([rec[attr_off + 32], rec[attr_off + 33]]) as usize;
+    if run_off >= alen {
+        return;
+    }
+    let mut p = attr_off + run_off;
+    let end = attr_off + alen;
+    let mut current_lcn: i64 = 0;
+    while p < end && *count < 32 {
+        let head = rec[p];
+        p += 1;
+        if head == 0 {
+            break;
+        }
+        let len_bytes = (head & 0x0F) as usize;
+        let off_bytes = ((head >> 4) & 0x0F) as usize;
+        if len_bytes == 0 || len_bytes > 8 || off_bytes > 8 || p + len_bytes + off_bytes > end {
+            break;
+        }
+        let mut run_len = 0u64;
+        let mut i = 0usize;
+        while i < len_bytes {
+            run_len |= (rec[p + i] as u64) << (i * 8);
+            i += 1;
+        }
+        p += len_bytes;
+        let mut delta = 0i64;
+        if off_bytes > 0 {
+            let mut raw = 0u64;
+            i = 0;
+            while i < off_bytes {
+                raw |= (rec[p + i] as u64) << (i * 8);
+                i += 1;
+            }
+            if (rec[p + off_bytes - 1] & 0x80) != 0 && off_bytes < 8 {
+                raw |= (!0u64) << (off_bytes * 8);
+            }
+            delta = raw as i64;
+        }
+        p += off_bytes;
+        if run_len == 0 {
+            break;
+        }
+        current_lcn = current_lcn.wrapping_add(delta);
+        runs[*count] = (current_lcn as u64, run_len);
+        *count += 1;
+    }
+}
+
+fn index_cluster_lcn(cluster_index: u64) -> Option<u64> {
+    let mut base = 0u64;
+    unsafe {
+        let mut i = 0usize;
+        while i < INDEX_RUN_COUNT {
+            let (lcn, count) = INDEX_RUNS[i];
+            if cluster_index < base + count {
+                return Some(lcn + (cluster_index - base));
+            }
+            base = base.wrapping_add(count);
+            i += 1;
+        }
+    }
+    None
+}
+
+fn read_index_stream(offset: u64, out: &mut [u8]) -> bool {
+    let bytes_per_cluster = unsafe { SPC as u64 * 512 };
+    let mut got = 0usize;
+    while got < out.len() {
+        let cur = offset + got as u64;
+        let cluster_index = cur / bytes_per_cluster;
+        let intra = (cur % bytes_per_cluster) as usize;
+        let lcn = match index_cluster_lcn(cluster_index) {
+            Some(v) => v,
+            None => return false,
+        };
+        let mut s = (intra / 512) as u32;
+        let mut sec_off = intra % 512;
+        let spc = unsafe { SPC as u32 };
+        while s < spc && got < out.len() {
+            let mut sec = [0u8; 512];
+            let disk = unsafe { DISK };
+            if !read_lba(disk, cluster_to_lba(lcn) + s, &mut sec) {
+                return false;
+            }
+            let mut i = sec_off;
+            sec_off = 0;
+            while i < 512 && got < out.len() {
+                out[got] = sec[i];
+                got += 1;
+                i += 1;
+            }
+            s += 1;
+        }
+    }
+    true
+}
+
+fn apply_index_fixup(buf: &mut [u8], size: usize) -> bool {
+    if size < 8 || &buf[0..4] != b"INDX" {
+        return false;
+    }
+    let usa_off = u16::from_le_bytes([buf[4], buf[5]]) as usize;
+    let usa_count = u16::from_le_bytes([buf[6], buf[7]]) as usize;
+    if usa_count < 1 || usa_off + usa_count * 2 > size {
+        return false;
+    }
+    let mut i = 1usize;
+    while i < usa_count {
+        let sector_end = i * 512 - 2;
+        if sector_end + 1 >= size {
+            return false;
+        }
+        buf[sector_end] = buf[usa_off + i * 2];
+        buf[sector_end + 1] = buf[usa_off + i * 2 + 1];
+        i += 1;
+    }
+    true
+}
+
+fn parse_index_buffer(buf: &[u8], size: usize) -> usize {
+    if size < 0x38 || &buf[0..4] != b"INDX" {
+        return 0;
+    }
+    let hdr = 0x18usize;
+    let entries_off = u32::from_le_bytes([buf[hdr], buf[hdr+1], buf[hdr+2], buf[hdr+3]]) as usize;
+    let total_size = u32::from_le_bytes([buf[hdr+4], buf[hdr+5], buf[hdr+6], buf[hdr+7]]) as usize;
+    let start = hdr + entries_off;
+    let end = core::cmp::min(hdr + total_size, size);
+    if start >= end {
+        return 0;
+    }
+    let before = unsafe { NENT };
+    parse_index_entries(buf, start, end);
+    unsafe { NENT.saturating_sub(before) }
+}
+
 pub fn list_directory(mft_ref: u32) -> bool {
-    unsafe { NENT = 0; }
+    unsafe {
+        NENT = 0;
+        INDEX_RUN_COUNT = 0;
+        INDEX_REAL_SIZE = 0;
+        INDEX_BLOCK_SIZE = 4096;
+        INDEX_BUFFERS_READ = 0;
+    }
     let mut rec = [0u8; 1024];
     let rec_size = unsafe { MFT_REC_SIZE as usize };
     if rec_size > 1024 {
@@ -373,9 +525,11 @@ pub fn list_directory(mft_ref: u32) -> bool {
         serial::write_str("[NTFS] directory MFT read fail\n");
         return false;
     }
-    // Walk attributes for INDEX_ROOT (0x90) resident
+
     let mut attr_off = u16::from_le_bytes([rec[20], rec[21]]) as usize;
-    while attr_off + 8 < rec_size {
+    let mut index_alloc_attr = 0usize;
+    let mut index_alloc_len = 0usize;
+    while attr_off + 8 <= rec_size {
         let atype = u32::from_le_bytes([
             rec[attr_off], rec[attr_off + 1], rec[attr_off + 2], rec[attr_off + 3],
         ]);
@@ -390,20 +544,57 @@ pub fn list_directory(mft_ref: u32) -> bool {
         }
         let nonres = rec[attr_off + 8];
         if atype == 0x90 && nonres == 0 {
-            // INDEX_ROOT resident
             let val_off = u16::from_le_bytes([rec[attr_off + 20], rec[attr_off + 21]]) as usize;
             let val_len = u32::from_le_bytes([
                 rec[attr_off + 16], rec[attr_off + 17], rec[attr_off + 18], rec[attr_off + 19],
             ]) as usize;
             let base = attr_off + val_off;
-            // INDEX_ROOT header 16 bytes + INDEX_HEADER 16
-            if val_len > 32 {
-                parse_index_entries(&rec, base + 16 + 16, base + val_len);
+            if val_len >= 16 && base + 16 <= rec_size {
+                // INDEX_ROOT: +8 = index block size.
+                let ibs = u32::from_le_bytes([rec[base+8], rec[base+9], rec[base+10], rec[base+11]]);
+                unsafe {
+                    if ibs >= 512 && ibs <= 8192 {
+                        INDEX_BLOCK_SIZE = ibs;
+                    }
+                }
+                if val_len > 32 {
+                    parse_index_entries(&rec, base + 32, base + val_len);
+                }
             }
+        } else if atype == 0xA0 && nonres != 0 {
+            index_alloc_attr = attr_off;
+            index_alloc_len = alen;
+            let real_size = u64::from_le_bytes([
+                rec[attr_off+48], rec[attr_off+49], rec[attr_off+50], rec[attr_off+51],
+                rec[attr_off+52], rec[attr_off+53], rec[attr_off+54], rec[attr_off+55],
+            ]);
+            unsafe { INDEX_REAL_SIZE = real_size; }
         }
-        // Also INDEX_ALLOCATION non-resident — skip for MVP if root fits in INDEX_ROOT
         attr_off += alen;
     }
+
+    if index_alloc_attr != 0 {
+        unsafe {
+            parse_runlist(&rec, index_alloc_attr, index_alloc_len, &mut INDEX_RUNS, &mut INDEX_RUN_COUNT);
+        }
+        let block_size = unsafe { INDEX_BLOCK_SIZE as usize };
+        let real_size = unsafe { INDEX_REAL_SIZE as usize };
+        if block_size >= 512 && block_size <= 8192 && real_size >= block_size {
+            let mut off = 0usize;
+            let mut buf = [0u8; 8192];
+            while off + block_size <= real_size && unsafe { INDEX_BUFFERS_READ } < 256 {
+                if !read_index_stream(off as u64, &mut buf[..block_size]) {
+                    break;
+                }
+                if apply_index_fixup(&mut buf[..block_size], block_size) {
+                    unsafe { INDEX_BUFFERS_READ += 1; }
+                    let _ = parse_index_buffer(&buf[..block_size], block_size);
+                }
+                off += block_size;
+            }
+        }
+    }
+
     serial::write_str("[NTFS] directory entries=");
     serial::write_usize(unsafe { NENT });
     serial::write_str("\n");
@@ -601,7 +792,7 @@ pub fn diagnostic() {
                                 if read_mft_record(5,&mut r5[..rec as usize]) {
                                     diag_str("[NTFSDIAG] MFT5=OK\n");
                                     let _ = list_directory(5);
-                                    diag_str("[NTFSDIAG] ROOT_ENTRIES=");
+                                    diag_str("[NTFSDIAG] DIRECTORY_ENTRIES=");
                                     diag_usize(entry_count());
                                     diag_str("\n");
                                     // Inspect MFT#5 attributes to determine whether the directory
@@ -655,6 +846,7 @@ pub fn diagnostic() {
                                         }
                                         aoff += alen;
                                     }
+                                    diag_str("[NTFSDIAG] INDEX_ALLOCATION_RUNS="); unsafe { diag_usize(INDEX_RUN_COUNT); } diag_str(" INDEX_BUFFERS_READ="); unsafe { diag_usize(INDEX_BUFFERS_READ); } diag_str("\n");
                                     diag_str("[NTFSDIAG] INDEX_ROOT_PRESENT=");
                                     diag_str(if index_root_seen { "YES" } else { "NO" });
                                     diag_str(" INDEX_ALLOCATION_PRESENT=");
