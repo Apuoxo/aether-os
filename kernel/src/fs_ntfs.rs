@@ -604,6 +604,62 @@ pub fn diagnostic() {
                                     diag_str("[NTFSDIAG] ROOT_ENTRIES=");
                                     diag_usize(entry_count());
                                     diag_str("\n");
+                                    // Inspect MFT#5 attributes to determine whether the directory
+                                    // needs non-resident $INDEX_ALLOCATION traversal.
+                                    let mut aoff = u16::from_le_bytes([r5[20], r5[21]]) as usize;
+                                    let mut index_root_seen = false;
+                                    let mut index_alloc_seen = false;
+                                    while aoff + 8 <= rec as usize {
+                                        let atype = u32::from_le_bytes([
+                                            r5[aoff], r5[aoff+1], r5[aoff+2], r5[aoff+3]
+                                        ]);
+                                        if atype == 0xFFFF_FFFF { break; }
+                                        let alen = u32::from_le_bytes([
+                                            r5[aoff+4], r5[aoff+5], r5[aoff+6], r5[aoff+7]
+                                        ]) as usize;
+                                        if alen < 16 || aoff + alen > rec as usize { break; }
+                                        let nonres = r5[aoff+8];
+                                        if atype == 0x90 {
+                                            index_root_seen = true;
+                                            let vlen = u32::from_le_bytes([
+                                                r5[aoff+16], r5[aoff+17], r5[aoff+18], r5[aoff+19]
+                                            ]);
+                                            diag_str("[NTFSDIAG] INDEX_ROOT=");
+                                            diag_str(if nonres == 0 { "RESIDENT" } else { "NONRESIDENT" });
+                                            diag_str(" VALUE_SIZE=");
+                                            diag_usize(vlen as usize);
+                                            diag_str("\n");
+                                        } else if atype == 0xA0 {
+                                            index_alloc_seen = true;
+                                            diag_str("[NTFSDIAG] INDEX_ALLOCATION=NONRESIDENT");
+                                            if alen >= 56 {
+                                                let run_off = u16::from_le_bytes([
+                                                    r5[aoff+32], r5[aoff+33]
+                                                ]) as usize;
+                                                let alloc_size = u64::from_le_bytes([
+                                                    r5[aoff+40], r5[aoff+41], r5[aoff+42], r5[aoff+43],
+                                                    r5[aoff+44], r5[aoff+45], r5[aoff+46], r5[aoff+47]
+                                                ]);
+                                                let real_size = u64::from_le_bytes([
+                                                    r5[aoff+48], r5[aoff+49], r5[aoff+50], r5[aoff+51],
+                                                    r5[aoff+52], r5[aoff+53], r5[aoff+54], r5[aoff+55]
+                                                ]);
+                                                diag_str(" RUN_OFF=");
+                                                diag_usize(run_off);
+                                                diag_str(" ALLOC_SIZE=");
+                                                diag_usize(alloc_size as usize);
+                                                diag_str(" REAL_SIZE=");
+                                                diag_usize(real_size as usize);
+                                            }
+                                            diag_str("\n");
+                                        }
+                                        aoff += alen;
+                                    }
+                                    diag_str("[NTFSDIAG] INDEX_ROOT_PRESENT=");
+                                    diag_str(if index_root_seen { "YES" } else { "NO" });
+                                    diag_str(" INDEX_ALLOCATION_PRESENT=");
+                                    diag_str(if index_alloc_seen { "YES" } else { "NO" });
+                                    diag_str("\n");
                                 } else {
                                     diag_str("[NTFSDIAG] MFT5=FAIL\n");
                                 }

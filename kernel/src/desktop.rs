@@ -132,7 +132,7 @@ static mut Z_TOP: i32 = 3;
 
 // Terminal buffer
 const TERM_ROWS: usize = 128;
-const TERM_COLS: usize = 52;
+const TERM_COLS: usize = 128;
 const TERM_VIEW_ROWS_MAX: usize = 48; // safety cap; actual viewport follows terminal window height
 static mut TERM_LINES: [[u8; TERM_COLS]; TERM_ROWS] = [[0; TERM_COLS]; TERM_ROWS];
 static mut TERM_LEN: [usize; TERM_ROWS] = [0; TERM_ROWS];
@@ -155,6 +155,18 @@ fn term_clear() {
         }
         TERM_ROW = 0;
         TERM_VIEW = 0;
+    }
+}
+
+fn term_text_cols() -> usize {
+    unsafe {
+        if FOCUS < MAX_WIN && WINS[FOCUS].kind == WinKind::Terminal && WINS[FOCUS].visible {
+            let usable = if WINS[FOCUS].w > 34 { (WINS[FOCUS].w - 34) as usize } else { 1 };
+            let cols = usable / 8;
+            if cols < 8 { 8 } else if cols > TERM_COLS { TERM_COLS } else { cols }
+        } else {
+            TERM_COLS
+        }
     }
 }
 
@@ -221,6 +233,10 @@ fn term_putc(ch: u8) {
         if ch == b'\n' {
             term_newline();
             return;
+        }
+        let cols = term_text_cols();
+        if TERM_LEN[TERM_ROW] >= cols {
+            term_newline();
         }
         if TERM_LEN[TERM_ROW] < TERM_COLS {
             let c = TERM_LEN[TERM_ROW];
@@ -375,7 +391,7 @@ fn run_cmd(line: &[u8], len: usize) {
         terminal_write(" PORT-CHANGE lines = plug\n");
         unsafe { DIRTY_FULL = true; }
     } else if eq_cmd(&cmd, ci, b"77") {
-        // Terminal-capacity test: this GUI terminal has a finite 16-row buffer.
+        // Terminal-capacity test for the scrollback/display buffer.
         terminal_write("===== 77-BEGIN =====\n");
         terminal_write("77-TEST-01\n");
         terminal_write("77-TEST-02\n");
