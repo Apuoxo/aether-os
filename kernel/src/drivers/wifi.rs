@@ -86,7 +86,7 @@ const FH_RCSR_CHNL0_CONFIG: usize = FH_MEM_LOWER_BOUND + 0xC00;
 const FH_RCSR_CHNL0_FLUSH_RB_REQ: usize = FH_RCSR_CHNL0_CONFIG + 0x10;
 const FH_RSSR_RX_STATUS: usize = FH_MEM_LOWER_BOUND + 0xC40;
 const FH_RSCSR_FRAME_INVALID: u32 = 0x5555_0000;
-const FH_RX_RBD_COUNT: usize = 32;
+const FH_RX_RBD_COUNT: usize = 256;
 const FH_RX_BUF_SIZE: usize = 4096;
 const FH_RX_IRQ_VECTOR: u8 = 0x27;
 const FH_MEM_LOWER_BOUND: usize = 0x1000;
@@ -153,10 +153,10 @@ struct RxRbd([u32; FH_RX_RBD_COUNT]);
 #[repr(align(4096))]
 struct RxBuffers([[u8; FH_RX_BUF_SIZE]; FH_RX_RBD_COUNT]);
 #[repr(align(16))]
-struct RxStatus([u32; 2]);
+struct RxStatus([u32; 3]);
 static mut RX_RBD: RxRbd = RxRbd([0; FH_RX_RBD_COUNT]);
 static mut RX_BUFFERS: RxBuffers = RxBuffers([[0; FH_RX_BUF_SIZE]; FH_RX_RBD_COUNT]);
-static mut RX_STATUS: RxStatus = RxStatus([0; 2]);
+static mut RX_STATUS: RxStatus = RxStatus([0; 3]);
 static mut RX_READY: bool = false;
 static mut RX_READ: usize = 0;
 static mut RX_IRQ_COUNT: u32 = 0;
@@ -363,7 +363,7 @@ pub fn wf_post_scan_diagnostics() {
         let rx_cfg = core::ptr::read_volatile((MMIO + FH_RCSR_CHNL0_CONFIG) as *const u32);
         let flush = core::ptr::read_volatile((MMIO + FH_RCSR_CHNL0_FLUSH_RB_REQ) as *const u32);
         diag_write_str("[WIFI] WF-RX FINAL read="); diag_write_usize(RX_READ);
-        diag_write_str(" hw_rptr="); diag_write_hex(hw_rptr as usize);
+        diag_write_str(" hw_closed_rb="); diag_write_hex(hw_rptr as usize);
         diag_write_str(" cb_wptr="); diag_write_hex(cb_wptr as usize);
         diag_write_str(" stts_wptr="); diag_write_hex(stts_wptr as usize);
         diag_write_str(" rx_status="); diag_write_hex(rx_status as usize);
@@ -736,12 +736,12 @@ unsafe fn init_rx_queue() -> bool {
     core::ptr::write_volatile((MMIO + FH_RSCSR_RDPTR) as *mut u32, 0);
     core::ptr::write_volatile((MMIO + FH_RSCSR_RBDCB_BASE) as *mut u32, (rbd_base >> 8) as u32);
     core::ptr::write_volatile((MMIO + FH_RSCSR_STTS_WPTR) as *mut u32, (status_base >> 4) as u32);
-    core::ptr::write_volatile((MMIO + FH_RSCSR_RBDCB_WPTR) as *mut u32, FH_RX_RBD_COUNT as u32);
+    core::ptr::write_volatile((MMIO + FH_RSCSR_RBDCB_WPTR) as *mut u32, 248);
     core::ptr::write_volatile((MMIO + CSR_FH_INT_STATUS) as *mut u32, CSR_FH_INT_RX_MASK);
     core::ptr::write_volatile((MMIO + CSR_INT) as *mut u32, CSR_INT_BIT_FH_RX | CSR_INT_BIT_ALIVE);
     core::ptr::write_volatile((MMIO + CSR_INT_MASK) as *mut u32, CSR_INT_BIT_FH_RX | CSR_INT_BIT_ALIVE);
-    // 32 RBDs, 4 KiB buffers, host IRQ destination, ~0.5 ms timeout, DMA enabled.
-    let cfg = 0x8000_0000u32 | (5u32 << 20) | 0x0000_1000 | (0x11u32 << 4) | 0x0000_0004;
+    // 256 RBDs, 4 KiB buffers, host IRQ destination, RB timeout 0x11, DMA enabled.
+    let cfg = 0x8000_0000u32 | (8u32 << 20) | 0x0000_1000 | (0x11u32 << 4) | 0x0000_0004;
     core::ptr::write_volatile((MMIO + FH_RCSR_CHNL0_CONFIG) as *mut u32, cfg);
     RX_READY = true;
     diag_write_str("[WIFI] RX-RING READY RBD=32 BUF=4K IRQ=HOST\n");
@@ -755,7 +755,7 @@ pub unsafe fn irq_handler() {
     RX_IRQ_COUNT = RX_IRQ_COUNT.wrapping_add(1);
     let fh = core::ptr::read_volatile((MMIO + CSR_FH_INT_STATUS) as *const u32);
     if (inta & CSR_INT_BIT_FH_RX) != 0 || (fh & CSR_FH_INT_RX_MASK) != 0 {
-        let hw = core::ptr::read_volatile((MMIO + FH_RSCSR_RDPTR) as *const u32) as usize & (FH_RX_RBD_COUNT - 1);
+        let hw = (core::ptr::read_volatile((&RX_STATUS.0[0]) as *const u32) as usize) & 0x0FFF;
         let mut same_rx_streak = 0usize;
         let mut last_cmd = 0u8;
         let mut last_subtype = 0u8;
