@@ -355,7 +355,7 @@ pub fn init_command_queue() -> bool {
         CMD_WRITE_PTR = 0;
         CMD_SEQ = 0;
         CMD_QUEUE_READY = true;
-        serial::write_str("[WIFI] CMDQ READY QUEUE=4 FIFO=7 TFD=32\\n");
+        serial::write_str("[WIFI] CMDQ READY QUEUE=4 FIFO=7 TFD=256\\n");
         true
     }
 }
@@ -498,6 +498,18 @@ pub fn scan_24ghz() -> bool {
         serial::write_hex(prph_read(SCD_QUEUE_WRPTR) as usize);
         serial::write_str(" SCD_RDPTR=");
         serial::write_hex(prph_read(SCD_QUEUE_RDPTR) as usize);
+        serial::write_str(" SCD_STATUS=");
+        serial::write_hex(prph_read(SCD_QUEUE_STATUS_BITS) as usize);
+        serial::write_str(" SCD_DRAM=");
+        serial::write_hex(prph_read(SCD_DRAM_BASE_ADDR) as usize);
+        serial::write_str(" CBBC=");
+        serial::write_hex(core::ptr::read_volatile((MMIO + FH_MEM_CBBC_CMD) as *const u32) as usize);
+        serial::write_str(" TCSR_CFG=");
+        serial::write_hex(core::ptr::read_volatile((MMIO + FH_TCSR_CONFIG_CMD) as *const u32) as usize);
+        serial::write_str(" TCSR_STS=");
+        serial::write_hex(core::ptr::read_volatile((MMIO + FH_TCSR_BUF_STS_CMD) as *const u32) as usize);
+        serial::write_str(" HBUS_WRPTR=");
+        serial::write_hex(core::ptr::read_volatile((MMIO + 0x60) as *const u32) as usize);
         serial::write_str("\n");
         true
     }
