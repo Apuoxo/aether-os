@@ -121,6 +121,12 @@ static mut ALIVE_SEEN: bool = false;
 static mut ALIVE_VALID: u32 = 0;
 static mut ALIVE_SUBTYPE: u8 = 0;
 static mut SCAN_NOTIFICATION_SEEN: bool = false;
+static mut SCAN_START_COUNT: u32 = 0;
+static mut SCAN_RESULTS_COUNT: u32 = 0;
+static mut SCAN_COMPLETE_COUNT: u32 = 0;
+static mut SCAN_COMPLETE_CHANNELS: u8 = 0;
+static mut SCAN_COMPLETE_STATUS: u8 = 0;
+static mut SCAN_COMPLETE_LAST_CHANNEL: u8 = 0;
 
 static mut FOUND: bool = false;
 static mut READY: bool = false; // phase1 ready = found + mapped
@@ -294,6 +300,9 @@ pub fn alive_seen() -> bool { unsafe { ALIVE_SEEN } }
 pub fn alive_valid() -> u32 { unsafe { ALIVE_VALID } }
 pub fn alive_subtype() -> u8 { unsafe { ALIVE_SUBTYPE } }
 fn scan_notification_seen() -> bool { unsafe { SCAN_NOTIFICATION_SEEN } }
+fn scan_start_count() -> u32 { unsafe { SCAN_START_COUNT } }
+fn scan_results_count() -> u32 { unsafe { SCAN_RESULTS_COUNT } }
+fn scan_complete_count() -> u32 { unsafe { SCAN_COMPLETE_COUNT } }
 
 fn prph_write(addr: u32, val: u32) {
     unsafe {
@@ -565,6 +574,30 @@ pub fn scan_24ghz() -> bool {
         hex(&mut line, &mut n, core::ptr::read_volatile((MMIO + 0x60) as *const u32));
         push(&mut line, &mut n, b"\n");
         crate::desktop::terminal_write(core::str::from_utf8(&line[..n]).unwrap_or("[WIFI] TRANSPORT SNAPSHOT ERROR\\n"));
+
+        let mut polls = 0usize;
+        while polls < 200_000 {
+            let pending = core::ptr::read_volatile((MMIO + CSR_INT) as *const u32);
+            if pending != 0 {
+                irq_handler();
+                if scan_complete_count() != 0 { break; }
+            }
+            core::hint::spin_loop();
+            polls += 1;
+        }
+        serial::write_str("[WIFI] SCAN RX start=");
+        serial::write_usize(scan_start_count() as usize);
+        serial::write_str(" results=");
+        serial::write_usize(scan_results_count() as usize);
+        serial::write_str(" complete=");
+        serial::write_usize(scan_complete_count() as usize);
+        serial::write_str(" polls=");
+        serial::write_usize(polls);
+        serial::write_str("\n");
+        if scan_complete_count() == 0 {
+            serial::write_str("[WIFI] SCAN TIMEOUT/NO-COMPLETE-NOTIFICATION\n");
+            crate::desktop::terminal_write("[WIFI] SCAN TIMEOUT/NO-COMPLETE-NOTIFICATION\n");
+        }
         true
     }
 }
@@ -643,7 +676,64 @@ pub unsafe fn irq_handler() {
                         serial::write_hex(cmd as usize);
                         serial::write_str(" len=");
                         serial::write_usize(len);
-                        serial::write_str("\n");
+                        let payload = p.add(8);
+                        if cmd == SCAN_START_NOTIFICATION && len >= 24 {
+                            let channel = core::ptr::read_volatile(payload.add(12));
+                            let band = core::ptr::read_volatile(payload.add(13));
+                            let status = core::ptr::read_volatile(payload.add(16) as *const u32);
+                            SCAN_START_COUNT = SCAN_START_COUNT.wrapping_add(1);
+                            serial::write_str(" TYPE=SCAN_START ch=");
+                            serial::write_usize(channel as usize);
+                            serial::write_str(" band=");
+                            serial::write_usize(band as usize);
+                            serial::write_str(" status=");
+                            serial::write_hex(status as usize);
+                            serial::write_str("\n");
+                        } else if cmd == SCAN_RESULTS_NOTIFICATION && len >= 20 {
+                            let channel = core::ptr::read_volatile(payload);
+                            let band = core::ptr::read_volatile(payload.add(1));
+                            let probe = core::ptr::read_volatile(payload.add(2));
+                            let not_sent = core::ptr::read_volatile(payload.add(3));
+                            let stats = core::ptr::read_volatile(payload.add(12) as *const u32);
+                            SCAN_RESULTS_COUNT = SCAN_RESULTS_COUNT.wrapping_add(1);
+                            serial::write_str(" TYPE=SCAN_RESULTS ch=");
+                            serial::write_usize(channel as usize);
+                            serial::write_str(" band=");
+                            serial::write_usize(band as usize);
+                            serial::write_str(" probe=");
+                            serial::write_hex(probe as usize);
+                            serial::write_str(" not_sent=");
+                            serial::write_usize(not_sent as usize);
+                            serial::write_str(" good_crc=");
+                            serial::write_usize(stats as usize);
+                            serial::write_str("\n");
+                        } else if cmd == SCAN_COMPLETE_NOTIFICATION && len >= 16 {
+                            let channels = core::ptr::read_volatile(payload);
+                            let status = core::ptr::read_volatile(payload.add(1));
+                            let bt = core::ptr::read_volatile(payload.add(2));
+                            let last = core::ptr::read_volatile(payload.add(3));
+                            SCAN_COMPLETE_COUNT = SCAN_COMPLETE_COUNT.wrapping_add(1);
+                            SCAN_COMPLETE_CHANNELS = channels;
+                            SCAN_COMPLETE_STATUS = status;
+                            SCAN_COMPLETE_LAST_CHANNEL = last;
+                            serial::write_str(" TYPE=SCAN_COMPLETE channels=");
+                            serial::write_usize(channels as usize);
+                            serial::write_str(" status=");
+                            serial::write_hex(status as usize);
+                            serial::write_str(" bt=");
+                            serial::write_usize(bt as usize);
+                            serial::write_str(" last=");
+                            serial::write_usize(last as usize);
+                            serial::write_str("\n");
+                        } else {
+                            serial::write_str(" TYPE=OTHER RAW=");
+                            let mut j = 0usize;
+                            while j < 12 && (8 + j) < len {
+                                serial::write_hex(core::ptr::read_volatile(p.add(8 + j)) as usize);
+                                j += 1;
+                            }
+                            serial::write_str("\n");
+                        }
                     }
                 }
             }
