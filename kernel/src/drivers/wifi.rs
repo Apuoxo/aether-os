@@ -485,7 +485,7 @@ pub fn scan_24ghz() -> bool {
             return false;
         }
         serial::write_str("[WIFI] SCAN24 CMD=SUBMITTED\n");
-        serial::write_str("[WIFI] SCAN24 CMD=SUBMITTED\n");
+        crate::desktop::terminal_write("[WIFI] SCAN24 CMD=SUBMITTED\n");
         // Do one non-blocking RX poll only. If the firmware responds later,
         // the next WF invocation will observe it. This keeps the shell alive
         // while we validate command transport on real hardware.
@@ -511,6 +511,38 @@ pub fn scan_24ghz() -> bool {
         serial::write_str(" HBUS_WRPTR=");
         serial::write_hex(core::ptr::read_volatile((MMIO + 0x60) as *const u32) as usize);
         serial::write_str("\n");
+
+        let mut line = [0u8; 192];
+        let mut n = 0usize;
+        fn push(dst: &mut [u8], n: &mut usize, s: &[u8]) {
+            let mut i = 0usize;
+            while i < s.len() && *n < dst.len() { dst[*n] = s[i]; *n += 1; i += 1; }
+        }
+        fn hex(dst: &mut [u8], n: &mut usize, mut v: u32) {
+            let mut tmp = [0u8; 8];
+            let mut i = 8usize;
+            while i > 0 {
+                i -= 1;
+                let x = (v & 0xF) as u8;
+                tmp[i] = if x < 10 { b'0' + x } else { b'a' + x - 10 };
+                v >>= 4;
+            }
+            push(dst, n, &tmp);
+        }
+        push(&mut line, &mut n, b"[WIFI] TRANSPORT SCD_STATUS=");
+        hex(&mut line, &mut n, prph_read(SCD_QUEUE_STATUS_BITS));
+        push(&mut line, &mut n, b" SCD_DRAM=");
+        hex(&mut line, &mut n, prph_read(SCD_DRAM_BASE_ADDR));
+        push(&mut line, &mut n, b" CBBC=");
+        hex(&mut line, &mut n, core::ptr::read_volatile((MMIO + FH_MEM_CBBC_CMD) as *const u32));
+        push(&mut line, &mut n, b" TCSR_CFG=");
+        hex(&mut line, &mut n, core::ptr::read_volatile((MMIO + FH_TCSR_CONFIG_CMD) as *const u32));
+        push(&mut line, &mut n, b" TCSR_STS=");
+        hex(&mut line, &mut n, core::ptr::read_volatile((MMIO + FH_TCSR_BUF_STS_CMD) as *const u32));
+        push(&mut line, &mut n, b" HBUS_WRPTR=");
+        hex(&mut line, &mut n, core::ptr::read_volatile((MMIO + 0x60) as *const u32));
+        push(&mut line, &mut n, b"\\n");
+        crate::desktop::terminal_write(core::str::from_utf8(&line[..n]).unwrap_or("[WIFI] TRANSPORT SNAPSHOT ERROR\\n"));
         true
     }
 }
