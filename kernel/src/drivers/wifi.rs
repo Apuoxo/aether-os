@@ -60,7 +60,7 @@ const FH_TCSR_TFDB_VALID: u32 = 0x0000_0003;
 const FH_TCSR_TB_NUM: u32 = 1 << 20;
 const FH_TCSR_TB_IDX: u32 = 1 << 12;
 const FH_MEM_CBBC_CMD: usize = FH_MEM_LOWER_BOUND + 0x9D0 + 4 * 4;
-const FH_TCSR_CONFIG_CMD: usize = FH_MEM_LOWER_BOUND + 0xD00 + 0x20 * 4;
+const FH_TCSR_CONFIG_CMD: usize = FH_MEM_LOWER_BOUND + 0xD00 + 0x20 * IWL_CMD_FIFO_NUM as usize;
 const FH_TCSR_BUF_STS_CMD: usize = FH_TCSR_CONFIG_CMD + 8;
 const FH_TCSR_TX_CMD_DMA_ENABLE: u32 = 0x8000_0000;
 const FH_TCSR_TX_CMD_CIRQ_HOST_ENDTFD: u32 = 0x0010_0000;
@@ -336,7 +336,7 @@ pub fn init_command_queue() -> bool {
         // Queue #4 is the default DVM command queue when PAN is disabled.
         // FIFO 7 is the command FIFO. Active + write-status-limit are required.
         prph_write(SCD_QUEUE_STATUS_BITS,
-            SCD_QUEUE_ACTIVE | (IWL_CMD_FIFO_NUM << 0) | SCD_QUEUE_WSL);
+            SCD_QUEUE_STATUS_MASK | SCD_QUEUE_ACTIVE | (IWL_CMD_FIFO_NUM << 0) | SCD_QUEUE_WSL);
 
         // Context: window size and frame limit, matching the DVM scheduler.
         let ctx = scd_sram + SCD_QUEUE_CTX;
@@ -541,7 +541,7 @@ pub fn scan_24ghz() -> bool {
         hex(&mut line, &mut n, core::ptr::read_volatile((MMIO + FH_TCSR_BUF_STS_CMD) as *const u32));
         push(&mut line, &mut n, b" HBUS_WRPTR=");
         hex(&mut line, &mut n, core::ptr::read_volatile((MMIO + 0x60) as *const u32));
-        push(&mut line, &mut n, b"\\n");
+        push(&mut line, &mut n, b"\n");
         crate::desktop::terminal_write(core::str::from_utf8(&line[..n]).unwrap_or("[WIFI] TRANSPORT SNAPSHOT ERROR\\n"));
         true
     }
