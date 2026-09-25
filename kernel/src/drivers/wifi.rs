@@ -649,7 +649,7 @@ pub unsafe fn irq_handler() {
     if (inta & CSR_INT_BIT_FH_RX) != 0 || (fh & CSR_FH_INT_RX_MASK) != 0 {
         let hw = core::ptr::read_volatile((MMIO + FH_RSCSR_RDPTR) as *const u32) as usize & (FH_RX_RBD_COUNT - 1);
         let mut same_rx_streak = 0usize;
-        let mut last_cmd = 0u32;
+        let mut last_cmd = 0u8;
         let mut last_subtype = 0u8;
         let mut rx_items = 0usize;
         serial::write_str("[WIFI] RX-STATE enter read=");
