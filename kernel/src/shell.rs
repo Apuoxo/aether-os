@@ -200,89 +200,40 @@ fn eq(line: &[u8], s: usize, clen: usize, b: &[u8]) -> bool {
 // WiFi implementation command only. All unrelated terminal commands remain removed.
 
 fn cmd_wf() {
+    // WF is intentionally a single desktop-only diagnostic command.
+    // No serial output and no redundant PCI/capability survey: the current
+    // failure is localized to DVM RX ring programming / RX producer progress.
     crate::drivers::wifi::set_wf_gui_output(true);
-    write_str("======== WF WIFI RX/SCAN DIAGNOSTIC ========\n");
-    write_str("MODE: single desktop command; Serial output disabled\n");
-    write_str("TARGET: Intel Centrino Wireless-N 2230 native DVM transport\n");
-    write_str("STAGE: PCI -> reset -> firmware -> ALIVE -> CMDQ -> SCAN -> RX ring\n");
-
-    crate::drivers::wifi::survey();
-    write_str("PCI=");
-    write_str(if crate::drivers::wifi::found() { "FOUND" } else { "NOT-FOUND" });
-    write_str(" VID:DID=8086:0887 SUB=4062 BAR0=");
-    write_hex(crate::drivers::wifi::bar0() as usize);
-    write_str("\n");
-
-    crate::drivers::wifi::probe_prerequisites();
-    crate::drivers::wifi::probe_capabilities();
-    write_str("MSI_CTRL=");
-    write_hex(crate::drivers::wifi::msi_ctrl() as usize);
-    write_str(" MSI=");
-    write_str(if (crate::drivers::wifi::msi_ctrl() & 1) != 0 { "ON" } else { "OFF" });
-    write_str(" FLR=");
-    write_str(if crate::drivers::wifi::pcie_flr_supported() { "YES" } else { "NO" });
-    write_str("\n");
-
-    let reset_ok = crate::drivers::wifi::software_reset();
-    write_str("RESET=");
-    write_str(if reset_ok { "OK" } else { "FAIL" });
-    write_str(" BEFORE=");
-    write_hex(crate::drivers::wifi::reset_before() as usize);
-    write_str(" AFTER=");
-    write_hex(crate::drivers::wifi::reset_after() as usize);
-    write_str("\n");
-
-    let activate_ok = crate::drivers::wifi::activate_nic();
-    write_str("ACTIVATE=");
-    write_str(if activate_ok { "OK" } else { "FAIL" });
-    write_str(" BEFORE=");
-    write_hex(crate::drivers::wifi::activate_before() as usize);
-    write_str(" AFTER=");
-    write_hex(crate::drivers::wifi::activate_after() as usize);
-    write_str("\n");
-
-    let fw_ok = crate::drivers::wifi::load_firmware();
-    write_str("FIRMWARE=");
-    write_str(if fw_ok { "LOADED" } else { "FAIL" });
-    write_str(" VER=");
-    write_hex(crate::drivers::wifi::firmware_version() as usize);
-    write_str(" INST=");
-    write_usize(crate::drivers::wifi::firmware_inst_size() as usize);
-    write_str(" DATA=");
-    write_usize(crate::drivers::wifi::firmware_data_size() as usize);
-    write_str("\n");
+    write_str("======== WF RX PRODUCER DIAGNOSTIC ========\n");
+    write_str("TARGET=Intel 2230 DVM RX ring\n");
+    write_str("CHECK=RBD / RX_STATUS / FH-RX producer progress\n");
 
     let exec_ok = crate::drivers::wifi::start_firmware();
-    let cmdq_ok = exec_ok && crate::drivers::wifi::alive_seen() &&
-        crate::drivers::wifi::init_command_queue();
-    write_str("FIRMWARE_EXEC=");
-    write_str(if exec_ok { "STARTED" } else { "FAIL" });
-    write_str(" ALIVE=");
-    write_str(if crate::drivers::wifi::alive_seen() { "SEEN" } else { "NOT-SEEN" });
-    write_str(" VALID=");
-    write_hex(crate::drivers::wifi::alive_valid() as usize);
-    write_str(" SUBTYPE=");
-    write_usize(crate::drivers::wifi::alive_subtype() as usize);
-    write_str("\n");
-
-    write_str("CMDQ=");
-    write_str(if cmdq_ok { "READY" } else { "NOT-READY" });
-    write_str("\n");
-
-    if cmdq_ok {
-        let scan_ok = crate::drivers::wifi::scan_24ghz();
-        write_str("SCAN24=");
-        write_str(if scan_ok { "SUBMITTED" } else { "NOT-SUBMITTED" });
-        write_str("\n");
-    } else {
-        write_str("SCAN24=NOT-SUBMITTED\n");
+    if !exec_ok || !crate::drivers::wifi::alive_seen() {
+        write_str("RESULT=FIRMWARE_OR_ALIVE_FAIL\n");
+        write_str("NEXT=STOP; RX producer cannot be analyzed before ALIVE\n");
+        crate::drivers::wifi::set_wf_gui_output(false);
+        return;
     }
+
+    let cmdq_ok = crate::drivers::wifi::init_command_queue();
+    if !cmdq_ok {
+        write_str("RESULT=CMDQ_NOT_READY\n");
+        write_str("NEXT=STOP; command transport prerequisite failed\n");
+        crate::drivers::wifi::set_wf_gui_output(false);
+        return;
+    }
+
+    write_str("ALIVE=SEEN CMDQ=READY\n");
+    let scan_ok = crate::drivers::wifi::scan_24ghz();
+    write_str("SCAN24=");
+    write_str(if scan_ok { "SUBMITTED" } else { "NOT-SUBMITTED" });
+    write_str("\n");
 
     crate::drivers::wifi::wf_post_scan_diagnostics();
     write_str("======== WF END ========\n");
     crate::drivers::wifi::set_wf_gui_output(false);
 }
-
 fn run_line(line: &[u8], len: usize) {
     let mut s = 0usize;
     while s < len && line[s] == b' ' { s += 1; }
