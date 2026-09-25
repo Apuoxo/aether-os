@@ -208,10 +208,15 @@ fn cmd_wf() {
     write_str("TARGET=Intel 2230 DVM RX ring\n");
     write_str("CHECK=RBD / RX_STATUS / FH-RX producer progress\n");
 
-    let exec_ok = crate::drivers::wifi::start_firmware();
+    // The normal boot path only maps/enables the device. WF must perform
+    // the minimal firmware bring-up in this session before inspecting RX.
+    let reset_ok = crate::drivers::wifi::software_reset();
+    let activate_ok = reset_ok && crate::drivers::wifi::activate_nic();
+    let fw_ok = activate_ok && crate::drivers::wifi::load_firmware();
+    let exec_ok = fw_ok && crate::drivers::wifi::start_firmware();
     if !exec_ok || !crate::drivers::wifi::alive_seen() {
         write_str("RESULT=FIRMWARE_OR_ALIVE_FAIL\n");
-        write_str("NEXT=STOP; RX producer cannot be analyzed before ALIVE\n");
+        write_str("NEXT=RX producer check stopped before ALIVE\n");
         crate::drivers::wifi::set_wf_gui_output(false);
         return;
     }
