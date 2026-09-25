@@ -65,7 +65,8 @@ const FH_TCSR_BUF_STS_CMD: usize = FH_TCSR_CONFIG_CMD + 8;
 const FH_TCSR_TX_CMD_DMA_ENABLE: u32 = 0x8000_0000;
 const FH_TCSR_TX_CMD_CIRQ_HOST_ENDTFD: u32 = 0x0010_0000;
 const FH_TCSR_TX_CMD_CREDIT_ENABLE: u32 = 0x0000_0008;
-const FH_TFD_CMD_SLOTS: usize = 32;
+// DVM command queue #4 is a 256-entry circular TFD queue.
+const FH_TFD_CMD_SLOTS: usize = 256;
 const FH_TFD_SIZE: usize = 128;
 const IWL_DEFAULT_CMD_QUEUE_NUM: usize = 4;
 const IWL_CMD_FIFO_NUM: u32 = 7;
@@ -317,18 +318,26 @@ pub fn init_command_queue() -> bool {
         core::ptr::write_bytes(CMD_TFD_QUEUE.0.as_mut_ptr(), 0, CMD_TFD_QUEUE.0.len());
         core::ptr::write_volatile((MMIO + FH_MEM_CBBC_CMD) as *mut u32, (tfd_base >> 8) as u32);
 
-        // Reset command-queue scheduler context, byte-count table pointer is
-        // not used by this first command-only FIFO path.
+        // Initialize the scheduler's SRAM/DRAM translation state before
+        // activating queue #4.  The DVM transport expects the DRAM base and
+        // queue read pointer to be valid even for the first host command.
         prph_write(SCD_CHAINEXT_EN, 0);
         prph_write(SCD_GP_CTRL, SCD_GP_CTRL_ENABLE_31_QUEUES);
         prph_write(SCD_EN_CTRL, 0);
         prph_write(SCD_QUEUECHAIN_SEL, 0);
         prph_write(SCD_TXFACT, 1u32 << IWL_CMD_FIFO_NUM);
+        prph_write(SCD_DRAM_BASE_ADDR, tfd_base as u32);
+
+        // Clear queue #4 read/write pointers and status before activation.
+        prph_write(SCD_QUEUE_WRPTR, 0);
+        prph_write(SCD_QUEUE_RDPTR, 0);
+        prph_write(SCD_QUEUE_STATUS_BITS, 0);
 
         // Queue #4 is the default DVM command queue when PAN is disabled.
         // FIFO 7 is the command FIFO. Active + write-status-limit are required.
         prph_write(SCD_QUEUE_STATUS_BITS,
             SCD_QUEUE_ACTIVE | (IWL_CMD_FIFO_NUM << 0) | SCD_QUEUE_WSL);
+
         // Context: window size and frame limit, matching the DVM scheduler.
         let ctx = scd_sram + SCD_QUEUE_CTX;
         core::ptr::write_volatile((MMIO + 0x410) as *mut u32, ctx);
