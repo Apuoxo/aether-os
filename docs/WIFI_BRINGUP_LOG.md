@@ -67,3 +67,30 @@ Next test:
 - Wait for a green build and test the resulting ISO on AH532.
 - Compare the new `SCD_STATUS`, `SCD_DRAM`, `CBBC`, `TCSR_CFG`, `TCSR_STS`, and `HBUS_WRPTR` values against the previous run.
 - Do not claim native scan success until 0x82/0x83/0x84 notifications or actual SSID/BSSID/channel results are observed.
+
+ 
+## 2026-09-25 — transport correction: SCD byte-count table
+ 
+AH532 result for commit `298588df84e2f1bc829615ef179dfaa9e5345299`:
+- SCD_STATUS changed from `00000090` to `0000009F`.
+- TCSR_CFG changed from `00000806`-style invalid output to `80008008`; the observed value now contains DMA enable, host-end-TFD completion, and credit-enable bits.
+- SCD_STATUS `0x9F` is consistent with the command queue being active, mapped to FIFO 7, with the scheduler status mask applied.
+- HBUS_WRPTR remains `00000001`.
+- No `0x82/0x83/0x84` scan notifications and no SSID/BSSID/channel results were observed.
+ 
+### Root-cause finding before next code change
+ 
+The transport snapshot exposed a more important remaining defect in the implementation: `SCD_DRAM_BASE_ADDR` was being programmed with the **TFD ring address**. In Intel's gen1/2 iwlwifi transport, this register points to the scheduler **byte-count table (BC table)**, while the TFD circular-buffer base is supplied separately through the FH CBBC queue register. The kernel implementation allocates the BC tables separately and programs `SCD_DRAM_BASE_ADDR` from that DMA address. citeturn5search0turn6search7
+ 
+For the legacy DVM scheduler, the BC table is 320 u16 entries per queue (256 normal entries plus 64 duplicate entries). The command queue is #4, so the hardware must index queue #4 within a table covering the queue set; the command entry must be populated with its transfer length in DWORDs on this pre-AX210 transport. citeturn11search0turn13search0
+ 
+### Next commit
+ 
+The next code commit will therefore:
+1. Allocate a dedicated DMA-visible BC table for the legacy scheduler.
+2. Program `SCD_DRAM_BASE_ADDR` from the BC-table base instead of the TFD ring.
+3. Populate queue #4's BC entry for each submitted command, including the required duplicate entry for the first 64 slots.
+4. Log `CMD_BC_DW` alongside the existing transport registers.
+5. Leave firmware loading, ALIVE, RX ring, no-STI polling, TCSR FIFO selection, and scan payload unchanged.
+ 
+This is still a transport-stage fix. Native scan success will only be declared after the firmware produces the documented scan response/notifications or actual scan results. citeturn3view0turn1search2

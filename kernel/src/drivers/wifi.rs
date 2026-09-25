@@ -88,10 +88,15 @@ const SCD_QUEUE_WSL: u32 = 1 << 4;
 const SCD_QUEUE_STATUS_MASK: u32 = 0x017F_0000;
 const SCD_WIN_SIZE: u32 = 64;
 const SCD_FRAME_LIMIT: u32 = 64;
+const SCD_QUEUE_COUNT: usize = 11;
+const SCD_QUEUE_BC_SIZE: usize = 320; // 256 TFD entries + 64 duplicate entries
 
 #[repr(align(256))]
 struct CmdTfdQueue([u8; FH_TFD_CMD_SLOTS * FH_TFD_SIZE]);
 static mut CMD_TFD_QUEUE: CmdTfdQueue = CmdTfdQueue([0; FH_TFD_CMD_SLOTS * FH_TFD_SIZE]);
+#[repr(align(256))]
+struct ScdBcTable([u16; SCD_QUEUE_COUNT * SCD_QUEUE_BC_SIZE]);
+static mut SCD_BC_TABLE: ScdBcTable = ScdBcTable([0; SCD_QUEUE_COUNT * SCD_QUEUE_BC_SIZE]);
 static mut CMD_QUEUE_READY: bool = false;
 static mut CMD_WRITE_PTR: usize = 0;
 static mut CMD_SEQ: u8 = 0;
@@ -316,6 +321,7 @@ pub fn init_command_queue() -> bool {
             return false;
         }
         core::ptr::write_bytes(CMD_TFD_QUEUE.0.as_mut_ptr(), 0, CMD_TFD_QUEUE.0.len());
+        core::ptr::write_bytes(SCD_BC_TABLE.0.as_mut_ptr(), 0, SCD_BC_TABLE.0.len());
         core::ptr::write_volatile((MMIO + FH_MEM_CBBC_CMD) as *mut u32, (tfd_base >> 8) as u32);
 
         // Initialize the scheduler's SRAM/DRAM translation state before
@@ -326,7 +332,11 @@ pub fn init_command_queue() -> bool {
         prph_write(SCD_EN_CTRL, 0);
         prph_write(SCD_QUEUECHAIN_SEL, 0);
         prph_write(SCD_TXFACT, 1u32 << IWL_CMD_FIFO_NUM);
-        prph_write(SCD_DRAM_BASE_ADDR, tfd_base as u32);
+        // SCD_DRAM_BASE_ADDR is the scheduler byte-count table base, not the
+        // TFD ring base. Gen1/2 iwlwifi uses 320 u16 entries per queue and
+        // indexes the table by queue number.
+        let bc_base = (&SCD_BC_TABLE.0 as *const u16) as u64;
+        prph_write(SCD_DRAM_BASE_ADDR, (bc_base >> 10) as u32);
 
         // Clear queue #4 read/write pointers and status before activation.
         prph_write(SCD_QUEUE_WRPTR, 0);
@@ -352,6 +362,8 @@ pub fn init_command_queue() -> bool {
             FH_TCSR_TX_CMD_DMA_ENABLE | FH_TCSR_TX_CMD_CREDIT_ENABLE |
             FH_TCSR_TX_CMD_CIRQ_HOST_ENDTFD);
         prph_write(SCD_QUEUE_WRPTR, 0);
+        // Seed the command queue byte-count table entry as an invalid/empty
+        // descriptor. send_command() replaces it with the actual frame size.
         CMD_WRITE_PTR = 0;
         CMD_SEQ = 0;
         CMD_QUEUE_READY = true;
@@ -393,6 +405,14 @@ pub fn send_command(cmd: u8, payload: &[u8]) -> bool {
         let len = 4 + payload.len();
         let tfd = (&mut CMD_TFD_QUEUE.0[slot * FH_TFD_SIZE]) as *mut u8;
         cmd_tfd_set(tfd, (&FW_DMA_BUF.0[0] as *const u8) as u64, len);
+        // Gen1/2 DVM scheduler byte-count tables are expressed in DWORDs.
+        // Keep the first 64 entries duplicated as required by the hardware.
+        let bc = ((len + 3) / 4) as u16;
+        let bc_off = IWL_DEFAULT_CMD_QUEUE_NUM * SCD_QUEUE_BC_SIZE + slot;
+        SCD_BC_TABLE.0[bc_off] = bc;
+        if slot < 64 {
+            SCD_BC_TABLE.0[IWL_DEFAULT_CMD_QUEUE_NUM * SCD_QUEUE_BC_SIZE + FH_TFD_CMD_SLOTS + slot] = bc;
+        }
         let next = (slot + 1) & (FH_TFD_CMD_SLOTS - 1);
         // The DVM PCIe transport publishes the host TFD through
         // HBUS_TARG_WRPTR (MMIO + 0x60). SCD_QUEUE_WRPTR is scheduler state,
@@ -405,7 +425,9 @@ pub fn send_command(cmd: u8, payload: &[u8]) -> bool {
         serial::write_hex(cmd as usize);
         serial::write_str(" len=");
         serial::write_usize(len);
-        serial::write_str(" Q=4\\n");
+        serial::write_str(" Q=4 BC_DW=");
+        serial::write_hex(bc as usize);
+        serial::write_str("\\n");
         true
     }
 }
