@@ -666,6 +666,12 @@ pub unsafe fn irq_handler() {
         serial::write_hex(inta as usize);
         serial::write_str(" fh=");
         serial::write_hex(fh as usize);
+        serial::write_str(" rbd_base=");
+        serial::write_hex(core::ptr::read_volatile((MMIO + FH_RSCSR_RBDCB_BASE) as *const u32) as usize);
+        serial::write_str(" rbd_addr=");
+        serial::write_hex((&RX_RBD.0[RX_READ] as *const u32) as usize);
+        serial::write_str(" buf_addr=");
+        serial::write_hex((&RX_BUFFERS.0[RX_READ][0] as *const u8) as usize);
         serial::write_str("\n");
         while RX_READ != hw {
             let p = &RX_BUFFERS.0[RX_READ][0] as *const u8;
@@ -697,6 +703,12 @@ pub unsafe fn irq_handler() {
                     }
                     serial::write_str(" repeat=");
                     serial::write_usize(same_rx_streak);
+                    serial::write_str(" raw=");
+                    let mut j = 0usize;
+                    while j < 16 && j < len {
+                        serial::write_hex(core::ptr::read_volatile(p.add(j)) as usize);
+                        j += 1;
+                    }
                     serial::write_str("\n");
                     if same_rx_streak > 50 {
                         serial::write_str("[WIFI] IRQ STORM SUSPECTED same RX cmd/subtype >50\n");
@@ -800,10 +812,24 @@ pub unsafe fn irq_handler() {
         serial::write_str(" rx_status=");
         serial::write_hex(core::ptr::read_volatile((MMIO + FH_RSSR_RX_STATUS) as *const u32) as usize);
         serial::write_str("\n");
-        core::ptr::write_volatile((MMIO + FH_RSCSR_RBDCB_WPTR) as *mut u32, RX_READ as u32 + FH_RX_RBD_COUNT as u32 - 1);
+        let new_cb_wptr = RX_READ as u32 + FH_RX_RBD_COUNT as u32 - 1;
+        core::ptr::write_volatile((MMIO + FH_RSCSR_RBDCB_WPTR) as *mut u32, new_cb_wptr);
         core::ptr::write_volatile((MMIO + CSR_FH_INT_STATUS) as *mut u32, CSR_FH_INT_RX_MASK);
+        let ack_fh = core::ptr::read_volatile((MMIO + CSR_FH_INT_STATUS) as *const u32);
+        let ack_int = core::ptr::read_volatile((MMIO + CSR_INT) as *const u32);
+        serial::write_str("[WIFI] RX-ACK cb_wptr=");
+        serial::write_hex(new_cb_wptr as usize);
+        serial::write_str(" fh_after=");
+        serial::write_hex(ack_fh as usize);
+        serial::write_str(" inta_after=");
+        serial::write_hex(ack_int as usize);
+        serial::write_str("\n");
     }
     core::ptr::write_volatile((MMIO + CSR_INT) as *mut u32, inta);
+    let int_after = core::ptr::read_volatile((MMIO + CSR_INT) as *const u32);
+    serial::write_str("[WIFI] RX-ACK CSR_INT final=");
+    serial::write_hex(int_after as usize);
+    serial::write_str("\n");
 }
 
 
