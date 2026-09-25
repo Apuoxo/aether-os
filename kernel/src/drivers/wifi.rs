@@ -347,6 +347,71 @@ fn scan_start_count() -> u32 { unsafe { SCAN_START_COUNT } }
 fn scan_results_count() -> u32 { unsafe { SCAN_RESULTS_COUNT } }
 fn scan_complete_count() -> u32 { unsafe { SCAN_COMPLETE_COUNT } }
 
+pub fn wf_post_scan_diagnostics() {
+    unsafe {
+        if !MMIO_MAPPED || MMIO == 0 {
+            diag_write_str("[WIFI] WF_RESULT=NO-MMIO\n");
+            return;
+        }
+        let csr_int = core::ptr::read_volatile((MMIO + CSR_INT) as *const u32);
+        let fh_int = core::ptr::read_volatile((MMIO + CSR_FH_INT_STATUS) as *const u32);
+        let hw_rptr = core::ptr::read_volatile((MMIO + FH_RSCSR_RDPTR) as *const u32);
+        let cb_wptr = core::ptr::read_volatile((MMIO + FH_RSCSR_RBDCB_WPTR) as *const u32);
+        let stts_wptr = core::ptr::read_volatile((MMIO + FH_RSCSR_STTS_WPTR) as *const u32);
+        let rx_status = core::ptr::read_volatile((MMIO + FH_RSSR_RX_STATUS) as *const u32);
+        let rbd_base = core::ptr::read_volatile((MMIO + FH_RSCSR_RBDCB_BASE) as *const u32);
+        let rx_cfg = core::ptr::read_volatile((MMIO + FH_RCSR_CHNL0_CONFIG) as *const u32);
+        let flush = core::ptr::read_volatile((MMIO + FH_RCSR_CHNL0_FLUSH_RB_REQ) as *const u32);
+        diag_write_str("[WIFI] WF-RX FINAL read="); diag_write_usize(RX_READ);
+        diag_write_str(" hw_rptr="); diag_write_hex(hw_rptr as usize);
+        diag_write_str(" cb_wptr="); diag_write_hex(cb_wptr as usize);
+        diag_write_str(" stts_wptr="); diag_write_hex(stts_wptr as usize);
+        diag_write_str(" rx_status="); diag_write_hex(rx_status as usize);
+        diag_write_str(" rbd_base="); diag_write_hex(rbd_base as usize);
+        diag_write_str(" cfg="); diag_write_hex(rx_cfg as usize);
+        diag_write_str(" flush="); diag_write_hex(flush as usize);
+        diag_write_str(" CSR_INT="); diag_write_hex(csr_int as usize);
+        diag_write_str(" FH_INT="); diag_write_hex(fh_int as usize); diag_write_str("\n");
+
+        diag_write_str("[WIFI] WF-CMD FINAL wrptr="); diag_write_hex(prph_read(SCD_QUEUE_WRPTR) as usize);
+        diag_write_str(" rdptr="); diag_write_hex(prph_read(SCD_QUEUE_RDPTR) as usize);
+        diag_write_str(" status="); diag_write_hex(prph_read(SCD_QUEUE_STATUS_BITS) as usize);
+        diag_write_str(" dram="); diag_write_hex(prph_read(SCD_DRAM_BASE_ADDR) as usize);
+        diag_write_str(" cbbc="); diag_write_hex(core::ptr::read_volatile((MMIO + FH_MEM_CBBC_CMD) as *const u32) as usize);
+        diag_write_str(" tcsr="); diag_write_hex(core::ptr::read_volatile((MMIO + FH_TCSR_CONFIG_CMD) as *const u32) as usize);
+        diag_write_str(" tsts="); diag_write_hex(core::ptr::read_volatile((MMIO + FH_TCSR_BUF_STS_CMD) as *const u32) as usize);
+        diag_write_str(" hbus="); diag_write_hex(core::ptr::read_volatile((MMIO + 0x60) as *const u32) as usize); diag_write_str("\n");
+
+        diag_write_str("[WIFI] WF-RX DESCRIPTORS");
+        let mut i = 0usize;
+        while i < FH_RX_RBD_COUNT {
+            diag_write_str(" ["); diag_write_usize(i); diag_write_str("]=");
+            diag_write_hex(RX_RBD.0[i] as usize); diag_write_str(":");
+            diag_write_hex(core::ptr::read_volatile(&RX_BUFFERS.0[i][0] as *const u8 as *const u32) as usize);
+            i += 1;
+        }
+        diag_write_str("\n");
+
+        diag_write_str("[WIFI] WF-SCAN start="); diag_write_usize(scan_start_count() as usize);
+        diag_write_str(" results="); diag_write_usize(scan_results_count() as usize);
+        diag_write_str(" complete="); diag_write_usize(scan_complete_count() as usize);
+        diag_write_str(" rx_irq="); diag_write_usize(RX_IRQ_COUNT as usize);
+        diag_write_str(" alive="); diag_write_str(if ALIVE_SEEN { "SEEN" } else { "NOT-SEEN" }); diag_write_str("\n");
+
+        if scan_complete_count() == 0 && scan_start_count() == 0 &&
+           scan_results_count() == 0 && RX_READ == (hw_rptr as usize & (FH_RX_RBD_COUNT - 1)) {
+            diag_write_str("[WIFI] WF-RESULT=RX_RING_NO_NEW_ENTRIES\n");
+            diag_write_str("[WIFI] WF-CAUSE=SCAN_COMMAND_SUBMITTED_BUT_RX_PRODUCER_DID_NOT_ADVANCE\n");
+            diag_write_str("[WIFI] WF-NEXT=VERIFY_RX_RING_PROGRAMMING_FH_CHANNEL_ENABLE_AND_BUFFER_ADDRESSING\n");
+        } else if scan_complete_count() == 0 {
+            diag_write_str("[WIFI] WF-RESULT=SCAN_NO_COMPLETE_NOTIFICATION\n");
+            diag_write_str("[WIFI] WF-NEXT=CONTINUE_RX_NOTIFICATION_ANALYSIS\n");
+        } else {
+            diag_write_str("[WIFI] WF-RESULT=SCAN_COMPLETE_NOTIFICATION_SEEN\n");
+        }
+    }
+}
+
 fn prph_write(addr: u32, val: u32) {
     unsafe {
         core::ptr::write_volatile((MMIO + 0x444) as *mut u32, (addr & 0x000F_FFFF) | (3 << 24));

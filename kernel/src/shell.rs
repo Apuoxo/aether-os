@@ -201,76 +201,49 @@ fn eq(line: &[u8], s: usize, clen: usize, b: &[u8]) -> bool {
 
 fn cmd_wf() {
     crate::drivers::wifi::set_wf_gui_output(true);
-    write_str("======== WF NETWORK SURVEY ========\n");
-    write_str("PURPOSE: collect native network hardware facts for the WiFi bring-up plan\n");
-    write_str("MODE: native Intel 2230 bring-up; firmware -> ALIVE -> scan -> auth/association\n");
-    write_str("PROBE: fresh read-only Intel WLAN PCI discovery is executed now\n");
-    crate::drivers::wifi::survey();
+    write_str("======== WF WIFI RX/SCAN DIAGNOSTIC ========\n");
+    write_str("MODE: single desktop command; Serial output disabled\n");
+    write_str("TARGET: Intel Centrino Wireless-N 2230 native DVM transport\n");
+    write_str("STAGE: PCI -> reset -> firmware -> ALIVE -> CMDQ -> SCAN -> RX ring\n");
 
-    let wifi = crate::drivers::wifi::found();
-    let wifi_ready = crate::drivers::wifi::ready();
-    let wifi_fw = crate::drivers::wifi::needs_firmware();
-    write_str("WIFI: ");
-    write_str(if wifi { "FOUND" } else { "NOT-FOUND" });
-    write_str(" PHASE1=");
-    write_str(if wifi_ready { "READY" } else { "NOT-READY" });
-    write_str(" FIRMWARE=");
-    write_str(if wifi_fw { "REQUIRED" } else { "NOT-REQUIRED" });
+    crate::drivers::wifi::survey();
+    write_str("PCI=");
+    write_str(if crate::drivers::wifi::found() { "FOUND" } else { "NOT-FOUND" });
+    write_str(" VID:DID=8086:0887 SUB=4062 BAR0=");
+    write_hex(crate::drivers::wifi::bar0() as usize);
     write_str("\n");
 
-    if wifi {
-        let (bus, dev, func) = crate::drivers::wifi::bus_dev_func();
-        write_str("  INTEL WLAN PCI=");
-        write_usize(bus as usize);
-        write_str(":");
-        write_usize(dev as usize);
-        write_str(".");
-        write_usize(func as usize);
-        write_str(" VID:DID=8086:0887 SUB=4062\n");
-        write_str("  BAR0=");
-        write_hex(crate::drivers::wifi::bar0() as usize);
-        write_str(" MMIO=");
-        write_str(if crate::drivers::wifi::mmio_ready() { "MAPPED" } else { "NOT-MAPPED" });
-        write_str("\n");
-        write_str("  FW-CONTRACT=");
-        write_str(crate::drivers::wifi::firmware_prefix());
-        write_str(" API=5..6\n");
-    }
     crate::drivers::wifi::probe_prerequisites();
     crate::drivers::wifi::probe_capabilities();
-    write_str("  MSI_DECODE ENABLE=");
-    write_str(if (crate::drivers::wifi::msi_ctrl() & 0x0001) != 0 { "YES" } else { "NO" });
-    write_str(" MULTI=");
-    write_hex(((crate::drivers::wifi::msi_ctrl() >> 1) & 0x7) as usize);
-    write_str(" 64BIT=");
-    write_str(if (crate::drivers::wifi::msi_ctrl() & 0x0080) != 0 { "YES" } else { "NO" });
-    write_str("\n");
-    write_str("  FLR_SUPPORTED=");
+    write_str("MSI_CTRL=");
+    write_hex(crate::drivers::wifi::msi_ctrl() as usize);
+    write_str(" MSI=");
+    write_str(if (crate::drivers::wifi::msi_ctrl() & 1) != 0 { "ON" } else { "OFF" });
+    write_str(" FLR=");
     write_str(if crate::drivers::wifi::pcie_flr_supported() { "YES" } else { "NO" });
     write_str("\n");
-    // FLR is absent on this 2230, so use the device-specific iwlwifi CSR reset path.
-    write_str("  RESET_PREP: ");
-    write_str(if crate::drivers::wifi::pcie_flr_supported() { "FLR_AVAILABLE" } else { "FLR_ABSENT; CSR_PATH" });
-    write_str("\n");
+
     let reset_ok = crate::drivers::wifi::software_reset();
-    write_str("  RESET_RESULT=");
-    write_str(if reset_ok { "READABLE" } else { "FAILED/NOT-ATTEMPTED" });
+    write_str("RESET=");
+    write_str(if reset_ok { "OK" } else { "FAIL" });
     write_str(" BEFORE=");
     write_hex(crate::drivers::wifi::reset_before() as usize);
     write_str(" AFTER=");
     write_hex(crate::drivers::wifi::reset_after() as usize);
     write_str("\n");
+
     let activate_ok = crate::drivers::wifi::activate_nic();
-    write_str("  ACTIVATE_RESULT=");
-    write_str(if activate_ok { "MAC_CLOCK_READY" } else { "FAILED/NOT-ATTEMPTED" });
+    write_str("ACTIVATE=");
+    write_str(if activate_ok { "OK" } else { "FAIL" });
     write_str(" BEFORE=");
     write_hex(crate::drivers::wifi::activate_before() as usize);
     write_str(" AFTER=");
     write_hex(crate::drivers::wifi::activate_after() as usize);
     write_str("\n");
+
     let fw_ok = crate::drivers::wifi::load_firmware();
-    write_str("  FIRMWARE_RESULT=");
-    write_str(if fw_ok { "LOADED_TO_SRAM" } else { "FAILED/NOT-ATTEMPTED" });
+    write_str("FIRMWARE=");
+    write_str(if fw_ok { "LOADED" } else { "FAIL" });
     write_str(" VER=");
     write_hex(crate::drivers::wifi::firmware_version() as usize);
     write_str(" INST=");
@@ -278,98 +251,34 @@ fn cmd_wf() {
     write_str(" DATA=");
     write_usize(crate::drivers::wifi::firmware_data_size() as usize);
     write_str("\n");
-    let fw_exec_ok = crate::drivers::wifi::start_firmware();
-    let cmdq_ok = if fw_exec_ok && crate::drivers::wifi::alive_seen() {
-        crate::drivers::wifi::init_command_queue()
-    } else { false };
-    write_str("  CMDQ=");
-    write_str(if cmdq_ok { "READY" } else { "NOT-READY" });
-    write_str("\n");
-    let scan_ok = if cmdq_ok {
-        crate::drivers::wifi::scan_24ghz()
-    } else { false };
-    write_str("  SCAN24=");
-    write_str(if scan_ok { "SUBMITTED" } else { "NOT-SUBMITTED" });
-    write_str("\n");
-    write_str("  RX-RING="); write_str(if crate::drivers::wifi::rx_ready() { "READY" } else { "NOT-READY" }); write_str(" IRQ_COUNT="); write_usize(crate::drivers::wifi::rx_irq_count() as usize); write_str(" ALIVE="); write_str(if crate::drivers::wifi::alive_seen() { "SEEN" } else { "NOT-SEEN" }); write_str(" VALID="); write_hex(crate::drivers::wifi::alive_valid() as usize); write_str(" SUBTYPE="); write_usize(crate::drivers::wifi::alive_subtype() as usize); write_str("\n");
-    write_str("  FIRMWARE_EXECUTION=");
-    write_str(if fw_exec_ok { "STARTED" } else { "FAILED/NOT-ATTEMPTED" });
+
+    let exec_ok = crate::drivers::wifi::start_firmware();
+    let cmdq_ok = exec_ok && crate::drivers::wifi::alive_seen() &&
+        crate::drivers::wifi::init_command_queue();
+    write_str("FIRMWARE_EXEC=");
+    write_str(if exec_ok { "STARTED" } else { "FAIL" });
     write_str(" ALIVE=");
     write_str(if crate::drivers::wifi::alive_seen() { "SEEN" } else { "NOT-SEEN" });
-    write_str(" RX_IRQ_COUNT=");
-    write_usize(crate::drivers::wifi::rx_irq_count() as usize);
-    write_str("\n");
-    write_str("  PCIE_LINK SPEED=");
-    write_hex(crate::drivers::wifi::pcie_link_speed() as usize);
-    write_str(" WIDTH=");
-    write_hex(crate::drivers::wifi::pcie_link_width() as usize);
-    write_str(" TRAIN=");
-    write_str(if (crate::drivers::wifi::pcie_link_status() & 0x0800) != 0 { "YES" } else { "NO" });
-    write_str("\n");
-    write_str("  MSI_CTRL=");    write_hex(crate::drivers::wifi::msi_ctrl() as usize);
-    write_str(" PCIE=");
-    write_str(if crate::drivers::wifi::pcie_cap() { "YES" } else { "NO" });
-    write_str(" LINK_STATUS=");
-    write_hex(crate::drivers::wifi::pcie_link_status() as usize);
-    write_str("\n");
-    write_str("  PCIE_DEV_STATUS=");
-    write_hex(crate::drivers::wifi::pcie_device_status() as usize);
-    write_str("\n");
-    write_str("  CAPS PTR=");
-    write_hex(crate::drivers::wifi::cap_ptr() as usize);
-    write_str(" PM=");
-    write_str(if crate::drivers::wifi::cap_pm() { "YES" } else { "NO" });
-    write_str(" MSI=");
-    write_str(if crate::drivers::wifi::cap_msi() { "YES" } else { "NO" });
-    write_str(" MSIX=");
-    write_str(if crate::drivers::wifi::cap_msix() { "YES" } else { "NO" });
-    write_str(" READ=");
-    write_str(if crate::drivers::wifi::cap_chain_read() { "YES" } else { "NO" });
-    write_str("\n");
-    write_str("  PREREQ PCI_CMD=");
-    write_hex(crate::drivers::wifi::pci_command() as usize);
-    write_str(" STATUS=");
-    write_hex(crate::drivers::wifi::pci_status() as usize);
-    write_str(" IRQ_LINE=");
-    write_usize(crate::drivers::wifi::irq_line() as usize);
-    write_str(" IRQ_PIN=");
-    write_usize(crate::drivers::wifi::irq_pin() as usize);
-    write_str(" READ=");
-    write_str(if crate::drivers::wifi::prerequisites_read() { "YES" } else { "NO" });
+    write_str(" VALID=");
+    write_hex(crate::drivers::wifi::alive_valid() as usize);
+    write_str(" SUBTYPE=");
+    write_usize(crate::drivers::wifi::alive_subtype() as usize);
     write_str("\n");
 
-    let eth = crate::drivers::net::eth_found();
-    write_str("ETHERNET: ");
-    write_str(if eth { "FOUND" } else { "NOT-FOUND" });
-    write_str(" RTL8168=");
-    write_str(if crate::drivers::net::eth_is_rtl() { "YES" } else { "NO" });
-    write_str(" MAC=");
-    write_str(if crate::drivers::net::eth_mac_ok() { "VALID" } else { "NOT-READ" });
-    write_str(" LINK=");
-    write_str(if crate::drivers::net::link_up() { "UP" } else { "NOT-CONFIRMED" });
+    write_str("CMDQ=");
+    write_str(if cmdq_ok { "READY" } else { "NOT-READY" });
     write_str("\n");
 
-    if eth {
-        write_str("  VID:DID=");
-        write_hex(crate::drivers::net::eth_vid() as usize);
-        write_str(":");
-        write_hex(crate::drivers::net::eth_did() as usize);
-        write_str(" BAR0=");
-        write_hex(crate::drivers::net::eth_bar0() as usize);
+    if cmdq_ok {
+        let scan_ok = crate::drivers::wifi::scan_24ghz();
+        write_str("SCAN24=");
+        write_str(if scan_ok { "SUBMITTED" } else { "NOT-SUBMITTED" });
         write_str("\n");
+    } else {
+        write_str("SCAN24=NOT-SUBMITTED\n");
     }
 
-    write_str("PLAN:\n");
-    write_str("  1. Preserve exact PCI identity/BAR/MMIO evidence.\n");
-    write_str("  2. Validate Intel 2230 reset/interrupt/firmware-loader prerequisites.\n");
-    write_str("  3. Add native iwlwifi-2030 firmware loading from Aether storage.\n");
-    write_str("  4. Initialize RX/TX rings and interrupt path; keep read-only diagnostics available.\n");
-    write_str("  5. After firmware ALIVE, implement native 802.11 scan and report SSID/BSSID/channel/security.\n");
-    write_str("  6. Implement open-network association and WPA/WPA2-PSK password association; never print the password.\n");
-    write_str("  7. After association, implement DHCP/IP and real packet TX/RX.\n");
-    write_str("  8. Test each stage on AH532; do not claim WiFi until real packets pass.\n");
-    crate::ai_agent::record_network_probe(if wifi { 1 } else { 0 }, if wifi_ready { 1 } else { 0 });
-    write_str("AI-AGENT: network observation recorded for future native planning/state model\n");
+    crate::drivers::wifi::wf_post_scan_diagnostics();
     write_str("======== WF END ========\n");
     crate::drivers::wifi::set_wf_gui_output(false);
 }
