@@ -648,6 +648,25 @@ pub unsafe fn irq_handler() {
     let fh = core::ptr::read_volatile((MMIO + CSR_FH_INT_STATUS) as *const u32);
     if (inta & CSR_INT_BIT_FH_RX) != 0 || (fh & CSR_FH_INT_RX_MASK) != 0 {
         let hw = core::ptr::read_volatile((MMIO + FH_RSCSR_RDPTR) as *const u32) as usize & (FH_RX_RBD_COUNT - 1);
+        let mut same_rx_streak = 0usize;
+        let mut last_cmd = 0u32;
+        let mut last_subtype = 0u8;
+        let mut rx_items = 0usize;
+        serial::write_str("[WIFI] RX-STATE enter read=");
+        serial::write_usize(RX_READ);
+        serial::write_str(" hw_rptr=");
+        serial::write_usize(hw);
+        serial::write_str(" cb_wptr=");
+        serial::write_hex(core::ptr::read_volatile((MMIO + FH_RSCSR_RBDCB_WPTR) as *const u32) as usize);
+        serial::write_str(" stts_wptr=");
+        serial::write_hex(core::ptr::read_volatile((MMIO + FH_RSCSR_STTS_WPTR) as *const u32) as usize);
+        serial::write_str(" rx_status=");
+        serial::write_hex(core::ptr::read_volatile((MMIO + FH_RSSR_RX_STATUS) as *const u32) as usize);
+        serial::write_str(" inta=");
+        serial::write_hex(inta as usize);
+        serial::write_str(" fh=");
+        serial::write_hex(fh as usize);
+        serial::write_str("\n");
         while RX_READ != hw {
             let p = &RX_BUFFERS.0[RX_READ][0] as *const u8;
             let len_flags = core::ptr::read_volatile(p as *const u32);
@@ -655,6 +674,34 @@ pub unsafe fn irq_handler() {
                 let len = (len_flags & 0x3FFF) as usize;
                 if len >= 8 && len <= FH_RX_BUF_SIZE - 4 {
                     let cmd = core::ptr::read_volatile(p.add(4));
+                    let subtype_probe = if cmd == 1 {
+                        core::ptr::read_volatile(p.add(4 + 4 + 13))
+                    } else { 0 };
+                    if cmd == last_cmd && (cmd != 1 || subtype_probe == last_subtype) {
+                        same_rx_streak = same_rx_streak.saturating_add(1);
+                    } else {
+                        same_rx_streak = 1;
+                        last_cmd = cmd;
+                        last_subtype = subtype_probe;
+                    }
+                    rx_items = rx_items.saturating_add(1);
+                    serial::write_str("[WIFI] RX-ITEM idx=");
+                    serial::write_usize(RX_READ);
+                    serial::write_str(" len=");
+                    serial::write_usize(len);
+                    serial::write_str(" cmd=");
+                    serial::write_hex(cmd as usize);
+                    if cmd == 1 {
+                        serial::write_str(" subtype=");
+                        serial::write_usize(subtype_probe as usize);
+                    }
+                    serial::write_str(" repeat=");
+                    serial::write_usize(same_rx_streak);
+                    serial::write_str("\n");
+                    if same_rx_streak > 50 {
+                        serial::write_str("[WIFI] IRQ STORM SUSPECTED same RX cmd/subtype >50\n");
+                        break;
+                    }
                     if cmd == 1 {
                         let subtype = core::ptr::read_volatile(p.add(4 + 4 + 13));
                         let valid = core::ptr::read_volatile(p.add(4 + 4 + 28));
@@ -740,6 +787,19 @@ pub unsafe fn irq_handler() {
             core::ptr::write_volatile(RX_BUFFERS.0[RX_READ].as_mut_ptr() as *mut u32, FH_RSCSR_FRAME_INVALID);
             RX_READ = (RX_READ + 1) & (FH_RX_RBD_COUNT - 1);
         }
+        serial::write_str("[WIFI] RX-STATE exit items=");
+        serial::write_usize(rx_items);
+        serial::write_str(" read=");
+        serial::write_usize(RX_READ);
+        serial::write_str(" hw_rptr=");
+        serial::write_usize(hw);
+        serial::write_str(" cb_wptr=");
+        serial::write_hex(core::ptr::read_volatile((MMIO + FH_RSCSR_RBDCB_WPTR) as *const u32) as usize);
+        serial::write_str(" stts_wptr=");
+        serial::write_hex(core::ptr::read_volatile((MMIO + FH_RSCSR_STTS_WPTR) as *const u32) as usize);
+        serial::write_str(" rx_status=");
+        serial::write_hex(core::ptr::read_volatile((MMIO + FH_RSSR_RX_STATUS) as *const u32) as usize);
+        serial::write_str("\n");
         core::ptr::write_volatile((MMIO + FH_RSCSR_RBDCB_WPTR) as *mut u32, RX_READ as u32 + FH_RX_RBD_COUNT as u32 - 1);
         core::ptr::write_volatile((MMIO + CSR_FH_INT_STATUS) as *mut u32, CSR_FH_INT_RX_MASK);
     }
