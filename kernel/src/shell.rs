@@ -200,6 +200,7 @@ fn eq(line: &[u8], s: usize, clen: usize, b: &[u8]) -> bool {
 // WiFi implementation command only. All unrelated terminal commands remain removed.
 
 fn cmd_wf() {
+    crate::drivers::wifi::set_wf_gui_output(true);
     write_str("======== WF NETWORK SURVEY ========\n");
     write_str("PURPOSE: collect native network hardware facts for the WiFi bring-up plan\n");
     write_str("MODE: native Intel 2230 bring-up; firmware -> ALIVE -> scan -> auth/association\n");
@@ -370,6 +371,7 @@ fn cmd_wf() {
     crate::ai_agent::record_network_probe(if wifi { 1 } else { 0 }, if wifi_ready { 1 } else { 0 });
     write_str("AI-AGENT: network observation recorded for future native planning/state model\n");
     write_str("======== WF END ========\n");
+    crate::drivers::wifi::set_wf_gui_output(false);
 }
 
 fn run_line(line: &[u8], len: usize) {

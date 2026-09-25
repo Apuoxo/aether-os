@@ -11,6 +11,49 @@
 use crate::serial;
 use crate::mm::paging;
 
+// WF diagnostic sink. A single WF command renders the complete Wi-Fi
+// bring-up trace in the desktop terminal; Serial is only a fallback.
+static mut WF_GUI_OUTPUT: bool = false;
+
+pub fn set_wf_gui_output(enabled: bool) {
+    unsafe { WF_GUI_OUTPUT = enabled; }
+}
+
+fn diag_write_str(s: &str) {
+    unsafe { if WF_GUI_OUTPUT { crate::desktop::terminal_write(s); return; } }
+    serial::write_str(s);
+}
+
+fn diag_write_usize(v: usize) {
+    unsafe {
+        if WF_GUI_OUTPUT {
+            if v == 0 { crate::desktop::terminal_write("0"); return; }
+            let mut n=v; let mut b=[0u8;20]; let mut k=0usize;
+            while n>0 { b[k]=b'0'+(n%10) as u8; n/=10; k+=1; }
+            let mut o=[0u8;20]; let mut i=0usize;
+            while i<k { o[i]=b[k-1-i]; i+=1; }
+            if let Ok(x)=core::str::from_utf8(&o[..k]) { crate::desktop::terminal_write(x); }
+            return;
+        }
+    }
+    serial::write_usize(v);
+}
+
+fn diag_write_hex(v: usize) {
+    unsafe {
+        if WF_GUI_OUTPUT {
+            if v == 0 { crate::desktop::terminal_write("0"); return; }
+            let mut n=v; let mut b=[0u8;16]; let mut k=0usize;
+            while n>0 { let x=(n&0xF) as u8; b[k]=if x<10 { b'0'+x } else { b'a'+x-10 }; n>>=4; k+=1; }
+            let mut o=[0u8;16]; let mut i=0usize;
+            while i<k { o[i]=b[k-1-i]; i+=1; }
+            if let Ok(x)=core::str::from_utf8(&o[..k]) { crate::desktop::terminal_write(x); }
+            return;
+        }
+    }
+    serial::write_hex(v);
+}
+
 const INTEL_VID: u16 = 0x8086;
 const CENTRINO_2230_DID: u16 = 0x0887;
 const SUBSYS_BGN: u16 = 0x4062;
@@ -326,7 +369,7 @@ pub fn init_command_queue() -> bool {
         let tfd_base = (&CMD_TFD_QUEUE.0 as *const u8) as u64;
         let scd_sram = prph_read(SCD_SRAM_BASE_ADDR);
         if scd_sram == 0 || scd_sram == 0xFFFF_FFFF { 
-            serial::write_str("[WIFI] CMDQ SCD_SRAM=INVALID\\n");
+            diag_write_str("[WIFI] CMDQ SCD_SRAM=INVALID\\n");
             return false;
         }
         core::ptr::write_bytes(CMD_TFD_QUEUE.0.as_mut_ptr(), 0, CMD_TFD_QUEUE.0.len());
@@ -376,7 +419,7 @@ pub fn init_command_queue() -> bool {
         CMD_WRITE_PTR = 0;
         CMD_SEQ = 0;
         CMD_QUEUE_READY = true;
-        serial::write_str("[WIFI] CMDQ READY QUEUE=4 FIFO=7 TFD=256\\n");
+        diag_write_str("[WIFI] CMDQ READY QUEUE=4 FIFO=7 TFD=256\\n");
         true
     }
 }
@@ -430,13 +473,13 @@ pub fn send_command(cmd: u8, payload: &[u8]) -> bool {
             (next as u32 & 0xFF) | ((IWL_DEFAULT_CMD_QUEUE_NUM as u32) << 8));
         CMD_WRITE_PTR = next;
         CMD_SEQ = CMD_SEQ.wrapping_add(1);
-        serial::write_str("[WIFI] CMD TX id=");
-        serial::write_hex(cmd as usize);
-        serial::write_str(" len=");
-        serial::write_usize(len);
-        serial::write_str(" Q=4 BC_DW=");
-        serial::write_hex(bc as usize);
-        serial::write_str("\\n");
+        diag_write_str("[WIFI] CMD TX id=");
+        diag_write_hex(cmd as usize);
+        diag_write_str(" len=");
+        diag_write_usize(len);
+        diag_write_str(" Q=4 BC_DW=");
+        diag_write_hex(bc as usize);
+        diag_write_str("\\n");
         true
     }
 }
@@ -510,38 +553,38 @@ pub fn scan_24ghz() -> bool {
             ch += 1;
         }
 
-        serial::write_str("[WIFI] SCAN24 CMD channels=11\n");
+        diag_write_str("[WIFI] SCAN24 CMD channels=11\n");
         if !send_command(REPLY_SCAN_CMD, &p[..total]) {
-            serial::write_str("[WIFI] SCAN24 CMD=FAILED\n");
+            diag_write_str("[WIFI] SCAN24 CMD=FAILED\n");
             return false;
         }
-        serial::write_str("[WIFI] SCAN24 CMD=SUBMITTED\n");
+        diag_write_str("[WIFI] SCAN24 CMD=SUBMITTED\n");
         crate::desktop::terminal_write("[WIFI] SCAN24 CMD=SUBMITTED\n");
         // Do one non-blocking RX poll only. If the firmware responds later,
         // the next WF invocation will observe it. This keeps the shell alive
         // while we validate command transport on real hardware.
         irq_handler();
-        serial::write_str("[WIFI] SCAN24 POST CSR_INT=");
-        serial::write_hex(core::ptr::read_volatile((MMIO + CSR_INT) as *const u32) as usize);
-        serial::write_str(" FH_INT=");
-        serial::write_hex(core::ptr::read_volatile((MMIO + CSR_FH_INT_STATUS) as *const u32) as usize);
-        serial::write_str(" SCD_WRPTR=");
-        serial::write_hex(prph_read(SCD_QUEUE_WRPTR) as usize);
-        serial::write_str(" SCD_RDPTR=");
-        serial::write_hex(prph_read(SCD_QUEUE_RDPTR) as usize);
-        serial::write_str(" SCD_STATUS=");
-        serial::write_hex(prph_read(SCD_QUEUE_STATUS_BITS) as usize);
-        serial::write_str(" SCD_DRAM=");
-        serial::write_hex(prph_read(SCD_DRAM_BASE_ADDR) as usize);
-        serial::write_str(" CBBC=");
-        serial::write_hex(core::ptr::read_volatile((MMIO + FH_MEM_CBBC_CMD) as *const u32) as usize);
-        serial::write_str(" TCSR_CFG=");
-        serial::write_hex(core::ptr::read_volatile((MMIO + FH_TCSR_CONFIG_CMD) as *const u32) as usize);
-        serial::write_str(" TCSR_STS=");
-        serial::write_hex(core::ptr::read_volatile((MMIO + FH_TCSR_BUF_STS_CMD) as *const u32) as usize);
-        serial::write_str(" HBUS_WRPTR=");
-        serial::write_hex(core::ptr::read_volatile((MMIO + 0x60) as *const u32) as usize);
-        serial::write_str("\n");
+        diag_write_str("[WIFI] SCAN24 POST CSR_INT=");
+        diag_write_hex(core::ptr::read_volatile((MMIO + CSR_INT) as *const u32) as usize);
+        diag_write_str(" FH_INT=");
+        diag_write_hex(core::ptr::read_volatile((MMIO + CSR_FH_INT_STATUS) as *const u32) as usize);
+        diag_write_str(" SCD_WRPTR=");
+        diag_write_hex(prph_read(SCD_QUEUE_WRPTR) as usize);
+        diag_write_str(" SCD_RDPTR=");
+        diag_write_hex(prph_read(SCD_QUEUE_RDPTR) as usize);
+        diag_write_str(" SCD_STATUS=");
+        diag_write_hex(prph_read(SCD_QUEUE_STATUS_BITS) as usize);
+        diag_write_str(" SCD_DRAM=");
+        diag_write_hex(prph_read(SCD_DRAM_BASE_ADDR) as usize);
+        diag_write_str(" CBBC=");
+        diag_write_hex(core::ptr::read_volatile((MMIO + FH_MEM_CBBC_CMD) as *const u32) as usize);
+        diag_write_str(" TCSR_CFG=");
+        diag_write_hex(core::ptr::read_volatile((MMIO + FH_TCSR_CONFIG_CMD) as *const u32) as usize);
+        diag_write_str(" TCSR_STS=");
+        diag_write_hex(core::ptr::read_volatile((MMIO + FH_TCSR_BUF_STS_CMD) as *const u32) as usize);
+        diag_write_str(" HBUS_WRPTR=");
+        diag_write_hex(core::ptr::read_volatile((MMIO + 0x60) as *const u32) as usize);
+        diag_write_str("\n");
 
         let mut line = [0u8; 192];
         let mut n = 0usize;
@@ -585,17 +628,17 @@ pub fn scan_24ghz() -> bool {
             core::hint::spin_loop();
             polls += 1;
         }
-        serial::write_str("[WIFI] SCAN RX start=");
-        serial::write_usize(scan_start_count() as usize);
-        serial::write_str(" results=");
-        serial::write_usize(scan_results_count() as usize);
-        serial::write_str(" complete=");
-        serial::write_usize(scan_complete_count() as usize);
-        serial::write_str(" polls=");
-        serial::write_usize(polls);
-        serial::write_str("\n");
+        diag_write_str("[WIFI] SCAN RX start=");
+        diag_write_usize(scan_start_count() as usize);
+        diag_write_str(" results=");
+        diag_write_usize(scan_results_count() as usize);
+        diag_write_str(" complete=");
+        diag_write_usize(scan_complete_count() as usize);
+        diag_write_str(" polls=");
+        diag_write_usize(polls);
+        diag_write_str("\n");
         if scan_complete_count() == 0 {
-            serial::write_str("[WIFI] SCAN TIMEOUT/NO-COMPLETE-NOTIFICATION\n");
+            diag_write_str("[WIFI] SCAN TIMEOUT/NO-COMPLETE-NOTIFICATION\n");
             crate::desktop::terminal_write("[WIFI] SCAN TIMEOUT/NO-COMPLETE-NOTIFICATION\n");
         }
         true
@@ -636,7 +679,7 @@ unsafe fn init_rx_queue() -> bool {
     let cfg = 0x8000_0000u32 | (5u32 << 20) | 0x0000_1000 | (0x11u32 << 4) | 0x0000_0004;
     core::ptr::write_volatile((MMIO + FH_RCSR_CHNL0_CONFIG) as *mut u32, cfg);
     RX_READY = true;
-    serial::write_str("[WIFI] RX-RING READY RBD=32 BUF=4K IRQ=HOST\n");
+    diag_write_str("[WIFI] RX-RING READY RBD=32 BUF=4K IRQ=HOST\n");
     true
 }
 
@@ -652,27 +695,27 @@ pub unsafe fn irq_handler() {
         let mut last_cmd = 0u8;
         let mut last_subtype = 0u8;
         let mut rx_items = 0usize;
-        serial::write_str("[WIFI] RX-STATE enter read=");
-        serial::write_usize(RX_READ);
-        serial::write_str(" hw_rptr=");
-        serial::write_usize(hw);
-        serial::write_str(" cb_wptr=");
-        serial::write_hex(core::ptr::read_volatile((MMIO + FH_RSCSR_RBDCB_WPTR) as *const u32) as usize);
-        serial::write_str(" stts_wptr=");
-        serial::write_hex(core::ptr::read_volatile((MMIO + FH_RSCSR_STTS_WPTR) as *const u32) as usize);
-        serial::write_str(" rx_status=");
-        serial::write_hex(core::ptr::read_volatile((MMIO + FH_RSSR_RX_STATUS) as *const u32) as usize);
-        serial::write_str(" inta=");
-        serial::write_hex(inta as usize);
-        serial::write_str(" fh=");
-        serial::write_hex(fh as usize);
-        serial::write_str(" rbd_base=");
-        serial::write_hex(core::ptr::read_volatile((MMIO + FH_RSCSR_RBDCB_BASE) as *const u32) as usize);
-        serial::write_str(" rbd_addr=");
-        serial::write_hex((&RX_RBD.0[RX_READ] as *const u32) as usize);
-        serial::write_str(" buf_addr=");
-        serial::write_hex((&RX_BUFFERS.0[RX_READ][0] as *const u8) as usize);
-        serial::write_str("\n");
+        diag_write_str("[WIFI] RX-STATE enter read=");
+        diag_write_usize(RX_READ);
+        diag_write_str(" hw_rptr=");
+        diag_write_usize(hw);
+        diag_write_str(" cb_wptr=");
+        diag_write_hex(core::ptr::read_volatile((MMIO + FH_RSCSR_RBDCB_WPTR) as *const u32) as usize);
+        diag_write_str(" stts_wptr=");
+        diag_write_hex(core::ptr::read_volatile((MMIO + FH_RSCSR_STTS_WPTR) as *const u32) as usize);
+        diag_write_str(" rx_status=");
+        diag_write_hex(core::ptr::read_volatile((MMIO + FH_RSSR_RX_STATUS) as *const u32) as usize);
+        diag_write_str(" inta=");
+        diag_write_hex(inta as usize);
+        diag_write_str(" fh=");
+        diag_write_hex(fh as usize);
+        diag_write_str(" rbd_base=");
+        diag_write_hex(core::ptr::read_volatile((MMIO + FH_RSCSR_RBDCB_BASE) as *const u32) as usize);
+        diag_write_str(" rbd_addr=");
+        diag_write_hex((&RX_RBD.0[RX_READ] as *const u32) as usize);
+        diag_write_str(" buf_addr=");
+        diag_write_hex((&RX_BUFFERS.0[RX_READ][0] as *const u8) as usize);
+        diag_write_str("\n");
         while RX_READ != hw {
             let p = &RX_BUFFERS.0[RX_READ][0] as *const u8;
             let len_flags = core::ptr::read_volatile(p as *const u32);
@@ -691,27 +734,27 @@ pub unsafe fn irq_handler() {
                         last_subtype = subtype_probe;
                     }
                     rx_items = rx_items.saturating_add(1);
-                    serial::write_str("[WIFI] RX-ITEM idx=");
-                    serial::write_usize(RX_READ);
-                    serial::write_str(" len=");
-                    serial::write_usize(len);
-                    serial::write_str(" cmd=");
-                    serial::write_hex(cmd as usize);
+                    diag_write_str("[WIFI] RX-ITEM idx=");
+                    diag_write_usize(RX_READ);
+                    diag_write_str(" len=");
+                    diag_write_usize(len);
+                    diag_write_str(" cmd=");
+                    diag_write_hex(cmd as usize);
                     if cmd == 1 {
-                        serial::write_str(" subtype=");
-                        serial::write_usize(subtype_probe as usize);
+                        diag_write_str(" subtype=");
+                        diag_write_usize(subtype_probe as usize);
                     }
-                    serial::write_str(" repeat=");
-                    serial::write_usize(same_rx_streak);
-                    serial::write_str(" raw=");
+                    diag_write_str(" repeat=");
+                    diag_write_usize(same_rx_streak);
+                    diag_write_str(" raw=");
                     let mut j = 0usize;
                     while j < 16 && j < len {
-                        serial::write_hex(core::ptr::read_volatile(p.add(j)) as usize);
+                        diag_write_hex(core::ptr::read_volatile(p.add(j)) as usize);
                         j += 1;
                     }
-                    serial::write_str("\n");
+                    diag_write_str("\n");
                     if same_rx_streak > 50 {
-                        serial::write_str("[WIFI] IRQ STORM SUSPECTED same RX cmd/subtype >50\n");
+                        diag_write_str("[WIFI] IRQ STORM SUSPECTED same RX cmd/subtype >50\n");
                         break;
                     }
                     if cmd == 1 {
@@ -720,34 +763,34 @@ pub unsafe fn irq_handler() {
                         ALIVE_SEEN = true;
                         ALIVE_SUBTYPE = subtype;
                         ALIVE_VALID = valid as u32;
-                        serial::write_str("[WIFI] ALIVE cmd=1 subtype=");
-                        serial::write_usize(subtype as usize);
-                        serial::write_str(" valid=");
-                        serial::write_hex(valid as usize);
-                        serial::write_str(if valid == 1 { " RESULT=VALID\n" } else { " RESULT=INVALID\n" });
+                        diag_write_str("[WIFI] ALIVE cmd=1 subtype=");
+                        diag_write_usize(subtype as usize);
+                        diag_write_str(" valid=");
+                        diag_write_hex(valid as usize);
+                        diag_write_str(if valid == 1 { " RESULT=VALID\n" } else { " RESULT=INVALID\n" });
                     } else {
                         if cmd == SCAN_START_NOTIFICATION ||
                            cmd == SCAN_RESULTS_NOTIFICATION ||
                            cmd == SCAN_COMPLETE_NOTIFICATION {
                             SCAN_NOTIFICATION_SEEN = true;
                         }
-                        serial::write_str("[WIFI] RX cmd=");
-                        serial::write_hex(cmd as usize);
-                        serial::write_str(" len=");
-                        serial::write_usize(len);
+                        diag_write_str("[WIFI] RX cmd=");
+                        diag_write_hex(cmd as usize);
+                        diag_write_str(" len=");
+                        diag_write_usize(len);
                         let payload = p.add(8);
                         if cmd == SCAN_START_NOTIFICATION && len >= 24 {
                             let channel = core::ptr::read_volatile(payload.add(12));
                             let band = core::ptr::read_volatile(payload.add(13));
                             let status = core::ptr::read_volatile(payload.add(16) as *const u32);
                             SCAN_START_COUNT = SCAN_START_COUNT.wrapping_add(1);
-                            serial::write_str(" TYPE=SCAN_START ch=");
-                            serial::write_usize(channel as usize);
-                            serial::write_str(" band=");
-                            serial::write_usize(band as usize);
-                            serial::write_str(" status=");
-                            serial::write_hex(status as usize);
-                            serial::write_str("\n");
+                            diag_write_str(" TYPE=SCAN_START ch=");
+                            diag_write_usize(channel as usize);
+                            diag_write_str(" band=");
+                            diag_write_usize(band as usize);
+                            diag_write_str(" status=");
+                            diag_write_hex(status as usize);
+                            diag_write_str("\n");
                         } else if cmd == SCAN_RESULTS_NOTIFICATION && len >= 20 {
                             let channel = core::ptr::read_volatile(payload);
                             let band = core::ptr::read_volatile(payload.add(1));
@@ -755,17 +798,17 @@ pub unsafe fn irq_handler() {
                             let not_sent = core::ptr::read_volatile(payload.add(3));
                             let stats = core::ptr::read_volatile(payload.add(12) as *const u32);
                             SCAN_RESULTS_COUNT = SCAN_RESULTS_COUNT.wrapping_add(1);
-                            serial::write_str(" TYPE=SCAN_RESULTS ch=");
-                            serial::write_usize(channel as usize);
-                            serial::write_str(" band=");
-                            serial::write_usize(band as usize);
-                            serial::write_str(" probe=");
-                            serial::write_hex(probe as usize);
-                            serial::write_str(" not_sent=");
-                            serial::write_usize(not_sent as usize);
-                            serial::write_str(" good_crc=");
-                            serial::write_usize(stats as usize);
-                            serial::write_str("\n");
+                            diag_write_str(" TYPE=SCAN_RESULTS ch=");
+                            diag_write_usize(channel as usize);
+                            diag_write_str(" band=");
+                            diag_write_usize(band as usize);
+                            diag_write_str(" probe=");
+                            diag_write_hex(probe as usize);
+                            diag_write_str(" not_sent=");
+                            diag_write_usize(not_sent as usize);
+                            diag_write_str(" good_crc=");
+                            diag_write_usize(stats as usize);
+                            diag_write_str("\n");
                         } else if cmd == SCAN_COMPLETE_NOTIFICATION && len >= 16 {
                             let channels = core::ptr::read_volatile(payload);
                             let status = core::ptr::read_volatile(payload.add(1));
@@ -775,23 +818,23 @@ pub unsafe fn irq_handler() {
                             SCAN_COMPLETE_CHANNELS = channels;
                             SCAN_COMPLETE_STATUS = status;
                             SCAN_COMPLETE_LAST_CHANNEL = last;
-                            serial::write_str(" TYPE=SCAN_COMPLETE channels=");
-                            serial::write_usize(channels as usize);
-                            serial::write_str(" status=");
-                            serial::write_hex(status as usize);
-                            serial::write_str(" bt=");
-                            serial::write_usize(bt as usize);
-                            serial::write_str(" last=");
-                            serial::write_usize(last as usize);
-                            serial::write_str("\n");
+                            diag_write_str(" TYPE=SCAN_COMPLETE channels=");
+                            diag_write_usize(channels as usize);
+                            diag_write_str(" status=");
+                            diag_write_hex(status as usize);
+                            diag_write_str(" bt=");
+                            diag_write_usize(bt as usize);
+                            diag_write_str(" last=");
+                            diag_write_usize(last as usize);
+                            diag_write_str("\n");
                         } else {
-                            serial::write_str(" TYPE=OTHER RAW=");
+                            diag_write_str(" TYPE=OTHER RAW=");
                             let mut j = 0usize;
                             while j < 12 && (8 + j) < len {
-                                serial::write_hex(core::ptr::read_volatile(p.add(8 + j)) as usize);
+                                diag_write_hex(core::ptr::read_volatile(p.add(8 + j)) as usize);
                                 j += 1;
                             }
-                            serial::write_str("\n");
+                            diag_write_str("\n");
                         }
                     }
                 }
@@ -799,37 +842,37 @@ pub unsafe fn irq_handler() {
             core::ptr::write_volatile(RX_BUFFERS.0[RX_READ].as_mut_ptr() as *mut u32, FH_RSCSR_FRAME_INVALID);
             RX_READ = (RX_READ + 1) & (FH_RX_RBD_COUNT - 1);
         }
-        serial::write_str("[WIFI] RX-STATE exit items=");
-        serial::write_usize(rx_items);
-        serial::write_str(" read=");
-        serial::write_usize(RX_READ);
-        serial::write_str(" hw_rptr=");
-        serial::write_usize(hw);
-        serial::write_str(" cb_wptr=");
-        serial::write_hex(core::ptr::read_volatile((MMIO + FH_RSCSR_RBDCB_WPTR) as *const u32) as usize);
-        serial::write_str(" stts_wptr=");
-        serial::write_hex(core::ptr::read_volatile((MMIO + FH_RSCSR_STTS_WPTR) as *const u32) as usize);
-        serial::write_str(" rx_status=");
-        serial::write_hex(core::ptr::read_volatile((MMIO + FH_RSSR_RX_STATUS) as *const u32) as usize);
-        serial::write_str("\n");
+        diag_write_str("[WIFI] RX-STATE exit items=");
+        diag_write_usize(rx_items);
+        diag_write_str(" read=");
+        diag_write_usize(RX_READ);
+        diag_write_str(" hw_rptr=");
+        diag_write_usize(hw);
+        diag_write_str(" cb_wptr=");
+        diag_write_hex(core::ptr::read_volatile((MMIO + FH_RSCSR_RBDCB_WPTR) as *const u32) as usize);
+        diag_write_str(" stts_wptr=");
+        diag_write_hex(core::ptr::read_volatile((MMIO + FH_RSCSR_STTS_WPTR) as *const u32) as usize);
+        diag_write_str(" rx_status=");
+        diag_write_hex(core::ptr::read_volatile((MMIO + FH_RSSR_RX_STATUS) as *const u32) as usize);
+        diag_write_str("\n");
         let new_cb_wptr = RX_READ as u32 + FH_RX_RBD_COUNT as u32 - 1;
         core::ptr::write_volatile((MMIO + FH_RSCSR_RBDCB_WPTR) as *mut u32, new_cb_wptr);
         core::ptr::write_volatile((MMIO + CSR_FH_INT_STATUS) as *mut u32, CSR_FH_INT_RX_MASK);
         let ack_fh = core::ptr::read_volatile((MMIO + CSR_FH_INT_STATUS) as *const u32);
         let ack_int = core::ptr::read_volatile((MMIO + CSR_INT) as *const u32);
-        serial::write_str("[WIFI] RX-ACK cb_wptr=");
-        serial::write_hex(new_cb_wptr as usize);
-        serial::write_str(" fh_after=");
-        serial::write_hex(ack_fh as usize);
-        serial::write_str(" inta_after=");
-        serial::write_hex(ack_int as usize);
-        serial::write_str("\n");
+        diag_write_str("[WIFI] RX-ACK cb_wptr=");
+        diag_write_hex(new_cb_wptr as usize);
+        diag_write_str(" fh_after=");
+        diag_write_hex(ack_fh as usize);
+        diag_write_str(" inta_after=");
+        diag_write_hex(ack_int as usize);
+        diag_write_str("\n");
     }
     core::ptr::write_volatile((MMIO + CSR_INT) as *mut u32, inta);
     let int_after = core::ptr::read_volatile((MMIO + CSR_INT) as *const u32);
-    serial::write_str("[WIFI] RX-ACK CSR_INT final=");
-    serial::write_hex(int_after as usize);
-    serial::write_str("\n");
+    diag_write_str("[WIFI] RX-ACK CSR_INT final=");
+    diag_write_hex(int_after as usize);
+    diag_write_str("\n");
 }
 
 
@@ -843,20 +886,20 @@ pub fn load_firmware() -> bool {
         FW_ATTEMPTED = true;
         FW_LOADED = false;
         if !ACTIVATE_OK || MMIO == 0 || !MMIO_MAPPED {
-            serial::write_str("[WIFI] FW=NOT-ATTEMPTED activation prerequisite missing\n");
+            diag_write_str("[WIFI] FW=NOT-ATTEMPTED activation prerequisite missing\n");
             return false;
         }
         if IWL2030_FW.len() < 88 {
-            serial::write_str("[WIFI] FW=INVALID file too small\n");
+            diag_write_str("[WIFI] FW=INVALID file too small\n");
             return false;
         }
 
         let magic = fw_le32(IWL2030_FW, 4);
         const IWL_TLV_UCODE_MAGIC: u32 = 0x0A4C5749;
         if fw_le32(IWL2030_FW, 0) != 0 || magic != IWL_TLV_UCODE_MAGIC {
-            serial::write_str("[WIFI] FW=UNSUPPORTED_FORMAT MAGIC=");
-            serial::write_hex(magic as usize);
-            serial::write_str("\n");
+            diag_write_str("[WIFI] FW=UNSUPPORTED_FORMAT MAGIC=");
+            diag_write_hex(magic as usize);
+            diag_write_str("\n");
             return false;
         }
 
@@ -866,20 +909,20 @@ pub fn load_firmware() -> bool {
         FW_VER = ver;
         FW_INST_SIZE = 0;
         FW_DATA_SIZE = 0;
-        serial::write_str("[WIFI] FW FORMAT=TLV MAGIC=");
-        serial::write_hex(magic as usize);
-        serial::write_str(" VER=");
-        serial::write_hex(ver as usize);
-        serial::write_str(" API=");
-        serial::write_usize(api as usize);
-        serial::write_str(" BUILD=");
-        serial::write_usize(build as usize);
-        serial::write_str("\n");
+        diag_write_str("[WIFI] FW FORMAT=TLV MAGIC=");
+        diag_write_hex(magic as usize);
+        diag_write_str(" VER=");
+        diag_write_hex(ver as usize);
+        diag_write_str(" API=");
+        diag_write_usize(api as usize);
+        diag_write_str(" BUILD=");
+        diag_write_usize(build as usize);
+        diag_write_str("\n");
 
         let dma_base = (&FW_DMA_BUF.0 as *const u8) as u64;
-        serial::write_str("[WIFI] FW DMA_BUFFER=");
-        serial::write_hex(dma_base as usize);
-        serial::write_str("\n");
+        diag_write_str("[WIFI] FW DMA_BUFFER=");
+        diag_write_hex(dma_base as usize);
+        diag_write_str("\n");
 
         let load_chunk = |dst: u32, src: &[u8]| -> bool {
             if src.is_empty() || src.len() > FH_MEM_TB_MAX_LENGTH || (src.len() & 3) != 0 {
@@ -972,25 +1015,25 @@ pub fn load_firmware() -> bool {
                         dst + off as u32,
                         &IWL2030_FW[data_start + off..data_start + off + chunk]
                     ) {
-                        serial::write_str("[WIFI] FW SERVICE-DMA=TIMEOUT dst=");
-                        serial::write_hex((dst + off as u32) as usize);
-                        serial::write_str("\n");
+                        diag_write_str("[WIFI] FW SERVICE-DMA=TIMEOUT dst=");
+                        diag_write_hex((dst + off as u32) as usize);
+                        diag_write_str("\n");
                         return false;
                     }
                     off += chunk;
                 }
-                serial::write_str("[WIFI] FW SERVICE-DMA section dst=");
-                serial::write_hex(dst as usize);
-                serial::write_str(" bytes=");
-                serial::write_usize(tlv_len);
-                serial::write_str(" OK\n");
+                diag_write_str("[WIFI] FW SERVICE-DMA section dst=");
+                diag_write_hex(dst as usize);
+                diag_write_str(" bytes=");
+                diag_write_usize(tlv_len);
+                diag_write_str(" OK\n");
             }
 
             pos = next;
         }
 
         if !inst_seen || !data_seen {
-            serial::write_str("[WIFI] FW TLV=RUNTIME_SECTIONS_MISSING\n");
+            diag_write_str("[WIFI] FW TLV=RUNTIME_SECTIONS_MISSING\n");
             return false;
         }
 
@@ -998,7 +1041,7 @@ pub fn load_firmware() -> bool {
         FW_DATA_SIZE = data_size as u32;
         FW_LOADED = true;
         NEEDS_FW = false;
-        serial::write_str("[WIFI] FW LOAD=OK via Intel FH service DMA\n");
+        diag_write_str("[WIFI] FW LOAD=OK via Intel FH service DMA\n");
         true
     }
 }
@@ -1012,32 +1055,32 @@ pub fn start_firmware() -> bool {
         FW_EXEC_ATTEMPTED = false;
         FW_EXEC_STARTED = false;
         if !FW_LOADED || !ACTIVATE_OK || MMIO == 0 || !MMIO_MAPPED {
-            serial::write_str("[WIFI] FW EXEC=NOT-ATTEMPTED prerequisite missing\n");
+            diag_write_str("[WIFI] FW EXEC=NOT-ATTEMPTED prerequisite missing\n");
             return false;
         }
         FW_EXEC_ATTEMPTED = true;
         if !init_rx_queue() {
-            serial::write_str("[WIFI] RX-RING INIT=FAILED\n");
+            diag_write_str("[WIFI] RX-RING INIT=FAILED\n");
             return false;
         }
         // Do not execute STI here. Aether does not yet have a complete
         // legacy PIC dispatch path for every IRQ. Enabling CPU interrupts at
         // this point can vector an unrelated IRQ to an uninstalled IDT gate
         // and triple-fault/reboot the machine. Keep WiFi bring-up polled.
-        serial::write_str("[WIFI] IRQ=POLLED (CPU IF unchanged) line=");
-        serial::write_usize(IRQ_LINE as usize);
-        serial::write_str("\n");
+        diag_write_str("[WIFI] IRQ=POLLED (CPU IF unchanged) line=");
+        diag_write_usize(IRQ_LINE as usize);
+        diag_write_str("\n");
         let gp1_clr = (MMIO + 0x05C) as *mut u32;
         let csr = (MMIO + CSR_RESET) as *mut u32;
         core::ptr::write_volatile(gp1_clr, 0x0000_0006);
         core::ptr::write_volatile(csr, 0);
         let after = core::ptr::read_volatile(csr);
         FW_EXEC_STARTED = after == 0;
-        serial::write_str("[WIFI] FW EXEC RELEASE_RESET=0 READBACK=");
-        serial::write_hex(after as usize);
-        serial::write_str(" RESULT=");
-        serial::write_str(if FW_EXEC_STARTED { "STARTED" } else { "FAILED" });
-        serial::write_str(" ALIVE=NOT-YET RX/IRQ=POLLING\n");
+        diag_write_str("[WIFI] FW EXEC RELEASE_RESET=0 READBACK=");
+        diag_write_hex(after as usize);
+        diag_write_str(" RESULT=");
+        diag_write_str(if FW_EXEC_STARTED { "STARTED" } else { "FAILED" });
+        diag_write_str(" ALIVE=NOT-YET RX/IRQ=POLLING\n");
 
         // Poll the device instead of enabling global CPU interrupts. This
         // lets us validate the RX/ALIVE path without depending on the
@@ -1053,11 +1096,11 @@ pub fn start_firmware() -> bool {
             core::hint::spin_loop();
             n += 1;
         }
-        serial::write_str("[WIFI] ALIVE=");
-        serial::write_str(if ALIVE_SEEN { "SEEN" } else { "NOT-SEEN" });
-        serial::write_str(" IRQ_COUNT=");
-        serial::write_usize(RX_IRQ_COUNT as usize);
-        serial::write_str("\n");
+        diag_write_str("[WIFI] ALIVE=");
+        diag_write_str(if ALIVE_SEEN { "SEEN" } else { "NOT-SEEN" });
+        diag_write_str(" IRQ_COUNT=");
+        diag_write_usize(RX_IRQ_COUNT as usize);
+        diag_write_str("\n");
         FW_EXEC_STARTED
     }
 }
@@ -1071,7 +1114,7 @@ pub fn activate_nic() -> bool {
         ACTIVATE_BEFORE = 0;
         ACTIVATE_AFTER = 0;
         if !RESET_OK || MMIO == 0 || !MMIO_MAPPED {
-            serial::write_str("[WIFI] ACTIVATE=NOT-ATTEMPTED reset prerequisite missing\n");
+            diag_write_str("[WIFI] ACTIVATE=NOT-ATTEMPTED reset prerequisite missing\n");
             return false;
         }
         let gp = (MMIO + CSR_GP_CNTRL) as *mut u32;
@@ -1089,13 +1132,13 @@ pub fn activate_nic() -> bool {
         }
         ACTIVATE_AFTER = ready;
         ACTIVATE_OK = (ready & CSR_GP_CNTRL_MAC_CLOCK_READY) != 0;
-        serial::write_str("[WIFI] ACTIVATE INIT_DONE=SET BEFORE=");
-        serial::write_hex(before as usize);
-        serial::write_str(" AFTER=");
-        serial::write_hex(ready as usize);
-        serial::write_str(" RESULT=");
-        serial::write_str(if ACTIVATE_OK { "MAC_CLOCK_READY" } else { "TIMEOUT" });
-        serial::write_str("\n");
+        diag_write_str("[WIFI] ACTIVATE INIT_DONE=SET BEFORE=");
+        diag_write_hex(before as usize);
+        diag_write_str(" AFTER=");
+        diag_write_hex(ready as usize);
+        diag_write_str(" RESULT=");
+        diag_write_str(if ACTIVATE_OK { "MAC_CLOCK_READY" } else { "TIMEOUT" });
+        diag_write_str("\n");
         ACTIVATE_OK
     }
 }
@@ -1112,7 +1155,7 @@ pub fn software_reset() -> bool {
         RESET_BEFORE = 0;
         RESET_AFTER = 0;
         if !FOUND || !MMIO_MAPPED || MMIO == 0 {
-            serial::write_str("[WIFI] RESET=NOT-ATTEMPTED prerequisite missing\n");
+            diag_write_str("[WIFI] RESET=NOT-ATTEMPTED prerequisite missing\n");
             return false;
         }
 
@@ -1120,9 +1163,9 @@ pub fn software_reset() -> bool {
         let before = core::ptr::read_volatile(csr);
         RESET_BEFORE = before;
         RESET_ATTEMPTED = true;
-        serial::write_str("[WIFI] RESET path=INTEL_CSR_RESET SW_RESET=0x80 BEFORE=");
-        serial::write_hex(before as usize);
-        serial::write_str("\n");
+        diag_write_str("[WIFI] RESET path=INTEL_CSR_RESET SW_RESET=0x80 BEFORE=");
+        diag_write_hex(before as usize);
+        diag_write_str("\n");
 
         // Exact device-family operation documented in iwlwifi gen1/gen2:
         // set CSR_RESET_REG_FLAG_SW_RESET, then wait 5-6 ms.
@@ -1140,11 +1183,11 @@ pub fn software_reset() -> bool {
         let after = core::ptr::read_volatile(csr);
         RESET_AFTER = after;
         RESET_OK = after != 0xFFFF_FFFF && after != 0xFFFF_FFFE;
-        serial::write_str("[WIFI] RESET AFTER=");
-        serial::write_hex(after as usize);
-        serial::write_str(" RESULT=");
-        serial::write_str(if RESET_OK { "READABLE" } else { "MMIO-FAIL" });
-        serial::write_str("\n");
+        diag_write_str("[WIFI] RESET AFTER=");
+        diag_write_hex(after as usize);
+        diag_write_str(" RESULT=");
+        diag_write_str(if RESET_OK { "READABLE" } else { "MMIO-FAIL" });
+        diag_write_str("\n");
         RESET_OK
     }
 }
@@ -1168,7 +1211,7 @@ pub fn probe_capabilities() {
         PCIE_CAP_OFF = 0;
         PCIE_FLR_SUPPORTED = false;
         if !FOUND {
-            serial::write_str("[WIFI] CAPS=NO-DEVICE\n");
+            diag_write_str("[WIFI] CAPS=NO-DEVICE\n");
             return;
         }
 
@@ -1177,22 +1220,22 @@ pub fn probe_capabilities() {
         CAP_PTR = ptr;
         let mut count = 0usize;
 
-        serial::write_str("[WIFI] CAPS PTR=");
-        serial::write_hex(ptr as usize);
-        serial::write_str("\n");
+        diag_write_str("[WIFI] CAPS PTR=");
+        diag_write_hex(ptr as usize);
+        diag_write_str("\n");
 
         while ptr >= 0x40 && count < 48 {
             let off = ptr & 0xFC;
             let word = pci_r32(BUS, DEV, FUNC, off);
             let cap_id = (word & 0xFF) as u8;
             let next = ((word >> 8) & 0xFF) as u8;
-            serial::write_str("[WIFI] CAP off=");
-            serial::write_hex(ptr as usize);
-            serial::write_str(" ID=");
-            serial::write_hex(cap_id as usize);
-            serial::write_str(" NEXT=");
-            serial::write_hex(next as usize);
-            serial::write_str("\n");
+            diag_write_str("[WIFI] CAP off=");
+            diag_write_hex(ptr as usize);
+            diag_write_str(" ID=");
+            diag_write_hex(cap_id as usize);
+            diag_write_str(" NEXT=");
+            diag_write_hex(next as usize);
+            diag_write_str("\n");
 
             match cap_id {
                 0x01 => { CAP_PM = true; }
@@ -1221,13 +1264,13 @@ pub fn probe_capabilities() {
             count += 1;
         }
         CAP_CHAIN_READ = true;
-        serial::write_str("[WIFI] CAPS PM=");
-        serial::write_str(if CAP_PM { "YES" } else { "NO" });
-        serial::write_str(" MSI=");
-        serial::write_str(if CAP_MSI { "YES" } else { "NO" });
-        serial::write_str(" MSIX=");
-        serial::write_str(if CAP_MSIX { "YES" } else { "NO" });
-        serial::write_str(" READ=YES\n");
+        diag_write_str("[WIFI] CAPS PM=");
+        diag_write_str(if CAP_PM { "YES" } else { "NO" });
+        diag_write_str(" MSI=");
+        diag_write_str(if CAP_MSI { "YES" } else { "NO" });
+        diag_write_str(" MSIX=");
+        diag_write_str(if CAP_MSIX { "YES" } else { "NO" });
+        diag_write_str(" READ=YES\n");
     }
 }
 
@@ -1236,7 +1279,7 @@ pub fn probe_capabilities() {
 pub fn probe_prerequisites() {
     unsafe {
         if !FOUND {
-            serial::write_str("[WIFI] PREREQ=NO-DEVICE\n");
+            diag_write_str("[WIFI] PREREQ=NO-DEVICE\n");
             return;
         }
         let cmdstat = pci_r32(BUS, DEV, FUNC, 0x04);
@@ -1246,21 +1289,21 @@ pub fn probe_prerequisites() {
         IRQ_LINE = (il & 0xFF) as u8;
         IRQ_PIN = ((il >> 8) & 0xFF) as u8;
         PREREQS_READ = true;
-        serial::write_str("[WIFI] PREREQ PCI_CMD=");
-        serial::write_hex(PCI_COMMAND as usize);
-        serial::write_str(" STATUS=");
-        serial::write_hex(PCI_STATUS as usize);
-        serial::write_str(" IRQ_LINE=");
-        serial::write_usize(IRQ_LINE as usize);
-        serial::write_str(" IRQ_PIN=");
-        serial::write_usize(IRQ_PIN as usize);
-        serial::write_str(" MMIO=");
-        serial::write_str(if MMIO_MAPPED { "READY" } else { "NOT-MAPPED" });
-        serial::write_str(" FW=");
-        serial::write_str(if NEEDS_FW { "REQUIRED" } else { "LOADED" });
-        serial::write_str("\n");
-        serial::write_str("[WIFI] PREREQ RESET=NOT-TOUCHED INTERRUPTS=NOT-ENABLED DMA=NOT-STARTED\n");
-        serial::write_str("[WIFI] PREREQ firmware loader=NOT-IMPLEMENTED (contract only)\n");
+        diag_write_str("[WIFI] PREREQ PCI_CMD=");
+        diag_write_hex(PCI_COMMAND as usize);
+        diag_write_str(" STATUS=");
+        diag_write_hex(PCI_STATUS as usize);
+        diag_write_str(" IRQ_LINE=");
+        diag_write_usize(IRQ_LINE as usize);
+        diag_write_str(" IRQ_PIN=");
+        diag_write_usize(IRQ_PIN as usize);
+        diag_write_str(" MMIO=");
+        diag_write_str(if MMIO_MAPPED { "READY" } else { "NOT-MAPPED" });
+        diag_write_str(" FW=");
+        diag_write_str(if NEEDS_FW { "REQUIRED" } else { "LOADED" });
+        diag_write_str("\n");
+        diag_write_str("[WIFI] PREREQ RESET=NOT-TOUCHED INTERRUPTS=NOT-ENABLED DMA=NOT-STARTED\n");
+        diag_write_str("[WIFI] PREREQ firmware loader=NOT-IMPLEMENTED (contract only)\n");
     }
 }
 
@@ -1288,19 +1331,19 @@ pub fn survey() {
                     BAR0 = bar0;
                     SUBSYS = subsys;
                     NEEDS_FW = true;
-                    serial::write_str("[WIFI] SURVEY FOUND ");
-                    serial::write_usize(bus as usize);
-                    serial::write_str(":");
-                    serial::write_usize(dev as usize);
-                    serial::write_str(".");
-                    serial::write_usize(func as usize);
-                    serial::write_str(" DID=");
-                    serial::write_hex(did as usize);
-                    serial::write_str(" SUB=");
-                    serial::write_hex(subsys as usize);
-                    serial::write_str(" BAR0=");
-                    serial::write_hex(bar0 as usize);
-                    serial::write_str(" (READ-ONLY)\n");
+                    diag_write_str("[WIFI] SURVEY FOUND ");
+                    diag_write_usize(bus as usize);
+                    diag_write_str(":");
+                    diag_write_usize(dev as usize);
+                    diag_write_str(".");
+                    diag_write_usize(func as usize);
+                    diag_write_str(" DID=");
+                    diag_write_hex(did as usize);
+                    diag_write_str(" SUB=");
+                    diag_write_hex(subsys as usize);
+                    diag_write_str(" BAR0=");
+                    diag_write_hex(bar0 as usize);
+                    diag_write_str(" (READ-ONLY)\n");
                     return;
                 }
             }
@@ -1308,13 +1351,13 @@ pub fn survey() {
         FOUND = false;
         READY = false;
         NEEDS_FW = true;
-        serial::write_str("[WIFI] SURVEY no Intel WLAN on buses 0..31\n");
+        diag_write_str("[WIFI] SURVEY no Intel WLAN on buses 0..31\n");
     }
 }
 
 /// Force probe Intel Centrino Wireless-N 2230 (AH532) and any 02:80 Intel WLAN
 pub fn init() {
-    serial::write_str("[WIFI] AH532 target: Centrino Wireless-N 2230 (8086:0887)\n");
+    diag_write_str("[WIFI] AH532 target: Centrino Wireless-N 2230 (8086:0887)\n");
     unsafe {
         FOUND = false;
         READY = false;
@@ -1363,45 +1406,45 @@ pub fn init() {
                     REV = rev;
                     SUBSYS = subsys;
 
-                    serial::write_str("[WIFI] FOUND ");
-                    serial::write_usize(bus as usize);
-                    serial::write_str(":");
-                    serial::write_usize(dev as usize);
-                    serial::write_str(".");
-                    serial::write_usize(func as usize);
-                    serial::write_str(" DID=");
-                    serial::write_hex(did as usize);
-                    serial::write_str(" SUB=");
-                    serial::write_hex(subsys as usize);
-                    serial::write_str(" BAR0=");
-                    serial::write_hex(bar0 as usize);
+                    diag_write_str("[WIFI] FOUND ");
+                    diag_write_usize(bus as usize);
+                    diag_write_str(":");
+                    diag_write_usize(dev as usize);
+                    diag_write_str(".");
+                    diag_write_usize(func as usize);
+                    diag_write_str(" DID=");
+                    diag_write_hex(did as usize);
+                    diag_write_str(" SUB=");
+                    diag_write_hex(subsys as usize);
+                    diag_write_str(" BAR0=");
+                    diag_write_hex(bar0 as usize);
                     if is_2230 {
-                        serial::write_str(" Centrino-N-2230");
+                        diag_write_str(" Centrino-N-2230");
                         if subsys == SUBSYS_BGN {
-                            serial::write_str(" BGN");
+                            diag_write_str(" BGN");
                         }
                     }
-                    serial::write_str("\n");
+                    diag_write_str("\n");
 
                     if bar0 != 0 && map_mmio(bar0, 0x2000) {
                         MMIO = bar0 as usize;
                         MMIO_MAPPED = true;
                         READY = true;
-                        serial::write_str("[WIFI] MMIO mapped 8K phase1 OK\n");
+                        diag_write_str("[WIFI] MMIO mapped 8K phase1 OK\n");
                         // Touch first dword (alive check) — may be 0 without FW
                         let v = core::ptr::read_volatile(MMIO as *const u32);
-                        serial::write_str("[WIFI] MMIO[0]=");
-                        serial::write_hex(v as usize);
-                        serial::write_str("\n");
+                        diag_write_str("[WIFI] MMIO[0]=");
+                        diag_write_hex(v as usize);
+                        diag_write_str("\n");
                     } else {
-                        serial::write_str("[WIFI] MMIO map FAIL or BAR0=0\n");
+                        diag_write_str("[WIFI] MMIO map FAIL or BAR0=0\n");
                     }
-                    serial::write_str("[WIFI] firmware contract: iwlwifi-2030-5/6.ucode\n");
-                    serial::write_str("[WIFI] assoc/TX requires firmware loader — NEEDS_FW\n");
+                    diag_write_str("[WIFI] firmware contract: iwlwifi-2030-5/6.ucode\n");
+                    diag_write_str("[WIFI] assoc/TX requires firmware loader — NEEDS_FW\n");
                     return;
                 }
             }
         }
-        serial::write_str("[WIFI] no Intel WLAN on buses 0..31\n");
+        diag_write_str("[WIFI] no Intel WLAN on buses 0..31\n");
     }
 }
