@@ -128,7 +128,7 @@ const SCD_EN_CTRL: u32 = SCD_BASE + 0x254;
 const SCD_GP_CTRL_ENABLE_31_QUEUES: u32 = 1 << 0;
 const SCD_QUEUE_ACTIVE: u32 = 1 << 3;
 const SCD_QUEUE_WSL: u32 = 1 << 4;
-const SCD_QUEUE_STATUS_MASK: u32 = 0x017F_0000;
+// Intel 2000/2030 uses the 5000-style scheduler status layout: bits 16..23 are the write mask.\nconst SCD_QUEUE_STATUS_MASK: u32 = 0x00FF_0000;
 const SCD_WIN_SIZE: u32 = 64;
 const SCD_FRAME_LIMIT: u32 = 64;
 const SCD_QUEUE_COUNT: usize = 11;
@@ -484,7 +484,7 @@ pub fn init_command_queue() -> bool {
         CMD_WRITE_PTR = 0;
         CMD_SEQ = 0;
         CMD_QUEUE_READY = true;
-        diag_write_str("[WIFI] CMDQ READY QUEUE=4 FIFO=7 TFD=256\\n");
+        diag_write_str("[WIFI] CMDQ READY QUEUE=4 FIFO=7 SCD5000=YES STATUS=");\n        diag_write_hex(prph_read(SCD_QUEUE_STATUS_BITS) as usize);\n        diag_write_str(" TFD=256\\n");
         true
     }
 }
@@ -729,7 +729,7 @@ unsafe fn init_rx_queue() -> bool {
         i += 1;
     }
     RX_STATUS.0[0] = 0;
-    RX_STATUS.0[1] = 0;
+    RX_STATUS.0[1] = 0;\n    RX_STATUS.0[2] = 0;
     core::ptr::write_volatile((MMIO + FH_RCSR_CHNL0_CONFIG) as *mut u32, 0);
     core::ptr::write_volatile((MMIO + FH_RSCSR_RBDCB_WPTR) as *mut u32, 0);
     core::ptr::write_volatile((MMIO + FH_RCSR_CHNL0_FLUSH_RB_REQ) as *mut u32, 0);
@@ -755,7 +755,7 @@ pub unsafe fn irq_handler() {
     RX_IRQ_COUNT = RX_IRQ_COUNT.wrapping_add(1);
     let fh = core::ptr::read_volatile((MMIO + CSR_FH_INT_STATUS) as *const u32);
     if (inta & CSR_INT_BIT_FH_RX) != 0 || (fh & CSR_FH_INT_RX_MASK) != 0 {
-        let hw = (core::ptr::read_volatile((&RX_STATUS.0[0]) as *const u32) as usize) & 0x0FFF;
+        // DVM FH writes closed_rb_num into the first RX status word. This is\n        // the producer index; FH_RSCSR_RDPTR is not the notification producer.\n        let status_closed_rb = core::ptr::read_volatile((&RX_STATUS.0[0]) as *const u32) as usize;\n        let hw = status_closed_rb & (FH_RX_RBD_COUNT - 1);
         let mut same_rx_streak = 0usize;
         let mut last_cmd = 0u8;
         let mut last_subtype = 0u8;
