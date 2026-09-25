@@ -1290,6 +1290,9 @@ fn draw_window(idx: usize) {
 
                 if unsafe { WIFI_UI_STATUS == 1 } {
                     graphics::draw_str(lx + 16, ly + 20, "Searching for wireless networks...", 0x00444F5C);
+                } else if unsafe { WIFI_UI_STATUS == 3 } {
+                    graphics::draw_str(lx + 16, ly + 20, "Native Wi-Fi scan is not ready.", 0x00800000);
+                    graphics::draw_str(lx + 16, ly + 38, "Run WF once, then press Refresh.", 0x00606A73);
                 } else {
                     graphics::draw_str(lx + 16, ly + 20, "No networks scanned yet.", 0x00606A73);
                     graphics::draw_str(lx + 16, ly + 38, "Click Refresh to perform a native scan.", 0x00606A73);
@@ -2226,6 +2229,18 @@ pub fn run() -> ! {
                 if ev.key != 0 {
                     handle_key(ev.key);
                 }
+            }
+        }
+
+        unsafe {
+            if WIFI_UI_SCAN_REQUESTED {
+                WIFI_UI_SCAN_REQUESTED = false;
+                if crate::drivers::wifi::alive_seen() && crate::drivers::wifi::command_queue_ready() {
+                    WIFI_UI_STATUS = if crate::drivers::wifi::scan_24ghz() { 1 } else { 3 };
+                } else {
+                    WIFI_UI_STATUS = 3;
+                }
+                DIRTY_FULL = true;
             }
         }
 

@@ -544,13 +544,20 @@ pub fn send_command(cmd: u8, payload: &[u8]) -> bool {
         diag_write_usize(len);
         diag_write_str(" Q=4 BC_DW=");
         diag_write_hex(bc as usize);
-        diag_write_str("\\n");
+        diag_write_str("\n");
         true
     }
 }
 
 pub fn command_queue_ready() -> bool { unsafe { CMD_QUEUE_READY } }
 
+
+const REPLY_RXON_CMD: u8 = 0x10;
+const RXON_DEV_TYPE_ESS: u8 = 3;
+const RXON_FLG_BAND_24G: u32 = 1 << 0;
+const RXON_FLG_AUTO_DETECT: u32 = 1 << 2;
+const RXON_FILTER_ACCEPT_GRP: u32 = 1 << 2;
+const RXON_RX_CHAIN_ALL: u16 = 0x0007;
 
 const REPLY_SCAN_CMD: u8 = 0x80;
 const SCAN_START_NOTIFICATION: u8 = 0x82;
@@ -572,12 +579,57 @@ fn put_le32(buf: &mut [u8], off: usize, v: u32) {
     buf[off + 3] = (v >> 24) as u8;
 }
 
+/// Put the DVM MAC into an unassociated 2.4 GHz RXON context before scanning.
+/// Intel's DVM firmware expects RXON (0x10) to establish the radio context;
+/// a SCAN command alone is not a substitute for this state transition.
+pub fn rxon_24ghz() -> bool {
+    unsafe {
+        if !CMD_QUEUE_READY || !ALIVE_SEEN { return false; }
+
+        // iwl_rxon_cmd is 50 bytes on DVM:
+        // node, bssid, wlap-bssid, dev_type, rx_chain, basic rates,
+        // flags/filter, channel and HT basic-rate fields.
+        let mut p = [0u8; 50];
+
+        // MAC addresses are intentionally left zero until Aether has a native
+        // NVM/MAC-address reader. Scanning does not associate or transmit data.
+        p[18] = RXON_DEV_TYPE_ESS;
+        p[20] = (RXON_RX_CHAIN_ALL & 0xff) as u8;
+        p[21] = (RXON_RX_CHAIN_ALL >> 8) as u8;
+        p[22] = 0xff; // OFDM basic rates
+        p[23] = 0x0f; // CCK basic rates
+        // assoc_id = 0 at [24..26]
+        put_le32(&mut p, 26, RXON_FLG_BAND_24G | RXON_FLG_AUTO_DETECT);
+        put_le32(&mut p, 30, RXON_FILTER_ACCEPT_GRP);
+        put_le16(&mut p, 34, 1); // channel 1
+        p[36] = 0xff;
+        p[37] = 0xff;
+        p[38] = 0xff;
+        // acquisition_data/reserved remain zero.
+
+        diag_write_str("[WIFI] RXON24 CMD channel=1 band=2.4G flags=");
+        diag_write_hex((RXON_FLG_BAND_24G | RXON_FLG_AUTO_DETECT) as usize);
+        diag_write_str(" filter=");
+        diag_write_hex(RXON_FILTER_ACCEPT_GRP as usize);
+        diag_write_str("\n");
+
+        if !send_command(REPLY_RXON_CMD, &p) {
+            diag_write_str("[WIFI] RXON24 CMD=FAILED\n");
+            return false;
+        }
+        diag_write_str("[WIFI] RXON24 CMD=SUBMITTED\n");
+        irq_handler();
+        true
+    }
+}
+
 /// First real DVM scan request: passive 2.4 GHz sweep over channels 1..11.
 /// This intentionally omits probe TX until the command transport is proven.
 pub fn scan_24ghz() -> bool {
     unsafe {
         if !CMD_QUEUE_READY || !ALIVE_SEEN { return false; }
         SCAN_NOTIFICATION_SEEN = false;
+        if !rxon_24ghz() { return false; }
 
         // Legacy DVM iwl_scan_cmd for the 2030 firmware:
         // fixed header 28 + zeroed iwl_tx_cmd 52 + 20 SSID IEs (34 each),
@@ -920,9 +972,7 @@ pub unsafe fn irq_handler() {
         diag_write_str(" rx_status=");
         diag_write_hex(core::ptr::read_volatile((MMIO + FH_RSSR_RX_STATUS) as *const u32) as usize);
         diag_write_str("\n");
-        let new_cb_wptr = RX_READ as u32 + FH_RX_RBD_COUNT as u32 - 1;
-        core::ptr::write_volatile((MMIO + FH_RSCSR_RBDCB_WPTR) as *mut u32, new_cb_wptr);
-        core::ptr::write_volatile((MMIO + CSR_FH_INT_STATUS) as *mut u32, CSR_FH_INT_RX_MASK);
+        // Do not advance the RBD write pointer while merely polling notifications.\n        // Restocking belongs to the RX-buffer lifecycle, not to the interrupt ACK path.\n        core::ptr::write_volatile((MMIO + CSR_FH_INT_STATUS) as *mut u32, CSR_FH_INT_RX_MASK);
         let ack_fh = core::ptr::read_volatile((MMIO + CSR_FH_INT_STATUS) as *const u32);
         let ack_int = core::ptr::read_volatile((MMIO + CSR_INT) as *const u32);
         diag_write_str("[WIFI] RX-ACK cb_wptr=");
