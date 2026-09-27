@@ -14,6 +14,18 @@ static mut HDA_BAR0: u64 = 0;
 static mut HDA_MMIO_READY: bool = false;
 static mut HDA_CORB_PHYS: usize = 0;
 static mut HDA_RIRB_PHYS: usize = 0;
+static mut HDA_STREAM_BASE: usize = 0;
+static mut HDA_STREAM_READY: bool = false;
+static mut HDA_STREAM_RUNNING: bool = false;
+static mut HDA_STREAM_TAG: u8 = 1;
+static mut HDA_STREAM_FMT: u16 = 0;
+static mut HDA_DMA_PHYS: usize = 0;
+static mut HDA_BDL_PHYS: usize = 0;
+static mut HDA_DMA_PERIOD: usize = 4096;
+static mut HDA_DMA_PERIODS: usize = 4;
+static mut HDA_DMA_NEXT: usize = 0;
+static mut HDA_DMA_TOTAL: usize = 0;
+static mut HDA_DMA_LAST_LPIB: u32 = 0;
 
 unsafe fn outb(port: u16, val: u8) {
     core::arch::asm!("out dx, al", in("dx") port, in("al") val, options(nostack, preserves_flags));
@@ -476,20 +488,224 @@ fn probe_hda() {
                         }
                         i += 1;
                     }
-                    serial::write_str("[AUDIO] HDA OUTPUT_CANDIDATES PIN=");
+                    // Prefer an output converter reachable from the selected analog pin.
+                    // The codec graph is traversed backwards through connection-list widgets;
+                    // this avoids hard-coding ALC269 NIDs while still staying bounded.
+                    let mut selected_conv = output_conv;
+                    if analog_pin != 0 {
+                        let mut frontier = [0u8; 32];
+                        let mut next_frontier = [0u8; 32];
+                        let mut fcount = 1usize;
+                        frontier[0] = analog_pin;
+                        let mut depth = 0usize;
+                        let mut found = 0u8;
+                        while depth < 5 && fcount > 0 && found == 0 {
+                            let mut nf = 0usize;
+                            let mut fi = 0usize;
+                            while fi < fcount && found == 0 {
+                                let cur = frontier[fi];
+                                let caps = match send_verb(((codec as u32)<<28)|((cur as u32)<<20)|(0xF00u32<<8)|0x09) {
+                                    Some(v)=>v, None=>{fi+=1;continue}
+                                };
+                                let typ=((caps>>20)&0xF) as u8;
+                                if typ==0 { found=cur; break; }
+                                let lp=match send_verb(((codec as u32)<<28)|((cur as u32)<<20)|(0xF00u32<<8)|0x0E) {
+                                    Some(v)=v, None=>{fi+=1;continue}
+                                };
+                                let n=(lp&0xFF).min(16) as usize;
+                                let mut ci=0usize;
+                                while ci<n && nf<32 {
+                                    let ent=match send_verb(((codec as u32)<<28)|((cur as u32)<<20)|(0xF02u32<<8)|((ci as u32)&0xFF)) {
+                                        Some(v)=>v, None=>{ci+=1;continue}
+                                    };
+                                    let cn=(ent&0x7F) as u8;
+                                    if cn==0 {ci+=1;continue}
+                                    if cn==output_conv {found=cn;break;}
+                                    let mut dup=false; let mut x=0usize;
+                                    while x<nf {if next_frontier[x]==cn{dup=true;break;} x+=1;}
+                                    if !dup {next_frontier[nf]=cn;nf+=1;}
+                                    ci+=1;
+                                }
+                                fi+=1;
+                            }
+                            let mut x=0usize;
+                            while x<nf {frontier[x]=next_frontier[x];x+=1;}
+                            fcount=nf;
+                            depth+=1;
+                        }
+                        if found!=0 { selected_conv=found; }
+                    }
+                    output_conv=selected_conv;
+
+                serial::write_str("[AUDIO] HDA OUTPUT_CANDIDATES PIN=");
                     serial::write_hex(analog_pin as usize);
                     serial::write_str(" CONV=");
                     serial::write_hex(output_conv as usize);
                     serial::write_str("\n");
+
+                    if analog_pin != 0 && output_conv != 0 {
+                        // First bring up the codec endpoint.  The converter gets
+                        // stream tag 1/channel 0 and 44.1k/16-bit PCM (0x4011);
+                        // pin control 0x40 enables output.  These are the standard
+                        // HDA stream/codec programming steps, leaving routing
+                        // discovery data-driven rather than ALC269-hardcoded.
+                        let codec_stream = ((codec as u32)<<28)|((output_conv as u32)<<20);
+                        let _ = send_verb(codec_stream | (0x705u32<<8)); // D0
+                        let _ = send_verb(codec_stream | (0x706u32<<8) | 0x10); // tag=1,ch=0
+                        let _ = send_verb(codec_stream | (0x200u32<<8) | 0x11); // 16-bit stereo/mono fmt low bits
+                        let pin_cmd = ((codec as u32)<<28)|((analog_pin as u32)<<20);
+                        let _ = send_verb(pin_cmd | (0x707u32<<8) | 0x40); // output enable
+                        let _ = send_verb(pin_cmd | (0x705u32<<8)); // D0
+                        let _ = send_verb(pin_cmd | (0x300u32<<8) | 0xA000); // output amp, unmuted, gain 0
+                        let conv_cmd = ((codec as u32)<<28)|((output_conv as u32)<<20);
+                        let _ = send_verb(conv_cmd | (0x300u32<<8) | 0xA000);
+                        serial::write_str("[AUDIO] HDA ANALOG PATH PROGRAMMED PIN=");
+                        serial::write_hex(analog_pin as usize);
+                        serial::write_str(" CONV=");
+                        serial::write_hex(output_conv as usize);
+                        serial::write_str("\n");
+                    }
+
+                    // Select the first output stream exposed by GCAP.
+                    let iss = ((gcap >> 8) & 0x0F) as usize;
+                    let bss = ((gcap >> 3) & 0x1F) as usize;
+                    let oss = ((gcap >> 12) & 0x0F) as usize;
+                    if oss == 0 {
+                        serial::write_str("[AUDIO] HDA NO_OUTPUT_STREAM\n");
+                    } else {
+                        HDA_STREAM_BASE = 0x80 + (iss + bss) * 0x20;
+                        HDA_STREAM_READY = true;
+                        HDA_STREAM_RUNNING = false;
+                        HDA_STREAM_FMT = 0x4011;
+                        serial::write_str("[AUDIO] HDA OUTPUT_STREAM BASE=");
+                        serial::write_hex(HDA_STREAM_BASE);
+                        serial::write_str(" OSS=");
+                        serial::write_hex(oss);
+                        serial::write_str("\n");
+                    }
                 } else {
                     serial::write_str("[AUDIO] HDA AFG_NOT_FOUND\n");
                 }
 
-                serial::write_str("[AUDIO] HDA CORB/RIRB PASS; codec topology discovered, stream setup pending\n");
+                serial::write_str("[AUDIO] HDA CORB/RIRB PASS; codec topology discovered; PCM stream ready\n");
                 return;
             }
         }
         serial::write_str("[AUDIO] HDA controller not found on bus0\n");
+    }
+}
+
+
+unsafe fn dma_map(phys: usize, pages: usize) -> bool {
+    let cr3=crate::mm::paging::read_cr3();
+    let mut p=phys;
+    let end=phys+pages*0x1000;
+    while p<end {
+        if !crate::mm::paging::map_page(cr3,p,p,
+            crate::mm::paging::PAGE_PRESENT|crate::mm::paging::PAGE_WRITE|
+            crate::mm::paging::PAGE_PCD|crate::mm::paging::PAGE_PWT) { return false; }
+        p+=0x1000;
+    }
+    crate::mm::paging::load_cr3(cr3);
+    true
+}
+
+fn stream_format(rate:u32,ch:u16,bits:u16)->Option<u16>{
+    if ch<1 || ch>2 || bits!=16 { return None; }
+    if rate==44100 { Some(0x4010u16 | (ch-1)) }
+    else if rate==48000 { Some(0x0010u16 | (ch-1)) }
+    else { None }
+}
+
+pub fn playback_start(rate:u32,ch:u16,bits:u16)->bool {
+    unsafe {
+        if !HDA_STREAM_READY { serial::write_str("[AUDIO] PLAYBACK_NO_STREAM\n"); return false; }
+        let fmt=match stream_format(rate,ch,bits){Some(v)=>v,None=>{serial::write_str("[AUDIO] PLAYBACK_FORMAT_UNSUPPORTED\n");return false;}};
+        if HDA_STREAM_RUNNING { playback_stop(); }
+        let total_pages=5usize;
+        let phys=match crate::mm::alloc_pages(total_pages){Some(p)=>p,None=>{serial::write_str("[AUDIO] PLAYBACK_DMA_ALLOC_FAIL\n");return false;}};
+        if !dma_map(phys,total_pages) {
+            serial::write_str("[AUDIO] PLAYBACK_DMA_MAP_FAIL\n"); return false;
+        }
+        crate::mm::zero_pages(phys, total_pages);
+        HDA_DMA_PHYS=phys;
+        HDA_BDL_PHYS=phys+4*0x1000;
+        HDA_DMA_PERIOD=4096;
+        HDA_DMA_PERIODS=4;
+        HDA_DMA_NEXT=0;
+        HDA_DMA_TOTAL=0;
+        HDA_DMA_LAST_LPIB=0;
+        HDA_STREAM_FMT=fmt;
+
+        let sd=HDA_STREAM_BASE;
+        hda_w8(HDA_BAR0 as usize,sd+0x02,0);
+        let mut t=0u32; while t<10000 && (hda_r8(HDA_BAR0 as usize,sd+0x02)&1)!=0 {t+=1;core::hint::spin_loop();}
+        hda_w32(HDA_BAR0 as usize,sd+0x08,0);
+        hda_w16(HDA_BAR0 as usize,sd+0x0C,3);
+        hda_w16(HDA_BAR0 as usize,sd+0x12,fmt);
+        hda_w32(HDA_BAR0 as usize,sd+0x08,(HDA_DMA_PERIOD*HDA_DMA_PERIODS) as u32);
+        hda_w16(HDA_BAR0 as usize,sd+0x0C,3);
+
+        let mut i=0usize;
+        while i<4 {
+            let got=crate::media_player::pcm_buffer(
+                core::slice::from_raw_parts_mut((HDA_DMA_PHYS+i*4096) as *mut u8,4096));
+            if got==0 {break;}
+            HDA_DMA_TOTAL+=got;
+            i+=1;
+        }
+        if i==0 { serial::write_str("[AUDIO] PLAYBACK_NO_PCM\n"); return false; }
+        let mut j=0usize;
+        while j<4 {
+            let e=HDA_BDL_PHYS+j*16;
+            core::ptr::write_volatile(e as *mut u64,(HDA_DMA_PHYS+j*4096) as u64);
+            core::ptr::write_volatile((e+8) as *mut u32,4096u32);
+            core::ptr::write_volatile((e+12) as *mut u32,1u32);
+            j+=1;
+        }
+        hda_w32(HDA_BAR0 as usize,sd+0x18,HDA_BDL_PHYS as u32);
+        hda_w32(HDA_BAR0 as usize,sd+0x1C,(HDA_BDL_PHYS>>32) as u32);
+        hda_w8(HDA_BAR0 as usize,sd+0x02,0x04);
+        hda_w32(HDA_BAR0 as usize,sd+0x04,(4096*4) as u32);
+        hda_w16(HDA_BAR0 as usize,sd+0x0C,3);
+        hda_w8(HDA_BAR0 as usize,sd+0x02,0x01);
+        let ctl=hda_r32(HDA_BAR0 as usize,sd);
+        hda_w32(HDA_BAR0 as usize,sd,(ctl & 0x000F0000) | 0x00100001);
+        HDA_STREAM_RUNNING=true;
+        serial::write_str("[AUDIO] HDA PLAY START FMT=");
+        serial::write_hex(fmt as usize); serial::write_str(" BDL="); serial::write_hex(HDA_BDL_PHYS);
+        serial::write_str(" DATA="); serial::write_hex(HDA_DMA_TOTAL); serial::write_str("\n");
+        true
+    }
+}
+
+pub fn playback_stop() {
+    unsafe {
+        if !HDA_STREAM_RUNNING { return; }
+        let sd=HDA_STREAM_BASE;
+        let base=HDA_BAR0 as usize;
+        hda_w32(base,sd, hda_r32(base,sd) & !1);
+        let mut t=0u32; while t<10000 && (hda_r32(base,sd)&1)!=0 {t+=1;core::hint::spin_loop();}
+        HDA_STREAM_RUNNING=false;
+        serial::write_str("[AUDIO] HDA PLAY STOP LPIB=");
+        serial::write_hex(hda_r32(base,sd+0x04) as usize); serial::write_str("\n");
+    }
+}
+
+pub fn playback_poll() {
+    unsafe {
+        if !HDA_STREAM_RUNNING { return; }
+        let base=HDA_BAR0 as usize; let sd=HDA_STREAM_BASE;
+        let lp=hda_r32(base,sd+0x04);
+        let period=HDA_DMA_PERIOD as u32;
+        while HDA_DMA_NEXT<4 && lp >= ((HDA_DMA_NEXT+1) as u32)*period {
+            crate::media_player::consume_pcm(period as usize);
+            HDA_DMA_NEXT+=1;
+        }
+        if HDA_DMA_NEXT>=4 {
+            HDA_STREAM_RUNNING=false;
+            serial::write_str("[AUDIO] HDA PLAY BUFFER END\n");
+        }
     }
 }
 
