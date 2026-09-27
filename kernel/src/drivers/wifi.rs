@@ -122,13 +122,9 @@ const SCD_QUEUE_WRPTR: u32 = SCD_BASE + 0x18 + (IWL_DEFAULT_CMD_QUEUE_NUM as u32
 const SCD_QUEUE_RDPTR: u32 = SCD_BASE + 0x68 + (IWL_DEFAULT_CMD_QUEUE_NUM as u32 * 4);
 const SCD_CHAINEXT_EN: u32 = SCD_BASE + 0x244;
 const SCD_QUEUE_STATUS_BITS: u32 = SCD_BASE + 0x10C + (IWL_DEFAULT_CMD_QUEUE_NUM as u32 * 4);
-const SCD_INTERRUPT_MASK: u32 = SCD_BASE + 0x108;
 const SCD_QUEUE_CTX: u32 = 0x0600 + (IWL_DEFAULT_CMD_QUEUE_NUM as u32 * 8);
 const FH_TSSR_TX_STATUS_REG: usize = FH_MEM_LOWER_BOUND + 0xEB0;
 const FH_TX_CHANNEL_COUNT: usize = 8;
-const SCD_GP_CTRL: u32 = SCD_BASE + 0x1A8;
-const SCD_EN_CTRL: u32 = SCD_BASE + 0x254;
-const SCD_GP_CTRL_ENABLE_31_QUEUES: u32 = 1 << 0;
 const SCD_QUEUE_ACTIVE: u32 = 1 << 3;
 const SCD_QUEUE_WSL: u32 = 1 << 4;
 // Intel 2000/2030 uses the agn/5000 scheduler status layout.
@@ -470,10 +466,10 @@ pub fn init_command_queue() -> bool {
         // activating queue #4.  The DVM transport expects the DRAM base and
         // queue read pointer to be valid even for the first host command.
         prph_write(SCD_CHAINEXT_EN, 0);
-        prph_write(SCD_GP_CTRL, SCD_GP_CTRL_ENABLE_31_QUEUES);
-        prph_write(SCD_EN_CTRL, 1 << IWL_DEFAULT_CMD_QUEUE_NUM);
-        let scd_irq_mask = prph_read(SCD_INTERRUPT_MASK);
-        prph_write(SCD_INTERRUPT_MASK, scd_irq_mask | (1 << IWL_DEFAULT_CMD_QUEUE_NUM));
+        // DVM command queue #4 is not enabled through SCD_EN_CTRL here.
+        // Linux enables SCD_EN_CTRL only for configurations that explicitly
+        // set scd_set_active (the 2030 DVM path does not). Queue activation
+        // itself is performed through SCD_QUEUE_STATUS_BITS below.
         prph_write(SCD_QUEUECHAIN_SEL, 0);
         prph_write(SCD_TXFACT, 1u32 << IWL_CMD_FIFO_NUM);
         // SCD_DRAM_BASE_ADDR is the scheduler byte-count table base, not the
