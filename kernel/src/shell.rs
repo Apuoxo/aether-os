@@ -670,6 +670,71 @@ fn cmd_aud() {
     write_str("======== AUD END ========\n");
     cmd_aud_extended();
 }
+fn cmd_mous() {
+    write_str("======== MOUS USB MOUSE DIAGNOSTIC ========\n");
+    write_str("XHCI=");
+    write_str(if crate::drivers::xhci::diag_xhci_ok() { "OK" } else { "NO" });
+    write_str(" DEV=");
+    write_str(if crate::drivers::xhci::diag_dev_found() { "FOUND" } else { "NO" });
+    write_str(" HID=");
+    write_str(if crate::drivers::xhci::diag_hid_ok() { "OK" } else { "NO" });
+    write_str(" MOUSE_IF=");
+    write_str(if crate::drivers::xhci::diag_mouse_if() { "YES" } else { "NO" });
+    write_str(" EP_IN=");
+    write_str(if crate::drivers::xhci::diag_ep_in() { "YES" } else { "NO" });
+    write_str("\n");
+
+    write_str("LIVE=");
+    write_str(if crate::drivers::xhci::diag_mouse_live() { "YES" } else { "NO" });
+    write_str(" SLOT="); write_usize(crate::drivers::xhci::diag_mouse_slot() as usize);
+    write_str(" DCI="); write_usize(crate::drivers::xhci::diag_mouse_dci() as usize);
+    write_str(" DB="); write_hex(crate::drivers::xhci::diag_mouse_db());
+    write_str("\n");
+
+    write_str("EVENT_RING=");
+    write_hex(crate::drivers::xhci::diag_mouse_er());
+    write_str(" DEQ="); write_usize(crate::drivers::xhci::diag_mouse_er_deq());
+    write_str(" CYCLE="); write_usize(crate::drivers::xhci::diag_mouse_er_cycle() as usize);
+    write_str(" SIZE="); write_usize(crate::drivers::xhci::diag_mouse_er_size());
+    write_str("\n");
+
+    write_str("TRANSFER_RING=");
+    write_hex(crate::drivers::xhci::diag_mouse_ep_ring());
+    write_str(" ENQ="); write_usize(crate::drivers::xhci::diag_mouse_enq());
+    write_str(" CYCLE="); write_usize(crate::drivers::xhci::diag_mouse_cycle() as usize);
+    write_str("\n");
+
+    write_str("REPORT_BUF=");
+    write_hex(crate::drivers::xhci::diag_mouse_report());
+    write_str(" LEN="); write_usize(crate::drivers::xhci::diag_mouse_report_len());
+    write_str("\n");
+
+    write_str("TRB_QUEUED="); write_usize(crate::drivers::xhci::diag_trb_queued() as usize);
+    write_str(" COMPLETIONS="); write_usize(crate::drivers::xhci::diag_completions() as usize);
+    write_str(" REPORTS="); write_usize(crate::drivers::xhci::diag_reports() as usize);
+    write_str(" EVENTS="); write_usize(crate::drivers::xhci::diag_mouse_events() as usize);
+    write_str("\n");
+
+    if !crate::drivers::xhci::diag_xhci_ok() {
+        write_str("CAUSE=XHCI_NOT_FOUND\n");
+    } else if !crate::drivers::xhci::diag_dev_found() {
+        write_str("CAUSE=USB_DEVICE_NOT_ENUMERATED\n");
+    } else if !crate::drivers::xhci::diag_mouse_if() {
+        write_str("CAUSE=NO_HID_BOOT_MOUSE_INTERFACE\n");
+    } else if !crate::drivers::xhci::diag_ep_in() {
+        write_str("CAUSE=NO_INTERRUPT_IN_ENDPOINT\n");
+    } else if !crate::drivers::xhci::diag_mouse_live() {
+        write_str("CAUSE=MOUSE_ENDPOINT_NOT_LIVE\n");
+    } else if crate::drivers::xhci::diag_completions() == 0 {
+        write_str("CAUSE=NO_TRANSFER_COMPLETIONS\n");
+    } else if crate::drivers::xhci::diag_reports() == 0 {
+        write_str("CAUSE=TRANSFER_COMPLETES_BUT_NO_REPORT_DELIVERY\n");
+    } else {
+        write_str("CAUSE=REPORTS_DELIVERED_CHECK_INPUT_PATH\n");
+    }
+    write_str("======== MOUS END ========\n");
+}
+
 fn run_line(line: &[u8], len: usize) {
     let mut s = 0usize;
     while s < len && line[s] == b' ' { s += 1; }
@@ -678,6 +743,8 @@ fn run_line(line: &[u8], len: usize) {
     let clen = e.saturating_sub(s);
     if eq(line, s, clen, b"WF") || eq(line, s, clen, b"wf") {
         cmd_wf();
+    } else if eq(line, s, clen, b"MOUS") || eq(line, s, clen, b"mous") {
+        cmd_mous();
     } else if eq(line, s, clen, b"AUD") || eq(line, s, clen, b"aud") {
         cmd_aud();
     } else if eq(line, s, clen, b"AUD3") || eq(line, s, clen, b"aud3") {
@@ -725,7 +792,7 @@ fn run_line(line: &[u8], len: usize) {
         }
         write_str("======== AUD PCM END ========\n");
     } else {
-        write_str("unknown — commands: AUD, WF\n");
+        write_str("unknown — commands: AUD, MOUS, WF\n");
     }
 }
 
