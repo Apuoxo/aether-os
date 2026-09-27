@@ -765,15 +765,28 @@ fn parse_device_desc(buf: usize) {
     serial::write_str("\n");
 }
 
-fn parse_config_desc(buf: usize, total: usize) {
+#[derive(Clone, Copy)]
+struct HidMouseDesc {
+    iface: u8,
+    ep_addr: u8,
+    mps: u16,
+    interval: u8,
+}
+
+fn parse_config_desc(buf: usize, total: usize) -> Option<HidMouseDesc> {
     serial::write_str("  [CFG] parse total=");
     serial::write_usize(total);
     serial::write_str("\n");
+
     let mut off = 0usize;
+    let mut current_hid_boot_mouse: Option<u8> = None;
+    let mut mouse: Option<HidMouseDesc> = None;
+
     while off + 2 <= total {
         let blen = unsafe { *((buf + off) as *const u8) } as usize;
         let bty = unsafe { *((buf + off + 1) as *const u8) };
-        if blen < 2 { break; }
+        if blen < 2 || off + blen > total { break; }
+
         if bty == 2 && blen >= 9 {
             let num_intf = unsafe { *((buf + off + 4) as *const u8) };
             let conf_val = unsafe { *((buf + off + 5) as *const u8) };
@@ -788,6 +801,7 @@ fn parse_config_desc(buf: usize, total: usize) {
             let iclass = unsafe { *((buf + off + 5) as *const u8) };
             let isub = unsafe { *((buf + off + 6) as *const u8) };
             let iproto = unsafe { *((buf + off + 7) as *const u8) };
+
             serial::write_str("  [CFG] IF=");
             serial::write_usize(inum as usize);
             serial::write_str(" class=");
@@ -799,22 +813,56 @@ fn parse_config_desc(buf: usize, total: usize) {
             serial::write_str(" eps=");
             serial::write_usize(n_ep as usize);
             serial::write_str("\n");
+
+            // HID Boot Mouse = class 3, subclass 1, protocol 2.
+            if iclass == 3 && isub == 1 && iproto == 2 {
+                current_hid_boot_mouse = Some(inum);
+                unsafe { DIAG_MOUSE_IF = true; }
+            } else {
+                current_hid_boot_mouse = None;
+            }
         } else if bty == 5 && blen >= 7 {
             let addr = unsafe { *((buf + off + 2) as *const u8) };
             let attr = unsafe { *((buf + off + 3) as *const u8) };
-            let mps = unsafe { core::ptr::read_unaligned((buf + off + 4) as *const u16) };
+            let mps = unsafe { core::ptr::read_unaligned((buf + off + 4) as *const u16) } & 0x07FF;
+            let interval = unsafe { *((buf + off + 6) as *const u8) };
+
             serial::write_str("  [CFG] EP addr=");
             hx(addr as usize);
             serial::write_str(" attr=");
             hx(attr as usize);
             serial::write_str(" mps=");
             serial::write_usize(mps as usize);
+            serial::write_str(" interval=");
+            serial::write_usize(interval as usize);
             serial::write_str("\n");
+
+            if let Some(iface) = current_hid_boot_mouse {
+                if (addr & 0x80) != 0 && (attr & 0x03) == 3 && mps != 0 {
+                    mouse = Some(HidMouseDesc { iface, ep_addr: addr, mps, interval });
+                    current_hid_boot_mouse = None;
+                }
+            }
         }
+
         off += blen;
     }
-}
 
+    if let Some(m) = mouse {
+        serial::write_str("  [MOUSE] IF=");
+        serial::write_usize(m.iface as usize);
+        serial::write_str(" EP=");
+        hx(m.ep_addr as usize);
+        serial::write_str(" MPS=");
+        serial::write_usize(m.mps as usize);
+        serial::write_str(" INT=");
+        serial::write_usize(m.interval as usize);
+        serial::write_str("\n");
+    } else {
+        serial::write_str("  [MOUSE] no HID boot mouse endpoint\n");
+    }
+    mouse
+}
 
 // ─── HID Boot Keyboard ────────────────────────────────────────
 
@@ -847,38 +895,52 @@ fn set_protocol_boot(x: &mut Xhci, slot: u8, ep0: &mut Ep0Ring, iface: u8) -> bo
     }
 }
 
-fn configure_ep_interrupt_in(x: &mut Xhci, slot: u8, port: u8, ep_ring: usize) -> bool {
-    serial::write_str("  [HID] Configure Endpoint 0x81\n");
+fn configure_ep_interrupt_in(
+    x: &mut Xhci,
+    slot: u8,
+    port: u8,
+    ep_ring: usize,
+    ep_addr: u8,
+    mps: u16,
+    interval: u8,
+) -> bool {
+    let ep_num = (ep_addr & 0x0F) as usize;
+    let ep_in = (ep_addr & 0x80) != 0;
+    if ep_num == 0 || !ep_in { return false; }
+    let dci = ep_num * 2 + 1;
+
+    serial::write_str("  [HID] Configure Endpoint EP=");
+    hx(ep_addr as usize);
+    serial::write_str(" DCI=");
+    serial::write_usize(dci);
+    serial::write_str(" MPS=");
+    serial::write_usize(mps as usize);
+    serial::write_str("\n");
+
     let cs = x.ctx_size;
     let in_ctx = match dma_alloc(1) { Some(p) => p, None => return false };
     let ps = unsafe { r32(x.portsc(port), 0) };
     let speed = speed_from_portsc(ps);
+    let ctx_entries = dci;
 
     unsafe {
         let ic = in_ctx as *mut u32;
-        // Add flags: A0 (slot) | A3 (EP1 IN, DCI=3)
-        *ic.add(1) = (1 << 0) | (1 << 3);
+        *ic.add(1) = (1u32 << 0) | (1u32 << dci);
 
-        // Slot context: Context Entries = 3 (up to DCI 3)
         let slot_ctx = (in_ctx + cs) as *mut u32;
-        *slot_ctx.add(0) = (speed << 20) | (3u32 << 27);
+        *slot_ctx.add(0) = (speed << 20) | ((ctx_entries as u32) << 27);
         *slot_ctx.add(1) = (port as u32) << 16;
 
-        // EP1 IN context at offset (1+3)*cs? Layout: control + slot(DCI0) + EP0(DCI1) + EP1OUT(DCI2) + EP1IN(DCI3)
-        // Offset for DCI d is (1+d)*cs from start of input context... 
-        // Input Control at 0, Slot at 1*cs, EP0 at 2*cs, EP1 OUT at 3*cs, EP1 IN at 4*cs
-        let ep_in = (in_ctx + 4 * cs) as *mut u32;
-        // Interval: for HS, bInterval=10 → Interval field = 10-1 = 9? Spec: Interval is 2^(Interval-1) * 125us for HS
-        // Descriptor had bInterval=7. Use 7 for host Interval field (xHCI uses the value as exponent for HS).
-        *ep_in.add(0) = 7u32 << 16; // Interval in bits 23:16
-        // CErr=3, EP Type=Interrupt IN (7), MPS=8
-        *ep_in.add(1) = (3 << 1) | (7 << 3) | (8 << 16);
-        let deq = (ep_ring as u64) | 1; // DCS=1
-        *ep_in.add(2) = deq as u32;
-        *ep_in.add(3) = (deq >> 32) as u32;
-        *ep_in.add(4) = 8; // Average TRB Length
+        let ep = (in_ctx + (1 + dci) * cs) as *mut u32;
+        // xHCI Interval is encoded as bInterval-1 for interrupt endpoints.
+        let iv = if interval == 0 { 0 } else { (interval - 1) as u32 };
+        *ep.add(0) = iv << 16;
+        *ep.add(1) = (3 << 1) | (7 << 3) | ((mps as u32) << 16);
+        let deq = (ep_ring as u64) | 1;
+        *ep.add(2) = deq as u32;
+        *ep.add(3) = (deq >> 32) as u32;
+        *ep.add(4) = mps as u32;
 
-        // Init EP ring Link TRB
         let trbs = ep_ring as *mut Trb;
         let mut i = 0usize;
         while i < 64 { *trbs.add(i) = Trb::z(); i += 1; }
@@ -889,9 +951,10 @@ fn configure_ep_interrupt_in(x: &mut Xhci, slot: u8, port: u8, ep_ring: usize) -
 
     let ctrl = (TRB_CONFIGURE_EP << 10) | ((slot as u32) << 24);
     if !submit_cmd_full(x, in_ctx as u32, 0, 0, ctrl) { return false; }
+
     match wait_event(x, TRB_CMD_COMPLETE, 500000) {
         Some(ev) if ev.cc == 1 => {
-            serial::write_str("  [HID] EP 0x81 configured\n");
+            serial::write_str("  [HID] endpoint configured OK\n");
             true
         }
         Some(ev) => {
@@ -1035,60 +1098,61 @@ fn hid_boot_keyboard(x: &mut Xhci, slot: u8, port: u8, ep0: &mut Ep0Ring) -> boo
 // ─── Enumeration orchestration ────────────────────────────────
 
 
-fn hid_boot_mouse(x: &mut Xhci, slot: u8, port: u8, ep0: &mut Ep0Ring) -> bool {
+fn hid_boot_mouse(
+    x: &mut Xhci,
+    slot: u8,
+    port: u8,
+    ep0: &mut Ep0Ring,
+    desc: HidMouseDesc,
+) -> bool {
     serial::write_str("\n======== HID BOOT MOUSE ========\n");
-    serial::write_str("[USB] mouse probe start\n");
-    unsafe { DIAG_MOUSE_IF = true; }
-    let ep_ring = match dma_alloc(1) {
-        Some(p) => p,
-        None => {
-            serial::write_str("[USB] HID FAIL (no DMA)\n");
-            return false;
-        }
-    };
-    let report_buf = match dma_alloc(1) {
-        Some(p) => p,
-        None => return false,
-    };
-    // Queue Interrupt IN (Boot Mouse EP often 0x81 when sole device)
-    let mut enq = 0usize;
-    let mut cycle = 1u32;
-    if !hid_queue_interrupt_in(x, slot, ep_ring, &mut enq, &mut cycle, report_buf) {
-        serial::write_str("[USB] HID FAIL (queue)\n");
+    serial::write_str("[USB] mouse setup descriptor-driven\n");
+
+    if !set_configuration(x, slot, ep0, 1) {
+        serial::write_str("[USB] mouse SET_CONFIGURATION FAIL\n");
         return false;
     }
-    unsafe { DIAG_EP_IN = true; DIAG_HID = true; }
-    serial::write_str("[USB] HID OK EP_IN OK\n");
-    let mut polls = 0u32;
-    let mut got = 0u32;
-    while polls < 8000 {
-        if let Some(ev) = wait_event(x, TRB_TRANSFER, 40) {
-            if ev.cc == 1 || ev.cc == 13 {
-                let mut report = [0u8; 4];
-                let mut i = 0usize;
-                while i < 4 {
-                    report[i] = unsafe { *((report_buf + i) as *const u8) };
-                    i += 1;
-                }
-                crate::input::process_hid_boot_mouse(&report);
-                got += 1;
-                unsafe { DIAG_REPORTS = got; }
-                unsafe {
-                    let mut j = 0usize;
-                    while j < 4 {
-                        *((report_buf + j) as *mut u8) = 0;
-                        j += 1;
-                    }
-                }
-                let _ = hid_queue_interrupt_in(x, slot, ep_ring, &mut enq, &mut cycle, report_buf);
-            }
-        }
-        polls += 1;
-        if polls > 5000 {
-            break;
-        }
+    if !set_protocol_boot(x, slot, ep0, desc.iface) {
+        serial::write_str("[USB] mouse SET_PROTOCOL FAIL\n");
+        return false;
     }
-    // Keep live path for desktop: save ER + EP state, leave TRB queued
+
+    let ep_ring = match dma_alloc(1) { Some(p) => p, None => return false };
+    let report_buf = match dma_alloc(1) { Some(p) => p, None => return false };
+
+    if !configure_ep_interrupt_in(
+        x, slot, port, ep_ring, desc.ep_addr, desc.mps, desc.interval
+    ) {
+        serial::write_str("[USB] mouse endpoint configure FAIL\n");
+        return false;
+    }
+
+    let report_len = core::cmp::min(desc.mps as usize, 8);
+    let mut enq = 0usize;
+    let mut cycle = 1u32;
+    if !hid_queue_interrupt_in_len(
+        x, slot, ep_ring, &mut enq, &mut cycle, report_buf, report_len
+    ) {
+        serial::write_str("[USB] mouse queue FAIL\n");
+        return false;
+    }
+
+    unsafe {
+        DIAG_EP_IN = true;
+        DIAG_HID = true;
+        DIAG_MOUSE_IF = true;
+    }
+
+    serial::write_str("[USB] mouse endpoint armed EP=");
+    hx(desc.ep_addr as usize);
+    serial::write_str(" DCI=");
+    serial::write_usize(((desc.ep_addr & 0x0F) as usize) * 2 + 1);
+    serial::write_str(" report=");
+    serial::write_usize(report_len);
+    serial::write_str("\n");
+
+    // Do not block boot for mouse input. Leave one interrupt transfer pending
+    // and hand the event-ring/transfer state to the desktop poller.
     unsafe {
         MOUSE_ER = x.er;
         MOUSE_ER_DEQ = x.er_deq;
@@ -1102,20 +1166,38 @@ fn hid_boot_mouse(x: &mut Xhci, slot: u8, port: u8, ep0: &mut Ep0Ring) -> bool {
         MOUSE_SLOT = slot;
         MOUSE_DB = x.db();
         MOUSE_LIVE = true;
-        DIAG_HID = true;
-        DIAG_EP_IN = true;
-        DIAG_REPORTS = got;
+        DIAG_REPORTS = 0;
     }
-    // Ensure one outstanding interrupt IN
-    let _ = hid_queue_interrupt_in(x, slot, ep_ring, &mut enq, &mut cycle, report_buf);
+
+    true
+}
+
+fn hid_queue_interrupt_in_len(
+    x: &mut Xhci,
+    slot: u8,
+    ep_ring: usize,
+    enq: &mut usize,
+    cycle: &mut u32,
+    buf: usize,
+    len: usize,
+) -> bool {
+    if *enq >= 63 {
+        *enq = 0;
+        *cycle ^= 1;
+    }
     unsafe {
-        MOUSE_ENQ = enq;
-        MOUSE_CYCLE = cycle;
+        let trbs = ep_ring as *mut Trb;
+        let t = &mut *trbs.add(*enq);
+        t.lo = buf as u32;
+        t.hi = 0;
+        t.status = core::cmp::min(len, 0x1FFFF);
+        t.control = (TRB_NORMAL << 10) | TRB_IOC | *cycle;
+        *enq += 1;
+        DIAG_TRB_QUEUED = DIAG_TRB_QUEUED.wrapping_add(1);
+        let dci = 3u32;
+        w32(x.db(), (slot as usize) * 4, dci);
     }
-    serial::write_str("[USB] reports=");
-    serial::write_usize(got as usize);
-    serial::write_str(" live=1\n");
-    true // live path ready even if 0 reports during short poll
+    true
 }
 
 fn enumerate(x: &mut Xhci) -> bool {
@@ -1180,14 +1262,16 @@ fn enumerate(x: &mut Xhci) -> bool {
         return false;
     }
     dump_bytes("CFG-RAW", buf, total);
-    parse_config_desc(buf, total);
+    let mouse_desc = parse_config_desc(buf, total);
 
     serial::write_str("\n  [ENUM] ENUMERATION SUCCESS\n");
 
-    // HID Boot Keyboard path
-    let _ = hid_boot_keyboard(x, slot, port, &mut ep0);
-    // Optional mouse (no hang)
-    let _ = hid_boot_mouse(x, slot, port, &mut ep0);
+    if let Some(mouse) = mouse_desc {
+        let _ = hid_boot_mouse(x, slot, port, &mut ep0, mouse);
+    } else {
+        // Preserve the existing keyboard bring-up for keyboard-only devices.
+        let _ = hid_boot_keyboard(x, slot, port, &mut ep0);
+    }
     true // never fail boot on HID
 }
 
@@ -1269,6 +1353,7 @@ pub fn poll_mouse_live() {
         // Process a few event ring entries
         let mut spins = 0u32;
         while spins < 32 {
+            if MOUSE_ER_SIZE == 0 || MOUSE_ENQ >= 63 { MOUSE_ENQ = 0; MOUSE_CYCLE ^= 1; }
             let trbs = MOUSE_ER as *const Trb;
             let ev = *trbs.add(MOUSE_ER_DEQ);
             if (ev.control & 1) != MOUSE_ER_CYCLE {
