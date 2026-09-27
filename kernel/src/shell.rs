@@ -369,6 +369,43 @@ fn cmd_aud_readback() {
                 ci += 1;
             }
             aud_readback(codec, pin, "PIN_CONN_SEL", 0xF01u32 << 8);
+
+            // Read-only topology evidence for the two upstream widgets.
+            let mut ci = 0usize;
+            while ci < 2 {
+                let nid = if ci == 0 { 0x0C } else { 0x0D };
+                write_str("UPSTREAM_NID="); write_hex(nid as usize); write_str("\n");
+                let caps = crate::drivers::audio::hda_raw_verb(codec, nid, 0x000F0009);
+                if caps.ok {
+                    write_str("UPSTREAM_TYPE="); write_hex(((caps.response >> 20) & 0xF) as usize);
+                    write_str(" CAPS="); write_hex(caps.response as usize); write_str("\n");
+                }
+                let lp = crate::drivers::audio::hda_raw_verb(codec, nid, (0xF00u32 << 8) | 0x0E);
+                if lp.ok {
+                    let raw = lp.response;
+                    let count = (raw & 0x7F).min(16) as usize;
+                    let long_form = (raw & 0x80) != 0;
+                    write_str("UPSTREAM_CONN_COUNT="); write_usize(count);
+                    write_str(" FORM="); write_str(if long_form { "LONG" } else { "SHORT" }); write_str("\n");
+                    let mut j = 0usize;
+                    while j < count {
+                        let base = if long_form { j & !1 } else { j & !3 };
+                        let d = crate::drivers::audio::hda_raw_verb(codec, nid, (0xF02u32 << 8) | base as u32);
+                        if d.ok {
+                            let v = if long_form {
+                                if j & 1 == 0 { d.response & 0x7FFF } else { (d.response >> 16) & 0x7FFF }
+                            } else {
+                                (d.response >> ((j - base) * 8)) & 0x7F
+                            };
+                            write_str("UPSTREAM_CONN["); write_usize(j); write_str("]=");
+                            write_hex(v as usize); write_str("\n");
+                        }
+                        j += 1;
+                    }
+                    aud_readback(codec, nid, "UPSTREAM_CONN_SEL", 0xF01u32 << 8);
+                }
+                ci += 1;
+            }
         } else {
             write_str("PIN_CONN=READ_ERROR\n");
         }
