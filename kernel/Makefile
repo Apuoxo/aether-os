@@ -9,15 +9,15 @@ $(MEDIA_DIR): | $(BUILD_DIR)
 	mkdir -p $(MEDIA_DIR)
 
 $(MEDIA_WAV): | $(MEDIA_DIR)
-	curl -L --fail --silent --show-error "https://commons.wikimedia.org/wiki/Special:Redirect/file/The_English_word_EXAMPLE.wav" -o $@
+	curl -L --fail --silent --show-error "https://upload.wikimedia.org/wikipedia/commons/c/c2/The_English_word_EXAMPLE.wav" -o $@
 	test "$(wc -c < "$@")" -gt 100000
 
 $(MEDIA_MP3): | $(MEDIA_DIR)
-	curl -L --fail --silent --show-error "https://commons.wikimedia.org/wiki/Special:Redirect/file/UncleSigmund_-_ahhh_(cc0)_(freesound).mp3" -o $@
+	curl -L --fail --silent --show-error "https://upload.wikimedia.org/wikipedia/commons/3/32/UncleSigmund_-_ahhh_%28cc0%29_%28freesound%29.mp3" -o $@
 	test "$(wc -c < "$@")" -gt 50000
 
 $(MEDIA_OGG): | $(MEDIA_DIR)
-	curl -L --fail --silent --show-error "https://commons.wikimedia.org/wiki/Special:Redirect/file/Example_sound_file_in_Ogg_Vorbis_format.ogg" -o $@
+	curl -L --fail --silent --show-error "https://upload.wikimedia.org/wikipedia/commons/e/e3/Example_sound_file_in_Ogg_Vorbis_format.ogg" -o $@
 	test "$(wc -c < $@)" -gt 50000
 
 $(MEDIA_BUNDLE): $(MEDIA_WAV) $(MEDIA_MP3) $(MEDIA_OGG) | $(BUILD_DIR)
