@@ -29,9 +29,10 @@ static mut MODEL: [u8; 40] = [0; 40];
 static mut MODEL_LEN: usize = 0;
 static mut ATA_HW: bool = false;
 static mut HW_SECTORS: u32 = 0; // physical disk size even if FS uses RAM
-// 64 sectors = 32 KiB RAM disk
-const RAM_SECTORS: u32 = 64;
-static mut RAMDISK: [u8; 64 * 512] = [0; 64 * 512];
+// 4096 sectors = 2 MiB volatile AetherFS backend.
+// The bitmap already supports exactly this many data blocks.
+const RAM_SECTORS: u32 = 4096;
+static mut RAMDISK: [u8; (RAM_SECTORS as usize) * 512] = [0; (RAM_SECTORS as usize) * 512];
 
 unsafe fn outb(port: u16, val: u8) {
     core::arch::asm!("out dx, al", in("dx") port, in("al") val, options(nostack, preserves_flags));
@@ -490,7 +491,7 @@ pub fn enable_ramdisk() {
             i += 1;
         }
     }
-    serial::write_str("[RAMDISK OK] 32 KiB volatile backend\n");
-    serial::write_str("  base=static BSS  sectors=64  size=32768\n");
+    serial::write_str("[RAMDISK OK] 2 MiB volatile backend\n");
+    serial::write_str("  base=static BSS  sectors=4096  size=2097152\n");
 }
 
