@@ -91,6 +91,27 @@ pub fn builtin_path(i:usize)->&'static str {
     match i { 0=>"/MEDIA/TEST.WAV", 1=>"/MEDIA/TEST.MP3", 2=>"/MEDIA/TEST.OGG", _=>"" }
 }
 
+pub fn open_embedded_wav()->bool {
+    let p="/MEDIA/TEST.WAV";
+    let bytes=media_builtin::TEST_WAV;
+    if let Some((size,rate,ch,bits,data,len))=parse_wav_bytes(bytes) {
+        unsafe {
+            PATH_LEN=copy_bytes(&mut PATH,p.as_bytes());
+            TITLE_LEN=PATH_LEN;
+            let mut j=0; while j<TITLE_LEN { TITLE[j]=PATH[j]; j+=1; }
+            FILE_SIZE=size; SAMPLE_RATE=rate; CHANNELS=ch; BITS=bits;
+            DATA_OFF=data; DATA_LEN=len; PCM_FILE_POS=0; PCM_READY=0;
+            FORMAT=Format::WavPcm; LAST_ERROR=0; STATE=State::Stopped;
+            BUILTIN_ACTIVE=1;
+        }
+        serial::write_str("[MEDIA] embedded TEST.WAV opened directly\\n");
+        true
+    } else {
+        serial::write_str("[MEDIA] embedded TEST.WAV parse failed\\n");
+        false
+    }
+}
+
 pub fn open_builtin(i:usize)->bool {
     let p=builtin_path(i);
     if p.is_empty(){return false;}
