@@ -607,7 +607,7 @@ fn probe_hda() {
                     output_conv=selected_conv;
                     HDA_OUTPUT_CONV = output_conv;
 
-                serial::write_str("[AUDIO] HDA OUTPUT_CANDIDATES PIN=";
+                serial::write_str("[AUDIO] HDA OUTPUT_CANDIDATES PIN=");
                     serial::write_hex(analog_pin as usize);
                     serial::write_str(" CONV=");
                     serial::write_hex(output_conv as usize);
