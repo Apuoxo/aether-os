@@ -160,6 +160,7 @@ static mut TERM_LINES: [[u8; TERM_COLS]; TERM_ROWS] = [[0; TERM_COLS]; TERM_ROWS
 static mut TERM_LEN: [usize; TERM_ROWS] = [0; TERM_ROWS];
 static mut TERM_ROW: usize = 0;
 static mut TERM_VIEW: usize = 0; // 0 = live bottom, larger = scrolled up
+static mut TERM_SCROLL_DRAG: bool = false;
 static mut INPUT: [u8; 64] = [0; 64];
 static mut INPUT_LEN: usize = 0;
 
@@ -221,6 +222,34 @@ fn term_scroll_down() {
             TERM_VIEW -= 1;
             DIRTY_FULL = true;
         }
+    }
+}
+
+fn term_scroll_set_from_mouse(my: i32) {
+    unsafe {
+        if FOCUS >= MAX_WIN || !WINS[FOCUS].visible || WINS[FOCUS].kind != WinKind::Terminal {
+            return;
+        }
+        let w = &WINS[FOCUS];
+        let bar_top = w.y + TITLE_H + 4;
+        let bar_bottom = w.y + w.h - 6;
+        let track_top = bar_top + 14;
+        let track_bottom = bar_bottom - 14;
+        if track_bottom <= track_top { return; }
+        let total = TERM_ROW + 1;
+        let rows = term_visible_rows();
+        let max_view = if total > rows { total - rows } else { 0 };
+        if max_view == 0 { TERM_VIEW = 0; return; }
+        let track_h = track_bottom - track_top;
+        let thumb_h0 = (track_h * rows) / total.max(rows);
+        let thumb_h = if thumb_h0 < 12 { 12 } else if thumb_h0 > track_h { track_h } else { thumb_h0 };
+        let travel = track_h - thumb_h;
+        if travel <= 0 { TERM_VIEW = 0; return; }
+        let mut y = my - track_top - thumb_h / 2;
+        if y < 0 { y = 0; }
+        if y > travel { y = travel; }
+        TERM_VIEW = ((y as usize) * max_view) / (travel as usize);
+        DIRTY_FULL = true;
     }
 }
 
@@ -685,7 +714,18 @@ fn handle_terminal_scroll_click(mx: i32, my: i32) -> bool {
         } else if max_view > 0 {
             let track_top = bar_top + 14;
             let track_bottom = bar_bottom - 14;
-            if my < track_top + (track_bottom - track_top) / 2 {
+            let track_h = track_bottom - track_top;
+            let thumb_h0 = (track_h * view_rows) / total.max(view_rows);
+            let thumb_h = if thumb_h0 < 12 { 12 } else if thumb_h0 > track_h { track_h } else { thumb_h0 };
+            let travel = track_h - thumb_h;
+            let thumb_y = if max_view == 0 || travel <= 0 {
+                track_top
+            } else {
+                track_top + (travel * TERM_VIEW as i32) / max_view as i32
+            };
+            if my >= thumb_y && my < thumb_y + thumb_h {
+                TERM_SCROLL_DRAG = true;
+            } else if my < track_top + track_h / 2 {
                 term_scroll_down();
             } else {
                 term_scroll_up();
@@ -1102,17 +1142,21 @@ fn handle_mouse_buttons(buttons: u8) {
             }
         }
         if left == 0 && prev_left != 0 {
-            if DRAGGING || RESIZING {
+            if DRAGGING || RESIZING || TERM_SCROLL_DRAG {
                 DIRTY_FULL = true;
             }
             DRAGGING = false;
             RESIZING = false;
+            TERM_SCROLL_DRAG = false;
         }
         if DRAGGING && left != 0 {
             WINS[DRAG_WIN].x = mx - DRAG_OX;
             WINS[DRAG_WIN].y = my - DRAG_OY;
             clamp_win(DRAG_WIN);
             render_drag_step();
+        }
+        if TERM_SCROLL_DRAG && left != 0 {
+            term_scroll_set_from_mouse(my);
         }
         if RESIZING && left != 0 {
             let idx = RESIZE_WIN;
@@ -2244,6 +2288,19 @@ fn handle_key(ch: u8) {
 }
 
 pub fn run() -> ! {
+    unsafe {
+        let sw = graphics::width() as i32;
+        let sh = graphics::height() as i32;
+        WINS[0].x = 0;
+        WINS[0].y = 30;
+        WINS[0].w = sw;
+        WINS[0].h = sh - 70;
+        WINS[0].rx = 0;
+        WINS[0].ry = 30;
+        WINS[0].rw = sw;
+        WINS[0].rh = sh - 70;
+        WINS[0].maximized = true;
+    }
     serial::write_str("\n======== Aether Desktop v1.1 XP ========\n");
     crate::drivers::audio::init();
     // Real HDA PCM startup smoke test: use the embedded PCM WAV, not the
