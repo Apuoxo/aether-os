@@ -17,6 +17,14 @@ static mut HDA_RIRB_PHYS: usize = 0;
 static mut HDA_STREAM_BASE: usize = 0;
 static mut HDA_STREAM_READY: bool = false;
 static mut HDA_STREAM_RUNNING: bool = false;
+static mut HDA_GCAP: u16 = 0;
+static mut HDA_STATESTS: u16 = 0;
+static mut HDA_OSS: u8 = 0;
+static mut HDA_ISS: u8 = 0;
+static mut HDA_BSS: u8 = 0;
+static mut HDA_AFG: u8 = 0;
+static mut HDA_ANALOG_PIN: u8 = 0;
+static mut HDA_OUTPUT_CONV: u8 = 0;
 static mut HDA_STREAM_TAG: u8 = 1;
 static mut HDA_STREAM_FMT: u16 = 0;
 static mut HDA_DMA_PHYS: usize = 0;
@@ -82,6 +90,14 @@ pub fn hda_stream_ready() -> bool { unsafe { HDA_STREAM_READY } }
 pub fn hda_stream_running() -> bool { unsafe { HDA_STREAM_RUNNING } }
 pub fn hda_stream_base() -> usize { unsafe { HDA_STREAM_BASE } }
 pub fn hda_stream_format() -> u16 { unsafe { HDA_STREAM_FMT } }
+pub fn hda_gcap() -> u16 { unsafe { HDA_GCAP } }
+pub fn hda_statests() -> u16 { unsafe { HDA_STATESTS } }
+pub fn hda_oss() -> u8 { unsafe { HDA_OSS } }
+pub fn hda_iss() -> u8 { unsafe { HDA_ISS } }
+pub fn hda_bss() -> u8 { unsafe { HDA_BSS } }
+pub fn hda_afg() -> u8 { unsafe { HDA_AFG } }
+pub fn hda_analog_pin() -> u8 { unsafe { HDA_ANALOG_PIN } }
+pub fn hda_output_conv() -> u8 { unsafe { HDA_OUTPUT_CONV } }
 pub fn hda_dma_phys() -> usize { unsafe { HDA_DMA_PHYS } }
 pub fn hda_bdl_phys() -> usize { unsafe { HDA_BDL_PHYS } }
 pub fn hda_dma_total() -> usize { unsafe { HDA_DMA_TOTAL } }
@@ -145,6 +161,14 @@ fn probe_hda() {
         HDA_BDF = 0;
         HDA_BAR0 = 0;
         HDA_MMIO_READY = false;
+        HDA_GCAP = 0;
+        HDA_STATESTS = 0;
+        HDA_OSS = 0;
+        HDA_ISS = 0;
+        HDA_BSS = 0;
+        HDA_AFG = 0;
+        HDA_ANALOG_PIN = 0;
+        HDA_OUTPUT_CONV = 0;
 
         for dev in 0u8..32 {
             for func in 0u8..8 {
@@ -210,6 +234,10 @@ fn probe_hda() {
 
                 let mmio = base as usize;
                 let gcap = hda_r16(mmio, 0x00);
+                HDA_GCAP = gcap;
+                HDA_OSS = ((gcap >> 12) & 0x0F) as u8;
+                HDA_ISS = ((gcap >> 8) & 0x0F) as u8;
+                HDA_BSS = ((gcap >> 3) & 0x1F) as u8;
                 let gctl = hda_r32(mmio, 0x08);
                 let statests = hda_r16(mmio, 0x0E);
                 let intsts = hda_r32(mmio, 0x24);
@@ -264,6 +292,7 @@ fn probe_hda() {
                 while d < 6 { wait_short(); d += 1; }
 
                 let states = hda_r16(mmio, 0x0E);
+                HDA_STATESTS = states;
                 serial::write_str("[AUDIO] HDA RESET=OK STATESTS=");
                 serial::write_hex(states as usize);
                 serial::write_str("\n");
@@ -442,6 +471,7 @@ fn probe_hda() {
                     serial::write_str("\n");
                     if fg_type == 1 && afg == 0 {
                         afg = nid;
+                        HDA_AFG = nid;
                     }
                     node += 1;
                     scanned += 1;
@@ -516,6 +546,7 @@ fn probe_hda() {
                                 // are useful analog endpoint candidates.
                                 if device <= 2 {
                                     analog_pin = nid;
+                                    HDA_ANALOG_PIN = nid;
                                     serial::write_str("[AUDIO] HDA ANALOG_PIN NID=");
                                     serial::write_hex(nid as usize);
                                     serial::write_str(" DEV=");
@@ -574,8 +605,9 @@ fn probe_hda() {
                         if found!=0 { selected_conv=found; }
                     }
                     output_conv=selected_conv;
+                    HDA_OUTPUT_CONV = output_conv;
 
-                serial::write_str("[AUDIO] HDA OUTPUT_CANDIDATES PIN=");
+                serial::write_str("[AUDIO] HDA OUTPUT_CANDIDATES PIN=";
                     serial::write_hex(analog_pin as usize);
                     serial::write_str(" CONV=");
                     serial::write_hex(output_conv as usize);
@@ -625,7 +657,17 @@ fn probe_hda() {
                     serial::write_str("[AUDIO] HDA AFG_NOT_FOUND\n");
                 }
 
-                serial::write_str("[AUDIO] HDA CORB/RIRB PASS; codec topology discovered; PCM stream ready\n");
+                if HDA_STREAM_READY {
+                    serial::write_str("[AUDIO] HDA PROBE PASS; PCM stream descriptor selected\n");
+                } else if HDA_AFG == 0 {
+                    serial::write_str("[AUDIO] HDA PROBE PARTIAL; AFG_NOT_FOUND\n");
+                } else if HDA_ANALOG_PIN == 0 {
+                    serial::write_str("[AUDIO] HDA PROBE PARTIAL; NO_ANALOG_PIN\n");
+                } else if HDA_OUTPUT_CONV == 0 {
+                    serial::write_str("[AUDIO] HDA PROBE PARTIAL; NO_OUTPUT_CONVERTER\n");
+                } else {
+                    serial::write_str("[AUDIO] HDA PROBE PARTIAL; NO_OUTPUT_STREAM\n");
+                }
                 return;
             }
         }
