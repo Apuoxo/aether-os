@@ -283,6 +283,10 @@ fn refill_mp3()->usize {
             };
             MP3_INPUT_LEN=got;
 
+            // Decode from the current input window. minimp3 may consume less
+            // than the bytes supplied, so preserve the unconsumed tail for
+            // the next decode instead of discarding it. Losing a partial MP3
+            // frame here causes periodic decoder resync noise.
             let (consumed, info)=MP3_DECODER.decode(
                 &MP3_INPUT[..MP3_INPUT_LEN],
                 &mut MP3_FRAME
