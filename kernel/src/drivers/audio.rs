@@ -12,6 +12,8 @@ static mut HDA_FOUND: bool = false;
 static mut HDA_BDF: u16 = 0;
 static mut HDA_BAR0: u64 = 0;
 static mut HDA_MMIO_READY: bool = false;
+static mut HDA_CORB_PHYS: usize = 0;
+static mut HDA_RIRB_PHYS: usize = 0;
 
 unsafe fn outb(port: u16, val: u8) {
     core::arch::asm!("out dx, al", in("dx") port, in("al") val, options(nostack, preserves_flags));
@@ -45,6 +47,9 @@ unsafe fn hda_r16(base: usize, off: usize) -> u16 {
 }
 unsafe fn hda_r32(base: usize, off: usize) -> u32 {
     core::ptr::read_volatile((base + off) as *const u32)
+}
+unsafe fn hda_w8(base: usize, off: usize, v: u8) {
+    core::ptr::write_volatile((base + off) as *mut u8, v);
 }
 unsafe fn hda_w32(base: usize, off: usize, v: u32) {
     core::ptr::write_volatile((base + off) as *mut u32, v);
@@ -214,7 +219,114 @@ fn probe_hda() {
                 serial::write_str("[AUDIO] HDA CODEC_ADDRS=");
                 serial::write_hex(states as usize);
                 serial::write_str("\n");
-                serial::write_str("[AUDIO] HDA codec transport next: CORB/RIRB\n");
+                // Allocate physically contiguous, naturally aligned DMA rings.
+                // CORB: 256 x 4-byte commands = 1 KiB.
+                // RIRB: 256 x 8-byte responses = 2 KiB.
+                let corb_phys = match crate::mm::alloc_pages(1) {
+                    Some(p) => p,
+                    None => {
+                        serial::write_str("[AUDIO] CORB_ALLOC_FAIL\n");
+                        return;
+                    }
+                };
+                let rirb_phys = match crate::mm::alloc_pages(2) {
+                    Some(p) => p,
+                    None => {
+                        crate::mm::free_page(corb_phys);
+                        serial::write_str("[AUDIO] RIRB_ALLOC_FAIL\n");
+                        return;
+                    }
+                };
+                crate::mm::zero_pages(corb_phys, 1);
+                crate::mm::zero_pages(rirb_phys, 2);
+
+                let cr3_dma = crate::mm::paging::read_cr3();
+                let mut p = corb_phys;
+                while p < corb_phys + 0x1000 {
+                    if !crate::mm::paging::map_page(
+                        cr3_dma, p, p,
+                        crate::mm::paging::PAGE_PRESENT
+                            | crate::mm::paging::PAGE_WRITE
+                            | crate::mm::paging::PAGE_PCD
+                            | crate::mm::paging::PAGE_PWT,
+                    ) { serial::write_str("[AUDIO] CORB_MAP_FAIL\n"); return; }
+                    p += 0x1000;
+                }
+                p = rirb_phys;
+                while p < rirb_phys + 0x2000 {
+                    if !crate::mm::paging::map_page(
+                        cr3_dma, p, p,
+                        crate::mm::paging::PAGE_PRESENT
+                            | crate::mm::paging::PAGE_WRITE
+                            | crate::mm::paging::PAGE_PCD
+                            | crate::mm::paging::PAGE_PWT,
+                    ) { serial::write_str("[AUDIO] RIRB_MAP_FAIL\n"); return; }
+                    p += 0x1000;
+                }
+                crate::mm::paging::load_cr3(cr3_dma);
+
+                HDA_CORB_PHYS = corb_phys;
+                HDA_RIRB_PHYS = rirb_phys;
+
+                // Stop engines before programming base addresses.
+                hda_w8(mmio, 0x4C, 0);
+                hda_w8(mmio, 0x5C, 0);
+                hda_w16(mmio, 0x48, 0x8000);
+                hda_w16(mmio, 0x48, 0);
+                hda_w16(mmio, 0x58, 0x8000);
+                hda_w16(mmio, 0x58, 0);
+
+                // Select 256-entry rings when the controller advertises that size.
+                if hda_r8(mmio, 0x4E) & 0x40 != 0 {
+                    hda_w8(mmio, 0x4E, (hda_r8(mmio, 0x4E) & 0xFC) | 0x02);
+                }
+                if hda_r8(mmio, 0x5E) & 0x40 != 0 {
+                    hda_w8(mmio, 0x5E, (hda_r8(mmio, 0x5E) & 0xFC) | 0x02);
+                }
+
+                hda_w32(mmio, 0x40, corb_phys as u32);
+                hda_w32(mmio, 0x44, (corb_phys >> 32) as u32);
+                hda_w32(mmio, 0x50, rirb_phys as u32);
+                hda_w32(mmio, 0x54, (rirb_phys >> 32) as u32);
+
+                // One response is enough for synchronous codec discovery.
+                hda_w16(mmio, 0x5A, 1);
+                hda_w8(mmio, 0x4C, 0x02);
+                hda_w8(mmio, 0x5C, 0x02);
+
+                serial::write_str("[AUDIO] HDA CORB/RIRB READY CORB=");
+                serial::write_hex(corb_phys);
+                serial::write_str(" RIRB=");
+                serial::write_hex(rirb_phys);
+                serial::write_str("\n");
+
+                // Get Parameter(Vendor ID) from root node 0 of codec address 0.
+                let codec = states.trailing_zeros() as u8;
+                let cmd = ((codec as u32) << 28) | (0xF00u32 << 8);
+                let wp = hda_r16(mmio, 0x48) & 0x00FF;
+                let next = (wp.wrapping_add(1)) & 0x00FF;
+                core::ptr::write_volatile((corb_phys + (next as usize) * 4) as *mut u32, cmd);
+                hda_w16(mmio, 0x48, next);
+
+                let mut got = false;
+                let mut tries = 0u32;
+                while tries < 200_000 {
+                    if (hda_r16(mmio, 0x58) & 0x00FF) == next { got = true; break; }
+                    tries += 1;
+                    core::hint::spin_loop();
+                }
+                if !got {
+                    serial::write_str("[AUDIO] HDA VERB_TIMEOUT\n");
+                    return;
+                }
+
+                let resp = core::ptr::read_volatile((rirb_phys + (next as usize) * 8) as *const u32);
+                serial::write_str("[AUDIO] HDA CODEC=");
+                serial::write_usize(codec as usize);
+                serial::write_str(" VID_DID=");
+                serial::write_hex(resp as usize);
+                serial::write_str("\n");
+                serial::write_str("[AUDIO] HDA CORB/RIRB transport PASS; next: AFG/node enumeration\n");
                 return;
             }
         }
