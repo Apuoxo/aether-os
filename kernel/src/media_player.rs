@@ -250,66 +250,92 @@ fn open_mp3_common(path:&str, bytes_len:usize)->bool {
 
 fn refill_mp3()->usize {
     unsafe {
-        if FORMAT!=Format::Mp3 || MP3_FILE_POS>=FILE_SIZE { PCM_READY=0; return 0; }
+        if FORMAT!=Format::Mp3 { PCM_READY=0; return 0; }
 
-        let remain=FILE_SIZE-MP3_FILE_POS;
-        let n=remain.min(MP3_INPUT_BUF);
-        if n==0 { PCM_READY=0; return 0; }
+        // Keep PCM as a continuous byte FIFO. HDA consumes fixed 4096-byte
+        // periods, while an MP3 frame normally decodes to 4608 bytes
+        // (1152 stereo samples). Never expose a partial frame to HDA.
+        while PCM_READY < 4096 && MP3_FILE_POS < FILE_SIZE {
+            let remain=FILE_SIZE-MP3_FILE_POS;
+            let n=remain.min(MP3_INPUT_BUF);
+            if n==0 { break; }
 
-        let got=if BUILTIN_ACTIVE!=0 {
-            let bi=(BUILTIN_ACTIVE-1) as usize;
-            let src=builtin_bytes(bi);
-            if MP3_FILE_POS>=src.len() { None } else {
-                let avail=(src.len()-MP3_FILE_POS).min(n);
-                let mut i=0; while i<avail { MP3_INPUT[i]=src[MP3_FILE_POS+i]; i+=1; }
-                Some(avail)
+            let got=if BUILTIN_ACTIVE!=0 {
+                let bi=(BUILTIN_ACTIVE-1) as usize;
+                let src=builtin_bytes(bi);
+                if MP3_FILE_POS>=src.len() { None } else {
+                    let avail=(src.len()-MP3_FILE_POS).min(n);
+                    let mut i=0;
+                    while i<avail { MP3_INPUT[i]=src[MP3_FILE_POS+i]; i+=1; }
+                    Some(avail)
+                }
+            } else {
+                fs::read_range(
+                    core::str::from_utf8_unchecked(&PATH[..PATH_LEN]),
+                    MP3_FILE_POS,
+                    &mut MP3_INPUT[..n]
+                )
+            };
+
+            let got=match got {
+                Some(v) if v>0=>v,
+                _=>{LAST_ERROR=3;STATE=State::Error;break;}
+            };
+            MP3_INPUT_LEN=got;
+
+            let (consumed, info)=MP3_DECODER.decode(
+                &MP3_INPUT[..MP3_INPUT_LEN],
+                &mut MP3_FRAME
+            );
+
+            if consumed>0 {
+                MP3_FILE_POS=MP3_FILE_POS.saturating_add(consumed);
             }
-        } else {
-            fs::read_range(
-                core::str::from_utf8_unchecked(&PATH[..PATH_LEN]),
-                MP3_FILE_POS,
-                &mut MP3_INPUT[..n]
-            )
-        };
 
-        let got=match got { Some(v) if v>0=>v, _=>{LAST_ERROR=3;STATE=State::Error;PCM_READY=0;return 0;} };
-        MP3_INPUT_LEN=got;
+            let info=match info {
+                Some(v)=>v,
+                None=>{
+                    if consumed==0 && MP3_FILE_POS < FILE_SIZE {
+                        LAST_ERROR=4;
+                        STATE=State::Error;
+                    }
+                    break;
+                }
+            };
 
-        let (consumed, info)=MP3_DECODER.decode(&MP3_INPUT[..MP3_INPUT_LEN], &mut MP3_FRAME);
-        if consumed>0 { MP3_FILE_POS=MP3_FILE_POS.saturating_add(consumed); }
+            SAMPLE_RATE=info.sample_rate;
+            CHANNELS=info.channels.num() as u16;
+            BITS=16;
 
-        let info=match info {
-            Some(v)=>v,
-            None=>{
-                if consumed==0 && got==MP3_INPUT_BUF { LAST_ERROR=4; STATE=State::Error; }
-                PCM_READY=0;
-                return 0;
+            let samples=info.samples_produced.min(MP3_FRAME_SAMPLES);
+            let bytes_needed=samples.saturating_mul(2);
+            let space=PCM_BUF.saturating_sub(PCM_READY);
+            let bytes=bytes_needed.min(space);
+            let mut src=0usize;
+            let mut dst=PCM_READY;
+
+            while src+1 < bytes {
+                let mut v=MP3_FRAME[src/2];
+                if v>1.0 { v=1.0; } else if v < -1.0 { v=-1.0; }
+                let s=(v*32767.0) as i16;
+                let u=s as u16;
+                PCM[dst]=(u&0xFF) as u8;
+                PCM[dst+1]=(u>>8) as u8;
+                src+=2;
+                dst+=2;
             }
-        };
+            PCM_READY=dst;
 
-        SAMPLE_RATE=info.sample_rate;
-        CHANNELS=info.channels.num() as u16;
-        BITS=16;
-
-        let samples=info.samples_produced.min(MP3_FRAME_SAMPLES);
-        let mut out=0usize;
-        let mut i=0usize;
-        while i<samples && out+1<PCM_BUF {
-            let mut v=MP3_FRAME[i];
-            if v>1.0 { v=1.0; } else if v < -1.0 { v=-1.0; }
-            let s=(v*32767.0) as i16;
-            let u=s as u16;
-            PCM[out]=(u&0xFF) as u8;
-            PCM[out+1]=(u>>8) as u8;
-            out+=2;
-            i+=1;
+            if bytes==0 {
+                LAST_ERROR=5;
+                STATE=State::Error;
+                break;
+            }
         }
-        PCM_READY=out;
-        if out==0 { LAST_ERROR=5; STATE=State::Error; }
-        out
+
+        PCM_READY
     }
 }
-
 pub fn open(path:&str)->bool {
     if is_mp3_path(path) {
         let size=match fs::file_size(path) {
@@ -405,11 +431,54 @@ pub fn pcm_buffer(out:&mut [u8])->usize {
 /// Called by the PCM sink after it has consumed n bytes.
 pub fn consume_pcm(n:usize) {
     unsafe {
-        let n=n.min(PCM_READY); PCM_READY-=n; if FORMAT!=Format::Mp3 { PCM_FILE_POS+=n; }
-        if PCM_READY==0 && PCM_FILE_POS<DATA_LEN { let _=refill_pcm(); }
-        if PCM_FILE_POS>=DATA_LEN {
-            if REPEAT { PCM_FILE_POS=0; PCM_READY=0; let _=refill_pcm(); }
-            else { STATE=State::Stopped; PCM_READY=0; }
+        let n=n.min(PCM_READY);
+        if n>0 && n<PCM_READY {
+            // HDA consumed the first part of the FIFO. Move the remaining
+            // decoded PCM to the front before appending another MP3 frame.
+            let remain=PCM_READY-n;
+            let mut i=0;
+            while i<remain {
+                PCM[i]=PCM[n+i];
+                i+=1;
+            }
+            PCM_READY=remain;
+        } else {
+            PCM_READY=0;
+        }
+
+        if FORMAT!=Format::Mp3 {
+            PCM_FILE_POS+=n;
+            if PCM_READY==0 && PCM_FILE_POS<DATA_LEN {
+                let _=refill_pcm();
+            }
+        } else {
+            // MP3_FILE_POS is advanced by the decoder, not by PCM playback.
+            // Refill whenever the FIFO drops below one HDA period.
+            if PCM_READY<4096 && MP3_FILE_POS<DATA_LEN {
+                let _=refill_pcm();
+            }
+        }
+
+        if FORMAT==Format::Mp3 {
+            if MP3_FILE_POS>=DATA_LEN && PCM_READY==0 {
+                if REPEAT {
+                    MP3_FILE_POS=0;
+                    MP3_INPUT_LEN=0;
+                    MP3_DECODER=crate::mp3_decoder::Decoder::new();
+                    let _=refill_pcm();
+                } else {
+                    STATE=State::Stopped;
+                }
+            }
+        } else if PCM_FILE_POS>=DATA_LEN {
+            if REPEAT {
+                PCM_FILE_POS=0;
+                PCM_READY=0;
+                let _=refill_pcm();
+            } else {
+                STATE=State::Stopped;
+                PCM_READY=0;
+            }
         }
     }
 }
