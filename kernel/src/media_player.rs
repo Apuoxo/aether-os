@@ -263,7 +263,31 @@ pub fn refill_pcm()->usize {
 
 pub fn pcm_buffer(out:&mut [u8])->usize {
     unsafe {
-        let n=out.len().min(PCM_READY); let mut i=0; while i<n {out[i]=PCM[i];i+=1;} n
+        let n=out.len().min(PCM_READY);
+        let mut i=0;
+        // Apply the player volume/mute state in the PCM sink path.
+        // The HDA codec remains at the known-good hardware gain; UI volume
+        // therefore changes only the samples that are sent to DMA.
+        if MUTED || VOLUME == 0 {
+            while i < n { out[i] = 0; i += 1; }
+        } else if VOLUME >= 100 {
+            while i < n { out[i] = PCM[i]; i += 1; }
+        } else {
+            // Current native HDA playback is 16-bit PCM. Scale complete
+            // little-endian samples without changing the stream format.
+            while i + 1 < n {
+                let raw = (PCM[i] as u16) | ((PCM[i + 1] as u16) << 8);
+                let sample = raw as i16 as i32;
+                let scaled = sample * (VOLUME as i32) / 100;
+                let s = scaled as i16;
+                let u = s as u16;
+                out[i] = (u & 0xFF) as u8;
+                out[i + 1] = (u >> 8) as u8;
+                i += 2;
+            }
+            while i < n { out[i] = PCM[i]; i += 1; }
+        }
+        n
     }
 }
 
