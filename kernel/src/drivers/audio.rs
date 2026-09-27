@@ -1011,48 +1011,33 @@ pub fn playback_poll() {
         let sd=HDA_STREAM_BASE;
         let lp=hda_r32(base,sd+0x04);
         let period=HDA_DMA_PERIOD as u32;
-        let cbl=(HDA_DMA_PERIOD*HDA_DMA_PERIODS) as u32;
-        // Track the absolute number of completed periods. This avoids relying
-        // on a single LPIB wrap observation and prevents a short missed poll
-        // from leaving a DMA slot stale.
+        let periods=HDA_DMA_PERIODS;
 
-        // LPIB is the cyclic position. Refill every period that the DMA
-        // has fully passed; when LPIB wraps, finish the tail periods first.
-        if lp < HDA_DMA_LAST_LPIB {
-            while HDA_DMA_NEXT < HDA_DMA_PERIODS {
-                let slot=HDA_DMA_NEXT;
-                let got=crate::media_player::pcm_buffer(
-                    core::slice::from_raw_parts_mut((HDA_DMA_PHYS+slot*4096) as *mut u8,4096));
-                if got==0 {
-                    hda_w32(base,sd,hda_r32(base,sd)&!0x2);
-                    HDA_STREAM_RUNNING=false;
-                    serial::write_str("[AUDIO] HDA PLAY EOF\n");
-                    return;
-                }
-                crate::media_player::consume_pcm(got);
-                HDA_DMA_TOTAL+=got;
-                HDA_DMA_NEXT+=1;
-            }
-            HDA_DMA_NEXT=0;
-        }
-
-        let completed=((lp/period) as usize).min(HDA_DMA_PERIODS);
-        while HDA_DMA_NEXT < completed {
+        // LPIB points into the period currently being consumed. Every period
+        // before that index is safe to refill. Use modulo arithmetic so the
+        // ring wrap is handled identically to the normal path.
+        let completed=((lp/period) as usize)%periods;
+        while HDA_DMA_NEXT != completed {
             let slot=HDA_DMA_NEXT;
             let got=crate::media_player::pcm_buffer(
                 core::slice::from_raw_parts_mut((HDA_DMA_PHYS+slot*4096) as *mut u8,4096));
             if got==0 {
+                // Do not leave stale data in the ring. Zero the slot before
+                // stopping when the source reaches EOF.
+                core::ptr::write_bytes(
+                    (HDA_DMA_PHYS+slot*4096) as *mut u8,0,4096);
                 hda_w32(base,sd,hda_r32(base,sd)&!0x2);
                 HDA_STREAM_RUNNING=false;
                 serial::write_str("[AUDIO] HDA PLAY EOF\n");
                 return;
             }
             crate::media_player::consume_pcm(got);
+            if got<4096 {
+                core::ptr::write_bytes(
+                    (HDA_DMA_PHYS+slot*4096+got) as *mut u8,0,4096-got);
+            }
             HDA_DMA_TOTAL+=got;
-            HDA_DMA_NEXT+=1;
-        }
-        if HDA_DMA_NEXT>=HDA_DMA_PERIODS && lp>=cbl {
-            HDA_DMA_NEXT=0;
+            HDA_DMA_NEXT=(slot+1)%periods;
         }
         HDA_DMA_LAST_LPIB=lp;
     }
