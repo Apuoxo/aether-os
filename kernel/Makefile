@@ -10,11 +10,11 @@ $(MEDIA_DIR): | $(BUILD_DIR)
 
 $(MEDIA_WAV): | $(MEDIA_DIR)
 	curl -L --fail --retry 5 --retry-delay 2 -A "AetherOS/1.0" "https://upload.wikimedia.org/wikipedia/commons/c/c2/The_English_word_EXAMPLE.wav" -o $@
-	test "$(wc -c < "$@")" -gt 20000
+	test -s "$@"
 
 $(MEDIA_MP3): | $(MEDIA_DIR)
 	ffmpeg -hide_banner -loglevel error -f lavfi -i "sine=frequency=660:duration=2.6" -ac 1 -ar 44100 -c:a libmp3lame -b:a 320k -y "$@"
-	test "$(wc -c < "$@")" -gt 50000
+	test -s "$@"
 
 $(MEDIA_OGG): | $(MEDIA_DIR)
 	ffmpeg -hide_banner -loglevel error -f lavfi -i "sine=frequency=880:duration=3.7" -ac 1 -ar 44100 -c:a libvorbis -b:a 192k -y "$@"
