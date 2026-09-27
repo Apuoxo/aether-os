@@ -796,13 +796,14 @@ fn probe_hda() {
                         let codec_stream = ((codec as u32)<<28)|((output_conv as u32)<<20);
                         let _ = send_verb(codec_stream | (0x705u32<<8)); // D0
                         let _ = send_verb(codec_stream | (0x706u32<<8) | 0x10); // tag=1,ch=0
-                        let _ = send_verb(codec_stream | (0x200u32<<8) | 0x11); // 16-bit stereo/mono fmt low bits
+                        let _ = send_verb(codec_stream | (0x200u32<<8) | 0x4011); // 16-bit stereo/mono fmt low bits
                         let pin_cmd = ((codec as u32)<<28)|((analog_pin as u32)<<20);
                         let _ = send_verb(pin_cmd | (0x707u32<<8) | 0x40); // output enable
                         let _ = send_verb(pin_cmd | (0x705u32<<8)); // D0
-                        let _ = send_verb(pin_cmd | (0x300u32<<8) | 0xA000); // output amp, unmuted, gain 0
+                         let _ = send_verb(pin_cmd | (0x70Cu32<<8) | 0x02); // EAPD on
+                        let _ = send_verb(pin_cmd | (0x300u32<<8) | 0xB000); // output amp, unmuted, gain 0
                         let conv_cmd = ((codec as u32)<<28)|((output_conv as u32)<<20);
-                        let _ = send_verb(conv_cmd | (0x300u32<<8) | 0xA000);
+                        let _ = send_verb(conv_cmd | (0x300u32<<8) | 0xB000);
                         serial::write_str("[AUDIO] HDA ANALOG PATH PROGRAMMED PIN=");
                         serial::write_hex(analog_pin as usize);
                         serial::write_str(" CONV=");
