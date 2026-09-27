@@ -364,16 +364,19 @@ pub fn consume_pcm(n:usize) {
         let n=n.min(PCM_READY); PCM_READY-=n; PCM_FILE_POS+=n;
         if PCM_READY==0 && PCM_FILE_POS<DATA_LEN { let _=refill_pcm(); }
         if PCM_FILE_POS>=DATA_LEN {
-            if REPEAT { PCM_FILE_POS=0; PCM_READY=0; let _=refill_pcm(); }
-            else { STATE=State::Stopped; PCM_READY=0; }
+            if REPEAT {
+                PCM_FILE_POS=0; PCM_READY=0;
+                if FORMAT==Format::Mp3 { MP3_DECODER=Mp3Decoder::new(); }
+                let _=refill_pcm();
+            } else { STATE=State::Stopped; PCM_READY=0; }
         }
     }
 }
 
-pub fn play(){unsafe{if DATA_LEN>0 && (STATE==State::Stopped||STATE==State::Paused){STATE=State::Playing;let _=refill_pcm();if !crate::drivers::audio::playback_start(SAMPLE_RATE,CHANNELS,BITS){STATE=State::Error;}}}}
+pub fn play(){unsafe{if DATA_LEN>0 && (STATE==State::Stopped||STATE==State::Paused){if FORMAT==Format::Mp3 && PCM_FILE_POS>=DATA_LEN{PCM_FILE_POS=0;PCM_READY=0;MP3_DECODER=Mp3Decoder::new();}STATE=State::Playing;let _=refill_pcm();if SAMPLE_RATE!=0 && CHANNELS!=0 && !crate::drivers::audio::playback_start(SAMPLE_RATE,CHANNELS,BITS){STATE=State::Error;}}}}
 pub fn pause(){unsafe{if STATE==State::Playing{crate::drivers::audio::playback_stop();STATE=State::Paused;}}}
-pub fn stop(){crate::drivers::audio::playback_stop();unsafe{if DATA_LEN>0{PCM_FILE_POS=0;PCM_READY=0;let _=refill_pcm();STATE=State::Stopped;}}}
-pub fn toggle_play(){unsafe{if STATE==State::Playing{crate::drivers::audio::playback_stop();STATE=State::Paused}else if DATA_LEN>0{STATE=State::Playing;let _=refill_pcm();if !crate::drivers::audio::playback_start(SAMPLE_RATE,CHANNELS,BITS){STATE=State::Error;}}}}
+pub fn stop(){crate::drivers::audio::playback_stop();unsafe{if DATA_LEN>0{PCM_FILE_POS=0;PCM_READY=0;if FORMAT==Format::Mp3{MP3_DECODER=Mp3Decoder::new();}let _=refill_pcm();STATE=State::Stopped;}}}
+pub fn toggle_play(){unsafe{if STATE==State::Playing{crate::drivers::audio::playback_stop();STATE=State::Paused}else if DATA_LEN>0{if FORMAT==Format::Mp3 && PCM_FILE_POS>=DATA_LEN{PCM_FILE_POS=0;PCM_READY=0;MP3_DECODER=Mp3Decoder::new();}STATE=State::Playing;let _=refill_pcm();if SAMPLE_RATE!=0 && CHANNELS!=0 && !crate::drivers::audio::playback_start(SAMPLE_RATE,CHANNELS,BITS){STATE=State::Error;}}}}
 
 pub fn seek_permille(v:u16){
     unsafe{
