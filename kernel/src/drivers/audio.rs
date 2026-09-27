@@ -642,7 +642,7 @@ fn probe_hda() {
 
                 if afg != 0 {
                     let afg_nodes = match send_verb(
-                        ((codec as u32) << 28) | ((afg as u32) << 20) | (0xF04u32 << 8)
+                        ((codec as u32) << 28) | ((afg as u32) << 20) | 0x000F0004u32
                     ) {
                         Some(v) => v,
                         None => {
