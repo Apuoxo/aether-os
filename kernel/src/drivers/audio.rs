@@ -34,6 +34,7 @@ static mut HDA_VERB_OK: bool = false;
 static mut HDA_VERB_LAST: u32 = 0;
 static mut HDA_VERB_RESP: u32 = 0;
 static mut HDA_VERB_ICIS: u16 = 0;
+static mut HDA_VERB_META: u32 = 0;
 static mut HDA_STREAM_TAG: u8 = 1;
 static mut HDA_STREAM_FMT: u16 = 0;
 static mut HDA_DMA_PHYS: usize = 0;
@@ -94,13 +95,15 @@ fn wait_short() {
 unsafe fn hda_corb_verb(mmio: usize, corb_phys: usize, rirb_phys: usize, verb: u32) -> Option<u32> {
     // CORB/RIRB is the mandatory memory transport path; Immediate Command is optional.
     // The rings are 256 entries on this controller (CORBSIZE/RIRBSIZE = 0x42).
+    let before_rirb_wp = hda_r16(mmio, 0x58) & 0x00FF;
     let corb_wp = hda_r16(mmio, 0x48) & 0x00FF;
     let next_corb_wp = (corb_wp + 1) & 0x00FF;
     let corb_slot = (corb_phys + (next_corb_wp as usize) * 4) as *mut u32;
     core::ptr::write_volatile(corb_slot, verb);
     hda_w16(mmio, 0x48, next_corb_wp);
 
-    let before_rirb_wp = hda_r16(mmio, 0x58) & 0x00FF;
+    // RIRB write pointer was sampled before posting the command; otherwise a fast response can be missed.
+
     let mut t = 0u32;
     while t < 200_000 {
         let wp = hda_r16(mmio, 0x58) & 0x00FF;
@@ -110,6 +113,7 @@ unsafe fn hda_corb_verb(mmio: usize, corb_phys: usize, rirb_phys: usize, verb: u
             let meta = core::ptr::read_volatile((entry + 4) as *const u32);
             HDA_VERB_RESP = response;
             HDA_VERB_ICIS = hda_r16(mmio, 0x68);
+            HDA_VERB_META = meta;
             HDA_VERB_OK = true;
             serial::write_str("[AUDIO] HDA CORB_RESP WP=");
             serial::write_hex(wp as usize);
@@ -154,6 +158,19 @@ pub fn hda_verb_ok() -> bool { unsafe { HDA_VERB_OK } }
 pub fn hda_verb_last() -> u32 { unsafe { HDA_VERB_LAST } }
 pub fn hda_verb_resp() -> u32 { unsafe { HDA_VERB_RESP } }
 pub fn hda_verb_icis() -> u16 { unsafe { HDA_VERB_ICIS } }
+pub fn hda_verb_meta() -> u32 { unsafe { HDA_VERB_META } }
+pub fn hda_gctl() -> u32 { unsafe { if HDA_MMIO_READY { hda_r32(HDA_BAR0 as usize, 0x08) } else { 0 } } }
+pub fn hda_intsts() -> u32 { unsafe { if HDA_MMIO_READY { hda_r32(HDA_BAR0 as usize, 0x24) } else { 0 } } }
+pub fn hda_walclk() -> u32 { unsafe { if HDA_MMIO_READY { hda_r32(HDA_BAR0 as usize, 0x30) } else { 0 } } }
+pub fn hda_corb_size() -> u8 { unsafe { if HDA_MMIO_READY { hda_r8(HDA_BAR0 as usize, 0x4E) } else { 0 } } }
+pub fn hda_rirb_size() -> u8 { unsafe { if HDA_MMIO_READY { hda_r8(HDA_BAR0 as usize, 0x5E) } else { 0 } } }
+pub fn hda_corb_rp() -> u16 { unsafe { if HDA_MMIO_READY { hda_r16(HDA_BAR0 as usize, 0x4A) } else { 0 } } }
+pub fn hda_corb_wp() -> u16 { unsafe { if HDA_MMIO_READY { hda_r16(HDA_BAR0 as usize, 0x48) } else { 0 } } }
+pub fn hda_corb_ctl() -> u8 { unsafe { if HDA_MMIO_READY { hda_r8(HDA_BAR0 as usize, 0x4C) } else { 0 } } }
+pub fn hda_rirb_wp() -> u16 { unsafe { if HDA_MMIO_READY { hda_r16(HDA_BAR0 as usize, 0x58) } else { 0 } } }
+pub fn hda_rirb_ctl() -> u8 { unsafe { if HDA_MMIO_READY { hda_r8(HDA_BAR0 as usize, 0x5C) } else { 0 } } }
+pub fn hda_rirb_sts() -> u8 { unsafe { if HDA_MMIO_READY { hda_r8(HDA_BAR0 as usize, 0x5D) } else { 0 } } }
+pub fn hda_rintcnt() -> u16 { unsafe { if HDA_MMIO_READY { hda_r16(HDA_BAR0 as usize, 0x5A) } else { 0 } } }
 pub fn hda_dma_phys() -> usize { unsafe { HDA_DMA_PHYS } }
 pub fn hda_bdl_phys() -> usize { unsafe { HDA_BDL_PHYS } }
 pub fn hda_dma_total() -> usize { unsafe { HDA_DMA_TOTAL } }
@@ -234,6 +251,7 @@ fn probe_hda() {
         HDA_VERB_LAST = 0;
         HDA_VERB_RESP = 0;
         HDA_VERB_ICIS = 0;
+        HDA_VERB_META = 0;
 
         for dev in 0u8..32 {
             for func in 0u8..8 {
@@ -456,11 +474,12 @@ fn probe_hda() {
                 hda_w16(mmio, 0x48, 0);
                 hda_w16(mmio, 0x58, 0x8000);
                 hda_w16(mmio, 0x58, 0);
+                hda_w8(mmio, 0x5D, 0xFF);
                 hda_w16(mmio, 0x5A, 1);
                 hda_w8(mmio, 0x5C, 0x02);
                 hda_w8(mmio, 0x4C, 0x02);
 
-                serial::write_str("[AUDIO] HDA CODEC_CMD=CORB_RIRB CORB=");
+                serial::write_str("[AUDIO] HDA CORB_RIRB START CORB=");
                 serial::write_hex(corb_phys);
                 serial::write_str(" RIRB=");
                 serial::write_hex(rirb_phys);
