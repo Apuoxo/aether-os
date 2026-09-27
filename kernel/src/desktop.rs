@@ -241,7 +241,7 @@ fn term_scroll_set_from_mouse(my: i32) {
         let max_view = if total > rows { total - rows } else { 0 };
         if max_view == 0 { TERM_VIEW = 0; return; }
         let track_h = track_bottom - track_top;
-        let thumb_h0 = (track_h * rows) / total.max(rows);
+        let thumb_h0 = (((track_h as usize) * rows) / total.max(rows)) as i32;
         let thumb_h = if thumb_h0 < 12 { 12 } else if thumb_h0 > track_h { track_h } else { thumb_h0 };
         let travel = track_h - thumb_h;
         if travel <= 0 { TERM_VIEW = 0; return; }
@@ -715,7 +715,7 @@ fn handle_terminal_scroll_click(mx: i32, my: i32) -> bool {
             let track_top = bar_top + 14;
             let track_bottom = bar_bottom - 14;
             let track_h = track_bottom - track_top;
-            let thumb_h0 = (track_h * view_rows) / total.max(view_rows);
+            let thumb_h0 = (((track_h as usize) * view_rows) / total.max(view_rows)) as i32;
             let thumb_h = if thumb_h0 < 12 { 12 } else if thumb_h0 > track_h { track_h } else { thumb_h0 };
             let travel = track_h - thumb_h;
             let thumb_y = if max_view == 0 || travel <= 0 {
