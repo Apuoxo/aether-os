@@ -470,21 +470,30 @@ fn run_line(line: &[u8], len: usize) {
     } else if eq(line, s, clen, b"AUD") || eq(line, s, clen, b"aud") {
         cmd_aud();
     } else if eq(line, s, clen, b"AUD2") || eq(line, s, clen, b"aud2") {
-        write_str("======== AUD PCM PLAYBACK ========\\n");
-        if crate::media_player::state() == crate::media_player::State::Empty {
-            let _ = crate::media_player::open_builtin(0);
-        }
-        let ok = crate::media_player::state() != crate::media_player::State::Empty
-            && crate::media_player::state() != crate::media_player::State::Error;
-        if ok {
+        write_str("======== AUD PCM PLAYBACK ========\n");
+        let opened = crate::media_player::open_embedded_wav();
+        write_str("SOURCE=EMBEDDED_TEST_WAV\n");
+        write_str("OPEN=");
+        write_str(if opened { "YES" } else { "NO" });
+        write_str(" SIZE="); write_usize(crate::media_player::file_size());
+        write_str(" RATE="); write_usize(crate::media_player::sample_rate() as usize);
+        write_str(" CH="); write_usize(crate::media_player::channels() as usize);
+        write_str(" BITS="); write_usize(crate::media_player::bits() as usize);
+        write_str(" PCM="); write_usize(crate::media_player::data_bytes());
+        write_str("\n");
+        if opened {
             crate::media_player::play();
-            write_str("PLAY_REQUEST=YES\\n");
+            write_str("PLAY_REQUEST=YES\n");
             write_str("STREAM_RUNNING=");
             write_str(if crate::drivers::audio::hda_stream_running() { "YES" } else { "NO" });
-            write_str("\\nLPIB="); write_hex(crate::drivers::audio::hda_lpib() as usize);
+            write_str("\nLPIB="); write_hex(crate::drivers::audio::hda_lpib() as usize);
             write_str(" CTL="); write_hex(crate::drivers::audio::hda_stream_control() as usize);
-            write_str(" STAT="); write_hex(crate::drivers::audio::hda_stream_status() as usize); write_str("\\n");
+            write_str(" STAT="); write_hex(crate::drivers::audio::hda_stream_status() as usize); write_str("\n");
         } else {
+            write_str("PLAY_REQUEST=NO_EMBEDDED_WAV\n");
+        }
+        write_str("======== AUD PCM END ========\n");
+    } else {
             write_str("PLAY_REQUEST=NO_MEDIA_SELECTED\\n");
         }
         write_str("======== AUD PCM END ========\\n");
