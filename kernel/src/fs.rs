@@ -641,7 +641,6 @@ pub fn init_storage() -> bool {
     if !mkdir("/MEDIA") { serial::write_str("[MEDIA] mkdir FAIL\n"); return false; }
     if !write_large("/MEDIA/TEST.WAV", crate::media_builtin::TEST_WAV) { serial::write_str("[MEDIA] TEST.WAV FAIL\n"); return false; }
     if !write_large("/MEDIA/TEST.MP3", crate::media_builtin::TEST_MP3) { serial::write_str("[MEDIA] TEST.MP3 FAIL\n"); return false; }
-    if !write_large("/MEDIA/TEST.OGG", crate::media_builtin::TEST_OGG) { serial::write_str("[MEDIA] TEST.OGG FAIL\n"); return false; }
     serial::write_str("[MEDIA] seeded real AetherFS files under /MEDIA\n");
 
     // Always try read
