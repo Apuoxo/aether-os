@@ -1317,8 +1317,18 @@ fn draw_window(idx: usize) {
                     _=>"EMPTY",
                 };
                 graphics::draw_str(wx+18,cy+204,st,COL_TEXT_DIM);
-                graphics::draw_str(wx+18,cy+230,"WAV PCM: 8/16-bit mono/stereo",COL_TEXT_DIM);
-                graphics::draw_str(wx+18,cy+248,"Use terminal: player <path>",COL_TEXT_DIM);
+                graphics::draw_str(wx+18,cy+230,"Bundled test media:",COL_TEXT_DIM);
+                let mut bi=0usize;
+                while bi<crate::media_player::builtin_count() {
+                    let yy=cy+248+bi*16;
+                    let name=crate::media_player::builtin_name(bi);
+                    let kind=crate::media_player::builtin_kind(bi);
+                    graphics::draw_str(wx+28,yy,name,COL_TEXT);
+                    graphics::draw_str(wx+112,yy,kind,COL_TEXT_DIM);
+                    bi+=1;
+                }
+                graphics::draw_str(wx+330,cy+248,"Click WAV to play",COL_TEXT_DIM);
+                graphics::draw_str(wx+330,cy+264,"MP3/OGG: decoder pending",COL_TEXT_DIM);
             }
             WinKind::About => {
                                 graphics::fill_rect(
