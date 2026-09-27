@@ -161,6 +161,9 @@ static mut TERM_LEN: [usize; TERM_ROWS] = [0; TERM_ROWS];
 static mut TERM_ROW: usize = 0;
 static mut TERM_VIEW: usize = 0; // 0 = live bottom, larger = scrolled up
 static mut TERM_SCROLL_DRAG: bool = false;
+// Diagnostic output pager: long command output is shown page-by-page so each
+// page fits the terminal and can be captured in one screenshot.
+static mut TERM_PAGE_MODE: bool = false;
 static mut INPUT: [u8; 64] = [0; 64];
 static mut INPUT_LEN: usize = 0;
 
@@ -222,6 +225,49 @@ fn term_scroll_down() {
             TERM_VIEW -= 1;
             DIRTY_FULL = true;
         }
+    }
+}
+
+// Advance one full terminal page. Space is deliberately used only while the
+// pager is active (or while a manual scroll position exists), so normal
+// command input can still contain spaces.
+fn term_page_next() {
+    unsafe {
+        if TERM_VIEW == 0 {
+            TERM_PAGE_MODE = false;
+            return;
+        }
+        let rows = term_visible_rows().saturating_sub(1).max(1);
+        if TERM_VIEW > rows {
+            TERM_VIEW -= rows;
+        } else {
+            TERM_VIEW = 0;
+            TERM_PAGE_MODE = false;
+        }
+        DIRTY_FULL = true;
+    }
+}
+
+fn term_page_begin(start_row: usize) {
+    unsafe {
+        let total = TERM_ROW + 1;
+        let rows = term_visible_rows().saturating_sub(1).max(1);
+        if total <= rows || total <= start_row {
+            TERM_PAGE_MODE = false;
+            TERM_VIEW = 0;
+            return;
+        }
+        let output_lines = total - start_row;
+        if output_lines <= rows {
+            TERM_PAGE_MODE = false;
+            TERM_VIEW = 0;
+            return;
+        }
+        let max_view = total - rows;
+        let target = if start_row < max_view { start_row } else { max_view };
+        TERM_VIEW = max_view - target;
+        TERM_PAGE_MODE = true;
+        DIRTY_FULL = true;
     }
 }
 
@@ -1301,6 +1347,7 @@ fn draw_window(idx: usize) {
                 );
                 let total = TERM_ROW + 1;
                 let view_rows = term_visible_rows();
+                let output_rows = view_rows.saturating_sub(1).max(1);
                 let max_start = if total > view_rows { total - view_rows } else { 0 };
                 let mut view = TERM_VIEW;
                 if view > max_start { view = max_start; }
@@ -1350,13 +1397,17 @@ fn draw_window(idx: usize) {
                 }
                 let y = wy + TITLE_H as usize + 6 + (view_rows.saturating_sub(1)) * 10;
                 if y + 8 < wy + wh && focused {
-                    graphics::draw_str(wx + 8, y, "aether> ", 0x0000FF00);
-                    let mut k = 0usize;
-                    while k < INPUT_LEN {
-                        graphics::draw_char(wx + 8 + 64 + k * 8, y, INPUT[k], COL_TERM_FG);
-                        k += 1;
+                    if TERM_PAGE_MODE {
+                        graphics::draw_str(wx + 8, y, "[SPACE] NEXT PAGE", 0x00FFFF00);
+                    } else {
+                        graphics::draw_str(wx + 8, y, "aether> ", 0x0000FF00);
+                        let mut k = 0usize;
+                        while k < INPUT_LEN {
+                            graphics::draw_char(wx + 8 + 64 + k * 8, y, INPUT[k], COL_TERM_FG);
+                            k += 1;
+                        }
+                        graphics::fill_rect(wx + 8 + 64 + INPUT_LEN * 8, y, 6, 8, COL_ACCENT);
                     }
-                    graphics::fill_rect(wx + 8 + 64 + INPUT_LEN * 8, y, 6, 8, COL_ACCENT);
                 }
             }
             WinKind::MediaPlayer => {
@@ -2290,6 +2341,8 @@ fn handle_key(ch: u8) {
         if ch == b'\n' {
             // Echo the exact byte buffer before dispatch so GUI command routing
             // is directly observable during hardware diagnostics.
+            TERM_PAGE_MODE = false;
+            TERM_VIEW = 0;
             terminal_write("aether> CMD-IN=[");
             let mut k = 0usize;
             while k < INPUT_LEN {
@@ -2297,15 +2350,23 @@ fn handle_key(ch: u8) {
                 k += 1;
             }
             terminal_write("]\n");
+            let output_start = TERM_ROW;
             crate::shell::run_command_from_gui(&INPUT, INPUT_LEN);
             INPUT_LEN = 0;
+            term_page_begin(output_start);
             DIRTY_FULL = true;
+        } else if ch == b' ' && INPUT_LEN == 0 && (TERM_PAGE_MODE || TERM_VIEW > 0) {
+            term_page_next();
         } else if ch == 0x08 {
+            TERM_PAGE_MODE = false;
+            TERM_VIEW = 0;
             if INPUT_LEN > 0 {
                 INPUT_LEN -= 1;
                 DIRTY_FULL = true;
             }
         } else if ch >= 32 && ch < 127 && INPUT_LEN < 63 {
+            TERM_PAGE_MODE = false;
+            TERM_VIEW = 0;
             INPUT[INPUT_LEN] = ch;
             INPUT_LEN += 1;
             DIRTY_FULL = true;
