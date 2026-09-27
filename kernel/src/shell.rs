@@ -327,19 +327,19 @@ fn cmd_aud_readback() {
     }
 
     if conv != 0 {
-        aud_readback(codec, conv, "CONV_FMT", 0xF0A);
+        aud_readback(codec, conv, "CONV_FMT", 0xA0000);
         aud_readback(codec, conv, "CONV_STREAM", 0xF06);
         aud_readback(codec, conv, "CONV_POWER", 0xF05);
-        aud_readback(codec, conv, "CONV_AMP_L", 0xB00 | 0xA000);
-        aud_readback(codec, conv, "CONV_AMP_R", 0xB00 | 0x8000);
+        aud_readback(codec, conv, "CONV_AMP_L", 0xB0000 | 0xA000);
+        aud_readback(codec, conv, "CONV_AMP_R", 0xB0000 | 0x8000);
     }
 
     if pin != 0 {
         aud_readback(codec, pin, "PIN_CTL", 0xF07);
         aud_readback(codec, pin, "PIN_POWER", 0xF05);
         aud_readback(codec, pin, "PIN_EAPD", 0xF0C);
-        aud_readback(codec, pin, "PIN_AMP_L", 0xB00 | 0xA000);
-        aud_readback(codec, pin, "PIN_AMP_R", 0xB00 | 0x8000);
+        aud_readback(codec, pin, "PIN_AMP_L", 0xB0000 | 0xA000);
+        aud_readback(codec, pin, "PIN_AMP_R", 0xB0000 | 0x8000);
     }
 
     write_str("======== AUD READBACK END ========\n");
