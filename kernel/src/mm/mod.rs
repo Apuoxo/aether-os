@@ -42,7 +42,7 @@ pub fn alloc_page() -> Option<usize> {
                 let bit = word.trailing_zeros() as usize;
                 BITMAP[idx] &= !(1u64 << bit);
                 FREE.fetch_sub(1, Ordering::SeqCst);
-                return Some((idx * 64 + bit) * PAGE_SIZE);
+                return Some((start_page + idx * 64 + bit) * PAGE_SIZE);
             }
             idx += 1;
         }
@@ -72,11 +72,11 @@ pub fn alloc_pages(count: usize) -> Option<usize> {
     let total = TOTAL.load(Ordering::SeqCst);
     unsafe {
         let mut start = 0usize;
-        while start + count <= total && start + count <= MAX_PAGES {
+        while start + count <= total && start + count <= MAX_PAGES.saturating_sub(start_page) {
             let mut ok = true;
             let mut i = 0usize;
             while i < count {
-                let page = start + i;
+                let page = start_page + start + i;
                 let idx = page / 64;
                 let bit = page % 64;
                 if idx >= BITMAP.len() || (BITMAP[idx] & (1u64 << bit)) == 0 {
@@ -95,7 +95,7 @@ pub fn alloc_pages(count: usize) -> Option<usize> {
                     i += 1;
                 }
                 FREE.fetch_sub(count, Ordering::SeqCst);
-                return Some(start * PAGE_SIZE);
+                return Some((start_page + start) * PAGE_SIZE);
             }
             start += 1;
         }
