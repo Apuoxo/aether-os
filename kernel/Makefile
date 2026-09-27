@@ -2,6 +2,7 @@ BUILD_DIR  = build
 MEDIA_DIR = $(BUILD_DIR)/media
 MEDIA_WAV = $(MEDIA_DIR)/TEST.WAV
 MEDIA_MP3 = $(MEDIA_DIR)/TEST.MP3
+MEDIA_OGG = $(MEDIA_DIR)/TEST.OGG
 MEDIA_BUNDLE = $(BUILD_DIR)/media_builtin.rs
 
 $(MEDIA_DIR): | $(BUILD_DIR)
@@ -12,12 +13,15 @@ $(MEDIA_WAV): | $(MEDIA_DIR)
 	test -s "$@"
 
 $(MEDIA_MP3): | $(MEDIA_DIR)
-	# CC0/public-domain recording from Wikimedia Commons: 8 min 23 s.
-	curl -L --fail --retry 5 --retry-delay 2 -A "AetherOS/1.0" "https://commons.wikimedia.org/wiki/Special:Redirect/file/PolonaiseOp.71No.2InBFlatMajor.mp3" -o $@
+	ffmpeg -hide_banner -loglevel error -f lavfi -i "sine=frequency=660:duration=2.6" -ac 1 -ar 44100 -c:a libmp3lame -b:a 320k -y "$@"
 	test -s "$@"
 
-$(MEDIA_BUNDLE): $(MEDIA_WAV) $(MEDIA_MP3) | $(BUILD_DIR)
-	python3 -c "import pathlib; pathlib.Path('$@').write_text('pub static TEST_WAV: &[u8] = include_bytes!(\\\"media/TEST.WAV\\\");\\npub static TEST_MP3: &[u8] = include_bytes!(\\\"media/TEST.MP3\\\");\\n')"
+$(MEDIA_OGG): | $(MEDIA_DIR)
+	ffmpeg -hide_banner -loglevel error -f lavfi -i "sine=frequency=880:duration=3.7" -ac 1 -ar 44100 -c:a libvorbis -b:a 192k -y "$@"
+	test -s "$@"
+
+$(MEDIA_BUNDLE): $(MEDIA_WAV) $(MEDIA_MP3) $(MEDIA_OGG) | $(BUILD_DIR)
+	python3 -c "import pathlib; pathlib.Path('$@').write_text('pub static TEST_WAV: &[u8] = include_bytes!(\\\"media/TEST.WAV\\\");\\npub static TEST_MP3: &[u8] = include_bytes!(\\\"media/TEST.MP3\\\");\\npub static TEST_OGG: &[u8] = include_bytes!(\\\"media/TEST.OGG\\\");\\n')"
 
 KERNEL_BIN = $(BUILD_DIR)/aether.bin
 KERNEL_LIB = $(BUILD_DIR)/libaether.a
