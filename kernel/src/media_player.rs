@@ -1,29 +1,35 @@
-//! Native Aether media-player state machine.
-//! The UI and decoder boundary are intentionally independent from HDA.
-//! Current decoder: bounded RIFF/WAVE PCM (8/16-bit, mono/stereo).
-//! Compressed decoders plug into the same PCM producer interface.
+//! Native Aether media player core.
+//! Streaming VFS reader + bounded PCM buffer. The decoder boundary is format
+//! aware; WAV/PCM is the first native decoder and feeds the future HDA backend.
 
 use crate::fs;
 use crate::serial;
 
 const MAX_PATH: usize = 96;
+const HEADER_BUF: usize = 4096;
 const PCM_BUF: usize = 32768;
 const MAX_PLAYLIST: usize = 16;
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum State { Empty, Stopped, Playing, Paused, Error }
 
+#[derive(Clone, Copy, PartialEq)]
+pub enum Format { Unknown, WavPcm }
+
 static mut STATE: State = State::Empty;
+static mut FORMAT: Format = Format::Unknown;
 static mut PATH: [u8; MAX_PATH] = [0; MAX_PATH];
 static mut PATH_LEN: usize = 0;
 static mut TITLE: [u8; MAX_PATH] = [0; MAX_PATH];
 static mut TITLE_LEN: usize = 0;
+static mut FILE_SIZE: usize = 0;
 static mut SAMPLE_RATE: u32 = 0;
 static mut CHANNELS: u16 = 0;
 static mut BITS: u16 = 0;
 static mut DATA_OFF: usize = 0;
 static mut DATA_LEN: usize = 0;
-static mut PCM_POS: usize = 0;
+static mut PCM_FILE_POS: usize = 0;
+static mut PCM_READY: usize = 0;
 static mut VOLUME: u8 = 100;
 static mut MUTED: bool = false;
 static mut REPEAT: bool = false;
@@ -39,118 +45,157 @@ fn le16(b: &[u8], p: usize) -> u16 { (b[p] as u16) | ((b[p+1] as u16) << 8) }
 fn le32(b: &[u8], p: usize) -> u32 {
     (b[p] as u32) | ((b[p+1] as u32) << 8) | ((b[p+2] as u32) << 16) | ((b[p+3] as u32) << 24)
 }
-fn copy_path(dst: &mut [u8], src: &[u8]) -> usize {
-    let n = if src.len() > dst.len() { dst.len() } else { src.len() };
-    let mut i=0; while i<n { dst[i]=src[i]; i+=1; } n
+fn copy_bytes(dst: &mut [u8], src: &[u8]) -> usize {
+    let n=dst.len().min(src.len()); let mut i=0; while i<n { dst[i]=src[i]; i+=1; } n
 }
-fn wav_parse(buf: &[u8]) -> Option<(u32,u16,u16,usize,usize)> {
-    if buf.len() < 12 || &buf[0..4] != b"RIFF" || &buf[8..12] != b"WAVE" { return None; }
+fn four(b:&[u8],p:usize,s:&[u8;4])->bool { p+4<=b.len() && b[p..p+4]==s[..] }
+
+fn parse_wav(path:&str)->Option<(usize,u32,u16,u16,usize,usize)> {
+    let size=fs::file_size(path)?;
+    if size<12 { return None; }
+    let mut h=[0u8;HEADER_BUF];
+    let n=fs::read_range(path,0,&mut h)?;
+    if n<12 || !four(&h,0,b"RIFF") || !four(&h,8,b"WAVE") { return None; }
     let mut p=12usize; let mut rate=0u32; let mut ch=0u16; let mut bits=0u16;
-    let mut data=0usize; let mut len=0usize; let mut have_fmt=false; let mut have_data=false;
-    while p + 8 <= buf.len() {
-        let sz=le32(buf,p+4) as usize; let body=p+8;
-        if body > buf.len() { return None; }
-        let end=body.saturating_add(sz);
-        if end > buf.len() { return None; }
-        if &buf[p..p+4] == b"fmt " && sz >= 16 {
-            if le16(buf,body) != 1 { return None; }
-            ch=le16(buf,body+2); rate=le32(buf,body+4); bits=le16(buf,body+14);
-            if (ch != 1 && ch != 2) || (bits != 8 && bits != 16) || rate == 0 { return None; }
-            have_fmt=true;
-        } else if &buf[p..p+4] == b"data" {
-            data=body; len=sz; have_data=true;
+    let mut data_off=0usize; let mut data_len=0usize; let mut fmt=false;
+    while p+8<=n {
+        let sz=le32(&h,p+4) as usize; let body=p+8;
+        let end=body.checked_add(sz)?;
+        if end>size || end>n { 
+            // Header chunks must be contained in the bounded header buffer.
+            // If the data chunk starts beyond the header window, reject it
+            // instead of reading unbounded metadata.
+            return None;
         }
-        p=end + (sz & 1);
+        if four(&h,p,b"fmt ") && sz>=16 {
+            if le16(&h,body)!=1 { return None; }
+            ch=le16(&h,body+2); rate=le32(&h,body+4); bits=le16(&h,body+14);
+            if rate==0 || (ch!=1 && ch!=2) || (bits!=8 && bits!=16) { return None; }
+            fmt=true;
+        } else if four(&h,p,b"data") {
+            data_off=body; data_len=sz; 
+            if data_off.checked_add(data_len)? > size { return None; }
+            data_len=(size-data_off).min(data_len);
+            data_len-=data_len%(((ch as usize)*(bits as usize))/8).max(1);
+            return if fmt { Some((size,rate,ch,bits,data_off,data_len)) } else { None };
+        }
+        p=end+(sz&1);
     }
-    if have_fmt && have_data { Some((rate,ch,bits,data,len)) } else { None }
+    None
 }
 
 pub fn init() {
     unsafe {
-        STATE=State::Empty; PATH_LEN=0; TITLE_LEN=0; PL_COUNT=0; PL_INDEX=0;
-        VOLUME=100; MUTED=false; REPEAT=false; SHUFFLE=false; LAST_ERROR=0;
+        STATE=State::Empty; FORMAT=Format::Unknown; PATH_LEN=0; TITLE_LEN=0;
+        FILE_SIZE=0; SAMPLE_RATE=0; CHANNELS=0; BITS=0; DATA_OFF=0; DATA_LEN=0;
+        PCM_FILE_POS=0; PCM_READY=0; VOLUME=100; MUTED=false;
+        REPEAT=false; SHUFFLE=false; LAST_ERROR=0; PL_COUNT=0; PL_INDEX=0;
     }
-    serial::write_str("[MEDIA] native player core ready\n");
+    serial::write_str("[MEDIA] native streaming player core ready\n");
 }
 
-pub fn state() -> State { unsafe { STATE } }
-pub fn volume() -> u8 { unsafe { VOLUME } }
-pub fn muted() -> bool { unsafe { MUTED } }
-pub fn repeat() -> bool { unsafe { REPEAT } }
-pub fn shuffle() -> bool { unsafe { SHUFFLE } }
-pub fn sample_rate() -> u32 { unsafe { SAMPLE_RATE } }
-pub fn channels() -> u16 { unsafe { CHANNELS } }
-pub fn bits() -> u16 { unsafe { BITS } }
-pub fn position_bytes() -> usize { unsafe { PCM_POS } }
-pub fn data_bytes() -> usize { unsafe { DATA_LEN } }
-pub fn error() -> u8 { unsafe { LAST_ERROR } }
+pub fn state()->State { unsafe{STATE} }
+pub fn format()->Format { unsafe{FORMAT} }
+pub fn volume()->u8 { unsafe{VOLUME} }
+pub fn muted()->bool { unsafe{MUTED} }
+pub fn repeat()->bool { unsafe{REPEAT} }
+pub fn shuffle()->bool { unsafe{SHUFFLE} }
+pub fn sample_rate()->u32 { unsafe{SAMPLE_RATE} }
+pub fn channels()->u16 { unsafe{CHANNELS} }
+pub fn bits()->u16 { unsafe{BITS} }
+pub fn position_bytes()->usize { unsafe{PCM_FILE_POS} }
+pub fn data_bytes()->usize { unsafe{DATA_LEN} }
+pub fn file_size()->usize { unsafe{FILE_SIZE} }
+pub fn error()->u8 { unsafe{LAST_ERROR} }
+pub fn title(out:&mut [u8])->usize { unsafe{copy_bytes(out,&TITLE[..TITLE_LEN])} }
+pub fn path(out:&mut [u8])->usize { unsafe{copy_bytes(out,&PATH[..PATH_LEN])} }
 
-pub fn title(out: &mut [u8]) -> usize { unsafe { copy_path(out,&TITLE[..TITLE_LEN]) } }
-pub fn path(out: &mut [u8]) -> usize { unsafe { copy_path(out,&PATH[..PATH_LEN]) } }
-
-pub fn open(path: &str) -> bool {
-    let mut buf=[0u8; PCM_BUF];
-    let n=match fs::read_large(path,&mut buf) { Some(n)=>n, None=>{unsafe{STATE=State::Error;LAST_ERROR=1;}return false;} };
-    let (rate,ch,bits,data,len)=match wav_parse(&buf[..n]) {
-        Some(v)=>v, None=>{unsafe{STATE=State::Error;LAST_ERROR=2;}return false;}
+pub fn open(path:&str)->bool {
+    let (size,rate,ch,bits,data,len)=match parse_wav(path) {
+        Some(v)=>v,
+        None=>{unsafe{STATE=State::Error;FORMAT=Format::Unknown;LAST_ERROR=2;} serial::write_str("[MEDIA] unsupported or malformed WAV\n"); return false;}
     };
     unsafe {
-        let mut i=0; while i<n { PCM[i]=buf[i]; i+=1; }
-        PATH_LEN=copy_path(&mut PATH,path.as_bytes());
-        TITLE_LEN=PATH_LEN; TITLE[..TITLE_LEN].copy_from_slice(&PATH[..PATH_LEN]);
-        SAMPLE_RATE=rate; CHANNELS=ch; BITS=bits; DATA_OFF=data; DATA_LEN=len;
-        PCM_POS=0; LAST_ERROR=0; STATE=State::Stopped;
+        PATH_LEN=copy_bytes(&mut PATH,path.as_bytes());
+        TITLE_LEN=PATH_LEN.min(TITLE.len());
+        let mut i=0; while i<TITLE_LEN { TITLE[i]=PATH[i]; i+=1; }
+        FILE_SIZE=size; SAMPLE_RATE=rate; CHANNELS=ch; BITS=bits;
+        DATA_OFF=data; DATA_LEN=len; PCM_FILE_POS=0; PCM_READY=0;
+        FORMAT=Format::WavPcm; LAST_ERROR=0; STATE=State::Stopped;
     }
-    serial::write_str("[MEDIA] WAV opened\n");
+    serial::write_str("[MEDIA] WAV PCM opened\n");
     true
 }
 
-pub fn play() { unsafe { if DATA_LEN != 0 && (STATE==State::Stopped || STATE==State::Paused) { STATE=State::Playing; } } }
-pub fn pause() { unsafe { if STATE==State::Playing { STATE=State::Paused; } } }
-pub fn stop() { unsafe { if DATA_LEN != 0 { PCM_POS=0; STATE=State::Stopped; } } }
-pub fn toggle_play() { unsafe { if STATE==State::Playing { STATE=State::Paused; } else if DATA_LEN != 0 { STATE=State::Playing; } } }
-
-pub fn seek_permille(v: u16) {
+pub fn refill_pcm()->usize {
     unsafe {
-        if DATA_LEN == 0 { return; }
-        let x=if v>1000{1000}else{v as usize};
-        let bytes_per_frame=((CHANNELS as usize)*(BITS as usize))/8;
-        if bytes_per_frame==0 { return; }
-        PCM_POS=((DATA_LEN*x)/1000 / bytes_per_frame)*bytes_per_frame;
-    }
-}
-pub fn set_volume(v: u8) { unsafe { VOLUME=v.min(100); } }
-pub fn volume_up() { unsafe { VOLUME=VOLUME.saturating_add(5).min(100); } }
-pub fn volume_down() { unsafe { VOLUME=VOLUME.saturating_sub(5); } }
-pub fn toggle_mute() { unsafe { MUTED=!MUTED; } }
-pub fn toggle_repeat() { unsafe { REPEAT=!REPEAT; } }
-pub fn toggle_shuffle() { unsafe { SHUFFLE=!SHUFFLE; } }
-
-pub fn add_to_playlist(path: &str) -> bool {
-    unsafe {
-        if PL_COUNT >= MAX_PLAYLIST { return false; }
-        PL_LEN[PL_COUNT]=copy_path(&mut PLAYLIST[PL_COUNT],path.as_bytes());
-        PL_COUNT+=1; true
-    }
-}
-pub fn playlist_count() -> usize { unsafe { PL_COUNT } }
-pub fn next() -> bool {
-    unsafe {
-        if PL_COUNT==0 { return false; }
-        if SHUFFLE { PL_INDEX=(PL_INDEX+3)%PL_COUNT; }
-        else if PL_INDEX+1<PL_COUNT { PL_INDEX+=1; }
-        else if REPEAT { PL_INDEX=0; } else { stop(); return false; }
-        let n=PL_LEN[PL_INDEX]; let mut p=[0u8;MAX_PATH]; let mut i=0; while i<n {p[i]=PLAYLIST[PL_INDEX][i];i+=1;}
-        // ASCII/UTF-8 path is preserved; current shell/VFS API is UTF-8.
-        false
+        if FORMAT!=Format::WavPcm || DATA_LEN==0 || PCM_FILE_POS>=DATA_LEN { PCM_READY=0; return 0; }
+        let frame=((CHANNELS as usize)*(BITS as usize))/8;
+        if frame==0 { return 0; }
+        let remain=DATA_LEN-PCM_FILE_POS;
+        let n=PCM_BUF.min(remain);
+        let n=n-(n%frame);
+        if n==0 { PCM_READY=0; return 0; }
+        match fs::read_range(core::str::from_utf8_unchecked(&PATH[..PATH_LEN]),DATA_OFF+PCM_FILE_POS,&mut PCM[..n]) {
+            Some(got) if got>0 => { PCM_READY=got; got },
+            _ => { PCM_READY=0; LAST_ERROR=3; STATE=State::Error; 0 }
+        }
     }
 }
 
-pub fn pcm_slice() -> (&'static [u8], usize) {
+pub fn pcm_buffer(out:&mut [u8])->usize {
     unsafe {
-        if DATA_OFF+PCM_POS >= PCM_BUF { return (&PCM,0); }
-        let remain=DATA_LEN.saturating_sub(PCM_POS);
-        let n=if remain > PCM_BUF-DATA_OFF-PCM_POS { PCM_BUF-DATA_OFF-PCM_POS } else { remain };
-        (&PCM[DATA_OFF+PCM_POS..DATA_OFF+PCM_POS+n],n)
+        let n=out.len().min(PCM_READY); let mut i=0; while i<n {out[i]=PCM[i];i+=1;} n
+    }
+}
+
+/// Called by the PCM sink after it has consumed n bytes.
+pub fn consume_pcm(n:usize) {
+    unsafe {
+        let n=n.min(PCM_READY); PCM_READY-=n; PCM_FILE_POS+=n;
+        if PCM_READY==0 && PCM_FILE_POS<DATA_LEN { let _=refill_pcm(); }
+        if PCM_FILE_POS>=DATA_LEN {
+            if REPEAT { PCM_FILE_POS=0; PCM_READY=0; let _=refill_pcm(); }
+            else { STATE=State::Stopped; PCM_READY=0; }
+        }
+    }
+}
+
+pub fn play(){unsafe{if DATA_LEN>0 && (STATE==State::Stopped||STATE==State::Paused){STATE=State::Playing;let _=refill_pcm();}}}
+pub fn pause(){unsafe{if STATE==State::Playing{STATE=State::Paused;}}}
+pub fn stop(){unsafe{if DATA_LEN>0{PCM_FILE_POS=0;PCM_READY=0;STATE=State::Stopped;}}}
+pub fn toggle_play(){unsafe{if STATE==State::Playing{STATE=State::Paused}else if DATA_LEN>0{STATE=State::Playing;let _=refill_pcm();}}}
+
+pub fn seek_permille(v:u16){
+    unsafe{
+        if DATA_LEN==0{return;}
+        let x=(v.min(1000) as usize);
+        let frame=((CHANNELS as usize)*(BITS as usize))/8;
+        if frame==0{return;}
+        PCM_FILE_POS=((DATA_LEN*x)/1000/frame)*frame;
+        PCM_READY=0;
+        if STATE==State::Playing { let _=refill_pcm(); }
+    }
+}
+pub fn set_volume(v:u8){unsafe{VOLUME=v.min(100);}}
+pub fn volume_up(){unsafe{VOLUME=VOLUME.saturating_add(5).min(100);}}
+pub fn volume_down(){unsafe{VOLUME=VOLUME.saturating_sub(5);}}
+pub fn toggle_mute(){unsafe{MUTED=!MUTED;}}
+pub fn toggle_repeat(){unsafe{REPEAT=!REPEAT;}}
+pub fn toggle_shuffle(){unsafe{SHUFFLE=!SHUFFLE;}}
+
+pub fn add_to_playlist(path:&str)->bool{
+    unsafe{if PL_COUNT>=MAX_PLAYLIST{return false;}PL_LEN[PL_COUNT]=copy_bytes(&mut PLAYLIST[PL_COUNT],path.as_bytes());PL_COUNT+=1;true}
+}
+pub fn playlist_count()->usize{unsafe{PL_COUNT}}
+pub fn next()->bool{
+    unsafe{
+        if PL_COUNT==0{return false;}
+        if SHUFFLE{PL_INDEX=(PL_INDEX.wrapping_mul(7).wrapping_add(3))%PL_COUNT}
+        else if PL_INDEX+1<PL_COUNT{PL_INDEX+=1}
+        else if REPEAT{PL_INDEX=0}
+        else{return false}
+        let n=PL_LEN[PL_INDEX]; let mut p=[0u8;MAX_PATH]; let mut i=0; while i<n{p[i]=PLAYLIST[PL_INDEX][i];i+=1;}
+        if let Ok(s)=core::str::from_utf8(&p[..n]) { open(s) } else { false }
     }
 }
