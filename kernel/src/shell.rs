@@ -345,6 +345,72 @@ fn cmd_aud_readback() {
     write_str("======== AUD READBACK END ========\n");
 }
 
+fn cmd_aud3() {
+    let codec = crate::drivers::audio::hda_codec();
+    let afg = crate::drivers::audio::hda_afg();
+
+    write_str("======== AUD3 HDA OUTPUT PIN SCAN ========\n");
+    write_str("CODEC="); write_hex(codec as usize);
+    write_str(" AFG="); write_hex(afg as usize); write_str("\n");
+
+    if !crate::drivers::audio::hda_mmio_ready() || codec > 3 || afg == 0 {
+        write_str("SCAN=NOT_READY\n");
+        write_str("======== AUD3 END ========\n");
+        return;
+    }
+
+    let ar = aud_probe_one(codec, afg, 0x04);
+    let start = ((ar.response >> 16) & 0xFF) as u8;
+    let count = (ar.response & 0xFF) as usize;
+    write_str("WIDGETS="); write_hex(start as usize);
+    write_str("+"); write_usize(count); write_str("\n");
+
+    let mut n = 0usize;
+    let end = count.min(32);
+    while n < end {
+        let node = start.wrapping_add(n as u8);
+        let caps = crate::drivers::audio::hda_raw_verb(
+            codec, node, 0x000F0009
+        );
+        if caps.ok {
+            let wtype = ((caps.response >> 20) & 0xF) as u8;
+            if wtype == 4 {
+                let pin_caps = aud_probe_one(codec, node, 0x000C);
+                let is_output = pin_caps.ok && (pin_caps.response & (1 << 4)) != 0;
+                if is_output {
+                    let cfg = aud_probe_one(codec, node, 0x001C);
+                    let device = if cfg.ok { ((cfg.response >> 20) & 0xF) as u8 } else { 0xFF };
+                    write_str("PIN NID="); write_hex(node as usize);
+                    write_str(" DEV="); write_hex(device as usize);
+                    write_str(" CAPS="); write_hex(pin_caps.response as usize); write_str("\n");
+
+                    aud_readback(codec, node, "  CTL", 0xF07);
+                    aud_readback(codec, node, "  PWR", 0xF05);
+                    aud_readback(codec, node, "  EAPD", 0xF0C);
+                    aud_readback(codec, node, "  AMP_L", 0xB0000 | 0xA000);
+                    aud_readback(codec, node, "  AMP_R", 0xB0000 | 0x8000);
+
+                    let lp = aud_probe_one(codec, node, 0x000E);
+                    if lp.ok {
+                        let conn_count = (lp.response & 0xFF).min(16) as usize;
+                        write_str("  CONN_COUNT="); write_usize(conn_count); write_str("\n");
+                        let mut ci = 0usize;
+                        while ci < conn_count {
+                            let ent = aud_readback(codec, node, "  CONN", (0xF02u32 << 8) | (ci as u32));
+                            if !ent.ok { break; }
+                            ci += 1;
+                        }
+                    }
+                    aud_readback(codec, node, "  CONN_SEL", 0xF01);
+                }
+            }
+        }
+        n += 1;
+    }
+
+    write_str("======== AUD3 END ========\n");
+}
+
 fn cmd_aud_extended() {
     write_str("======== AUD HDA TOPOLOGY ========\n");
     if !crate::drivers::audio::hda_mmio_ready() {
@@ -514,6 +580,8 @@ fn run_line(line: &[u8], len: usize) {
         cmd_wf();
     } else if eq(line, s, clen, b"AUD") || eq(line, s, clen, b"aud") {
         cmd_aud();
+    } else if eq(line, s, clen, b"AUD3") || eq(line, s, clen, b"aud3") {
+        cmd_aud3();
     } else if eq(line, s, clen, b"AUD2") || eq(line, s, clen, b"aud2") {
         write_str("======== AUD PCM PLAYBACK ========\n");
         let opened = crate::media_player::open_embedded_wav();
