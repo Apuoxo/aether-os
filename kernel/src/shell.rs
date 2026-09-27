@@ -494,10 +494,6 @@ fn run_line(line: &[u8], len: usize) {
         }
         write_str("======== AUD PCM END ========\n");
     } else {
-            write_str("PLAY_REQUEST=NO_MEDIA_SELECTED\\n");
-        }
-        write_str("======== AUD PCM END ========\\n");
-    } else {
         write_str("unknown — commands: AUD, WF\n");
     }
 }
