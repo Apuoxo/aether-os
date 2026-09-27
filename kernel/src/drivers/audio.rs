@@ -1012,6 +1012,9 @@ pub fn playback_poll() {
         let lp=hda_r32(base,sd+0x04);
         let period=HDA_DMA_PERIOD as u32;
         let cbl=(HDA_DMA_PERIOD*HDA_DMA_PERIODS) as u32;
+        // Track the absolute number of completed periods. This avoids relying
+        // on a single LPIB wrap observation and prevents a short missed poll
+        // from leaving a DMA slot stale.
 
         // LPIB is the cyclic position. Refill every period that the DMA
         // has fully passed; when LPIB wraps, finish the tail periods first.
