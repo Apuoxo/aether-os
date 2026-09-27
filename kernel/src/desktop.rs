@@ -2248,11 +2248,9 @@ pub fn run() -> ! {
     crate::drivers::audio::init();
     // Real HDA PCM startup smoke test: use the embedded PCM WAV, not the
     // legacy PC-speaker beep. Playback is serviced by playback_poll() below.
-    if crate::media_player::open_embedded_wav() {
+    let startup_wav_ok = crate::media_player::open_embedded_wav();
+    if startup_wav_ok {
         crate::media_player::play();
-        serial::write_str("[AUDIO] HDA startup WAV playback requested\\n");
-    } else {
-        serial::write_str("[AUDIO] HDA startup WAV open failed\\n");
     }
     serial::write_str("--- MOUSE DIAG ---\n");
     serial::write_str(if crate::drivers::ps2::diag_controller_ok() { "[PS2] controller OK\n" } else { "[PS2] controller FAIL\n" });
@@ -2275,6 +2273,11 @@ pub fn run() -> ! {
     terminal_write("Aether Desktop v1.1 XP\n");
     terminal_write("AUTOSTART: PCI/USB diag on serial\n");
     terminal_write("Re-run: type 1  then plug mouse\n");
+    terminal_write(if startup_wav_ok {
+        "AUDIO: HDA startup WAV playback requested\n"
+    } else {
+        "AUDIO: HDA startup WAV open failed\n"
+    });
     terminal_write("aether> ");
     unsafe {
         DIRTY_FULL = true;
