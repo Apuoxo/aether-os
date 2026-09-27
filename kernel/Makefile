@@ -17,7 +17,7 @@ $(MEDIA_MP3): | $(MEDIA_DIR)
 	test "$(wc -c < "$@")" -gt 50000
 
 $(MEDIA_OGG): | $(MEDIA_DIR)
-	curl -L --fail --silent --show-error "https://upload.wikimedia.org/wikipedia/commons/e/e3/Example_sound_file_in_Ogg_Vorbis_format.ogg" -o $@
+	ffmpeg -hide_banner -loglevel error -f lavfi -i "sine=frequency=880:duration=3.7" -ac 1 -ar 44100 -c:a libvorbis -b:a 192k -y "$@"
 	test "$(wc -c < $@)" -gt 50000
 
 $(MEDIA_BUNDLE): $(MEDIA_WAV) $(MEDIA_MP3) $(MEDIA_OGG) | $(BUILD_DIR)
