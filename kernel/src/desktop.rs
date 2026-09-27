@@ -1028,6 +1028,33 @@ fn handle_mouse_buttons(buttons: u8) {
                             DIRTY_FULL = true;
                         }
                     }
+                } else if WINS[idx].kind == WinKind::MediaPlayer
+                    && my >= WINS[idx].y + TITLE_H
+                {
+                    let bx=WINS[idx].x; let by=WINS[idx].y + TITLE_H;
+                    let cy=by;
+                    let py=cy+154;
+                    if my >= py && my < py+28 {
+                        if mx >= bx+24 && mx < bx+96 {
+                            // Previous is reserved for playlist navigation.
+                            crate::media_player::stop();
+                        } else if mx >= bx+108 && mx < bx+190 {
+                            crate::media_player::toggle_play();
+                        } else if mx >= bx+202 && mx < bx+284 {
+                            crate::media_player::stop();
+                        } else if mx >= bx+296 && mx < bx+378 {
+                            let _=crate::media_player::next();
+                        } else if mx >= bx+390 && mx < bx+472 {
+                            crate::media_player::toggle_mute();
+                        }
+                        DIRTY_FULL=true;
+                    } else if my >= cy+126 && my < cy+142 {
+                        let barw=(WINS[idx].w-36).max(1) as i32;
+                        let rel=(mx-(bx+18)).max(0).min(barw) as u16;
+                        let perm=((rel as u32)*1000/(barw as u32)) as u16;
+                        crate::media_player::seek_permille(perm);
+                        DIRTY_FULL=true;
+                    }
                 } else if WINS[idx].kind == WinKind::Sound
                     && my >= WINS[idx].y + TITLE_H
                 {
