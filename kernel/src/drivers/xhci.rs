@@ -1007,7 +1007,7 @@ fn hid_boot_keyboard(x: &mut Xhci, slot: u8, port: u8, ep0: &mut Ep0Ring) -> boo
     hx(report_buf);
     serial::write_str("\n");
 
-    if !configure_ep_interrupt_in(x, slot, port, ep_ring) { return false; }
+    if !configure_ep_interrupt_in(x, slot, port, ep_ring, 0x81, 8, 7) { return false; }
 
     serial::write_str("  [HID] Interrupt IN started — waiting for reports\n");
     serial::write_str("  [HID] (QEMU: use monitor sendkey)\n");
