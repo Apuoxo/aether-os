@@ -41,7 +41,7 @@ const COL_BTN_FACE: u32 = 0x00D4D0C8;
 const COL_MENU_BG: u32 = 0x00FFFFFF;
 const COL_MENU_HDR: u32 = 0x001665CA;
 
-const MAX_WIN: usize = 11;
+const MAX_WIN: usize = 12;
 const TITLE_H: i32 = 26;
 const TASKBAR_H: usize = 30;
 
@@ -57,6 +57,7 @@ enum WinKind {
     MyComputer,
     SysProps,
     Settings,
+    MediaPlayer,
 }
 
 struct Window {
@@ -96,6 +97,8 @@ static mut WINS: [Window; MAX_WIN] = [
         minimized: false, maximized: false, rx: 140, ry: 50, rw: 420, rh: 360 },
     Window { x: 120, y: 60, w: 500, h: 360, kind: WinKind::Settings, visible: false, z: 10,
         minimized: false, maximized: false, rx: 120, ry: 60, rw: 500, rh: 360 },
+    Window { x: 70, y: 70, w: 660, h: 390, kind: WinKind::MediaPlayer, visible: false, z: 11,
+        minimized: false, maximized: false, rx: 70, ry: 70, rw: 660, rh: 390 },
     Window { x: 0, y: 0, w: 0, h: 0, kind: WinKind::About, visible: false, z: 0,
         minimized: false, maximized: false, rx: 0, ry: 0, rw: 0, rh: 0 },
 ];
@@ -443,6 +446,7 @@ fn win_title(kind: WinKind) -> &'static str {
         WinKind::MyComputer => "My Computer",
         WinKind::SysProps => "System Properties",
         WinKind::Settings => "Settings",
+        WinKind::MediaPlayer => "Aether Media Player",
     }
 }
 
@@ -1131,6 +1135,7 @@ fn draw_window(idx: usize) {
                 WinKind::Files => IconId::Folder,
                 WinKind::Network => IconId::Network,
                 WinKind::Sound | WinKind::Video | WinKind::DateTime => IconId::Settings,
+                WinKind::MediaPlayer => IconId::File,
                 _ => IconId::File,
             };
             let img = icon::generate(iid);
@@ -1236,6 +1241,53 @@ fn draw_window(idx: usize) {
                     }
                     graphics::fill_rect(wx + 8 + 64 + INPUT_LEN * 8, y, 6, 8, COL_ACCENT);
                 }
+            }
+            WinKind::MediaPlayer => {
+                let cy = wy + TITLE_H as usize;
+                graphics::fill_rect(wx + 3, cy, ww - 6, wh - TITLE_H as usize - 3, 0x00F2F2F2);
+                graphics::fill_rect(wx + 14, cy + 14, ww - 28, 74, 0x001B1B1B);
+                let mut tb=[0u8; 96];
+                let tn=crate::media_player::title(&mut tb);
+                if tn>0 {
+                    let mut k=0; while k<tn && k<96 { tb[k]=tb[k]; k+=1; }
+                    if tn <= 32 { 
+                        let mut title=[0u8; 33]; let mut j=0; while j<tn {title[j]=tb[j];j+=1;} title[tn]=0;
+                        // draw_str requires UTF-8; filesystem paths are ASCII in the current player UI.
+                        if let Ok(s)=core::str::from_utf8(&title[..tn]) { graphics::draw_str(wx+28,cy+44,s,0x00FFFFFF); }
+                    } else { graphics::draw_str(wx+28,cy+44,"Aether audio track",0x00FFFFFF); }
+                } else {
+                    graphics::draw_str(wx+28,cy+44,"No track loaded",0x00C0C0C0);
+                }
+                graphics::draw_str(wx+18, cy + 106, "Playback", COL_TEXT_DIM);
+                let barx=wx+18; let bary=cy+126; let barw=ww-36;
+                graphics::fill_rect(barx,bary,barw,8,0x00C0C0C0);
+                let total=crate::media_player::data_bytes();
+                let pos=crate::media_player::position_bytes();
+                if total>0 { graphics::fill_rect(barx,bary,barw*pos.min(total)/total,8,COL_ACCENT); }
+                let by=cy+154;
+                graphics::fill_rect(wx+24,by,72,28,COL_BTN_FACE); graphics::border_rect(wx+24,by,72,28,0x00606060);
+                graphics::draw_str(wx+43,by+9,"Prev",COL_TEXT);
+                graphics::fill_rect(wx+108,by,82,28,COL_BTN_FACE); graphics::border_rect(wx+108,by,82,28,0x00606060);
+                graphics::draw_str(wx+128,by+9,"Play",COL_TEXT);
+                graphics::fill_rect(wx+202,by,82,28,COL_BTN_FACE); graphics::border_rect(wx+202,by,82,28,0x00606060);
+                graphics::draw_str(wx+222,by+9,"Stop",COL_TEXT);
+                graphics::fill_rect(wx+296,by,82,28,COL_BTN_FACE); graphics::border_rect(wx+296,by,82,28,0x00606060);
+                graphics::draw_str(wx+316,by+9,"Next",COL_TEXT);
+                graphics::fill_rect(wx+390,by,82,28,COL_BTN_FACE); graphics::border_rect(wx+390,by,82,28,0x00606060);
+                graphics::draw_str(wx+408,by+9,"Mute",COL_TEXT);
+                graphics::draw_str(wx+488,by+9,"Vol",COL_TEXT_DIM);
+                graphics::fill_rect(wx+520,by+8,100,10,0x00C0C0C0);
+                graphics::fill_rect(wx+520,by+8,(crate::media_player::volume() as usize),10,COL_ACCENT);
+                let st=match crate::media_player::state() {
+                    crate::media_player::State::Playing=>"PLAYING",
+                    crate::media_player::State::Paused=>"PAUSED",
+                    crate::media_player::State::Stopped=>"STOPPED",
+                    crate::media_player::State::Error=>"ERROR",
+                    _=>"EMPTY",
+                };
+                graphics::draw_str(wx+18,cy+204,st,COL_TEXT_DIM);
+                graphics::draw_str(wx+18,cy+230,"WAV PCM: 8/16-bit mono/stereo",COL_TEXT_DIM);
+                graphics::draw_str(wx+18,cy+248,"Use terminal: player <path>",COL_TEXT_DIM);
             }
             WinKind::About => {
                                 graphics::fill_rect(
