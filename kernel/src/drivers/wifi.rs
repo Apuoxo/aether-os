@@ -131,7 +131,8 @@ const SCD_EN_CTRL: u32 = SCD_BASE + 0x254;
 const SCD_GP_CTRL_ENABLE_31_QUEUES: u32 = 1 << 0;
 const SCD_QUEUE_ACTIVE: u32 = 1 << 3;
 const SCD_QUEUE_WSL: u32 = 1 << 4;
-// Intel 2000/2030 uses the agn/5000 scheduler status layout.\nconst SCD_QUEUE_STATUS_MASK: u32 = 0x017F_0000;
+// Intel 2000/2030 uses the agn/5000 scheduler status layout.
+const SCD_QUEUE_STATUS_MASK: u32 = 0x017F_0000;
 const SCD_WIN_SIZE: u32 = 64;
 const SCD_FRAME_LIMIT: u32 = 64;
 const SCD_QUEUE_COUNT: usize = 11;
@@ -827,7 +828,8 @@ unsafe fn init_rx_queue() -> bool {
         i += 1;
     }
     RX_STATUS.0[0] = 0;
-    RX_STATUS.0[1] = 0;\n    RX_STATUS.0[2] = 0;
+    RX_STATUS.0[1] = 0;
+    RX_STATUS.0[2] = 0;
     core::ptr::write_volatile((MMIO + FH_RCSR_CHNL0_CONFIG) as *mut u32, 0);
     core::ptr::write_volatile((MMIO + FH_RSCSR_RBDCB_WPTR) as *mut u32, 0);
     core::ptr::write_volatile((MMIO + FH_RCSR_CHNL0_FLUSH_RB_REQ) as *mut u32, 0);
@@ -853,7 +855,10 @@ pub unsafe fn irq_handler() {
     RX_IRQ_COUNT = RX_IRQ_COUNT.wrapping_add(1);
     let fh = core::ptr::read_volatile((MMIO + CSR_FH_INT_STATUS) as *const u32);
     if (inta & CSR_INT_BIT_FH_RX) != 0 || (fh & CSR_FH_INT_RX_MASK) != 0 {
-        // DVM FH writes closed_rb_num into the first RX status word. This is\n        // the producer index; FH_RSCSR_RDPTR is not the notification producer.\n        let status_closed_rb = core::ptr::read_volatile((&RX_STATUS.0[0]) as *const u32) as usize;\n        let hw = status_closed_rb & (FH_RX_RBD_COUNT - 1);
+        // DVM FH writes closed_rb_num into the first RX status word. This is
+        // the producer index; FH_RSCSR_RDPTR is not the notification producer.
+        let status_closed_rb = core::ptr::read_volatile((&RX_STATUS.0[0]) as *const u32) as usize;
+        let hw = status_closed_rb & (FH_RX_RBD_COUNT - 1);
         let mut same_rx_streak = 0usize;
         let mut last_cmd = 0u8;
         let mut last_subtype = 0u8;
@@ -1025,7 +1030,9 @@ pub unsafe fn irq_handler() {
         diag_write_str(" rx_status=");
         diag_write_hex(core::ptr::read_volatile((MMIO + FH_RSSR_RX_STATUS) as *const u32) as usize);
         diag_write_str("\n");
-        // Do not advance the RBD write pointer while merely polling notifications.\n        // Restocking belongs to the RX-buffer lifecycle, not to the interrupt ACK path.\n        core::ptr::write_volatile((MMIO + CSR_FH_INT_STATUS) as *mut u32, CSR_FH_INT_RX_MASK);
+        // Do not advance the RBD write pointer while merely polling notifications.
+        // Restocking belongs to the RX-buffer lifecycle, not to the interrupt ACK path.
+        core::ptr::write_volatile((MMIO + CSR_FH_INT_STATUS) as *mut u32, CSR_FH_INT_RX_MASK);
         let ack_fh = core::ptr::read_volatile((MMIO + CSR_FH_INT_STATUS) as *const u32);
         let ack_int = core::ptr::read_volatile((MMIO + CSR_INT) as *const u32);
         diag_write_str("[WIFI] RX-ACK cb_wptr=");
