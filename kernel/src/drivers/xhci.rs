@@ -17,6 +17,11 @@ static mut DIAG_FOUND: u32 = 0;
 static mut DIAG_PORTS: u8 = 0;
 static mut DIAG_CCS_MASK: u32 = 0;
 static mut DIAG_PORTSC_LAST: u32 = 0;
+static mut USBCTL_COUNT: usize = 0;
+static mut USBCTL_BDF: [u16; 8] = [0; 8];
+static mut USBCTL_ID: [u32; 8] = [0; 8];
+static mut USBCTL_CLASS: [u32; 8] = [0; 8];
+static mut USBCTL_BAR0: [u32; 8] = [0; 8];
 static mut DIAG_PRE_CCS_MASK: u32 = 0;
 static mut DIAG_PRE_PORTSC_LAST: u32 = 0;
 
@@ -32,6 +37,46 @@ pub fn diag_found_count() -> u32 { unsafe { DIAG_FOUND } }
 pub fn diag_ports() -> u8 { unsafe { DIAG_PORTS } }
 pub fn diag_ccs_mask() -> u32 { unsafe { DIAG_CCS_MASK } }
 pub fn diag_portsc_last() -> u32 { unsafe { DIAG_PORTSC_LAST } }
+pub fn diag_usbctl_count() -> usize { unsafe { USBCTL_COUNT } }
+pub fn diag_usbctl_bdf(i: usize) -> u16 { unsafe { if i < 8 { USBCTL_BDF[i] } else { 0 } } }
+pub fn diag_usbctl_id(i: usize) -> u32 { unsafe { if i < 8 { USBCTL_ID[i] } else { 0 } } }
+pub fn diag_usbctl_class(i: usize) -> u32 { unsafe { if i < 8 { USBCTL_CLASS[i] } else { 0 } } }
+pub fn diag_usbctl_bar0(i: usize) -> u32 { unsafe { if i < 8 { USBCTL_BAR0[i] } else { 0 } } }
+
+pub fn scan_usb_controllers() {
+    unsafe { USBCTL_COUNT = 0; }
+    let mut bus = 0u8;
+    while bus < 16 {
+        let mut dev = 0u8;
+        while dev < 32 {
+            let mut func = 0u8;
+            while func < 8 {
+                let id = unsafe { pci_r32(bus, dev, func, 0) };
+                if id != 0xFFFFFFFF {
+                    let cl = unsafe { pci_r32(bus, dev, func, 0x08) };
+                    let base = (cl >> 24) & 0xFF;
+                    let sub = (cl >> 16) & 0xFF;
+                    let prog = (cl >> 8) & 0xFF;
+                    if base == 0x0C && sub == 0x03 && (prog == 0x20 || prog == 0x30) {
+                        unsafe {
+                            let n = USBCTL_COUNT;
+                            if n < 8 {
+                                USBCTL_BDF[n] = ((bus as u16) << 8) | ((dev as u16) << 3) | func as u16;
+                                USBCTL_ID[n] = id;
+                                USBCTL_CLASS[n] = cl;
+                                USBCTL_BAR0[n] = pci_r32(bus, dev, func, 0x10);
+                                USBCTL_COUNT = n + 1;
+                            }
+                        }
+                    }
+                }
+                func += 1;
+            }
+            dev += 1;
+        }
+        bus += 1;
+    }
+}
 pub fn diag_pre_ccs_mask() -> u32 { unsafe { DIAG_PRE_CCS_MASK } }
 pub fn diag_pre_portsc_last() -> u32 { unsafe { DIAG_PRE_PORTSC_LAST } }
 
