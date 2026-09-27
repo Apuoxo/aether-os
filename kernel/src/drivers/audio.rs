@@ -147,7 +147,7 @@ pub struct HdaVerbDiag {
     pub intsts: u32,
 }
 
-pub fn hda_raw_verb(codec: u8, node: u8, verb12: u16) -> HdaVerbDiag {
+pub fn hda_raw_verb(codec: u8, node: u8, verb20: u32) -> HdaVerbDiag {
     unsafe {
         if !HDA_MMIO_READY || HDA_CORB_PHYS == 0 || HDA_RIRB_PHYS == 0 {
             return HdaVerbDiag {
@@ -160,7 +160,7 @@ pub fn hda_raw_verb(codec: u8, node: u8, verb12: u16) -> HdaVerbDiag {
         let corb_rp_before = hda_r16(mmio, 0x4A);
         let corb_wp_before = hda_r16(mmio, 0x48);
         let rirb_wp_before = hda_r16(mmio, 0x58);
-        let verb = ((codec as u32) << 28) | ((node as u32) << 20) | ((verb12 as u32) << 8);
+        let verb = ((codec as u32) << 28) | ((node as u32) << 20) | (verb20 & 0x000F_FFFF);
         HDA_VERB_LAST = verb;
         let ok = hda_corb_verb(mmio, HDA_CORB_PHYS, HDA_RIRB_PHYS, verb).is_some();
         let corb_wp_after = hda_r16(mmio, 0x48);
