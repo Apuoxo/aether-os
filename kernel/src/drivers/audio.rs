@@ -405,7 +405,6 @@ fn probe_hda() {
                 // exposes an Audio Function Group instead of assuming the lowest
                 // set bit is the playback codec.
                 let mut codec = 0u8;
-                let mut selected_next = 0u16;
                 let mut selected_root_start = 0u16;
                 let mut selected_root_count = 0u16;
                 let mut selected_afg = 0u8;
@@ -499,7 +498,6 @@ fn probe_hda() {
                             if ca == 3 { HDA_CODEC3_AFG = found_afg; }
                             codec = ca;
                             HDA_CODEC = ca;
-                            selected_next = verb_wp;
                             selected_root_start = root_start;
                             selected_root_count = root_count;
                             selected_afg = found_afg;
@@ -520,7 +518,6 @@ fn probe_hda() {
                 let root_count = selected_root_count;
                 let _ = root_start;
                 let _ = root_count;
-                let next = selected_next;
 
                 if afg != 0 {
                     let afg_nodes = match send_verb(
