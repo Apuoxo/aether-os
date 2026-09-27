@@ -5,7 +5,6 @@
 use crate::fs;
 use crate::serial;
 use crate::media_builtin;
-use crate::mp3::{Decoder as Mp3Decoder, MAX_SAMPLES_PER_FRAME};
 
 const MAX_PATH: usize = 96;
 const HEADER_BUF: usize = 4096;
@@ -16,7 +15,7 @@ const MAX_PLAYLIST: usize = 16;
 pub enum State { Empty, Stopped, Playing, Paused, Error }
 
 #[derive(Clone, Copy, PartialEq)]
-pub enum Format { Unknown, WavPcm, Mp3 }
+pub enum Format { Unknown, WavPcm }
 
 static mut STATE: State = State::Empty;
 static mut FORMAT: Format = Format::Unknown;
@@ -36,8 +35,6 @@ static mut VOLUME: u8 = 100;
 static mut MUTED: bool = false;
 static mut REPEAT: bool = false;
 static mut SHUFFLE: bool = false;
-static mut MP3_DECODER: Mp3Decoder = Mp3Decoder::new();
-static mut MP3_FRAME: [f32; MAX_SAMPLES_PER_FRAME] = [0.0; MAX_SAMPLES_PER_FRAME];
 static mut LAST_ERROR: u8 = 0;
 static mut PCM: [u8; PCM_BUF] = [0; PCM_BUF];
 static mut PLAYLIST: [[u8; MAX_PATH]; MAX_PLAYLIST] = [[0; MAX_PATH]; MAX_PLAYLIST];
@@ -81,15 +78,15 @@ fn parse_wav_bytes(b:&[u8])->Option<(usize,u32,u16,u16,usize,usize)> {
     None
 }
 
-pub fn builtin_count()->usize { 2 }
+pub fn builtin_count()->usize { 3 }
 pub fn builtin_name(i:usize)->&'static str {
-    match i { 0=>"TEST.WAV", 1=>"TEST.MP3", _=>"" }
+    match i { 0=>"TEST.WAV", 1=>"TEST.MP3", 2=>"TEST.OGG", _=>"" }
 }
 pub fn builtin_kind(i:usize)->&'static str {
-    match i { 0=>"WAV PCM", 1=>"MP3", _=>"" }
+    match i { 0=>"WAV PCM", 1=>"MP3", 2=>"OGG Vorbis", _=>"" }
 }
 pub fn builtin_bytes(i:usize)->&'static [u8] {
-    match i { 0=>media_builtin::TEST_WAV, 1=>media_builtin::TEST_MP3, _=>&[] }
+    match i { 0=>media_builtin::TEST_WAV, 1=>media_builtin::TEST_MP3, 2=>media_builtin::TEST_OGG, _=>&[] }
 }
 pub fn selected_builtin()->usize { unsafe { SELECTED_BUILTIN } }
 pub fn select_builtin(i:usize)->bool {
@@ -99,7 +96,7 @@ pub fn select_builtin(i:usize)->bool {
 }
 
 pub fn builtin_path(i:usize)->&'static str {
-    match i { 0=>"/MEDIA/TEST.WAV", 1=>"/MEDIA/TEST.MP3", _=>"" }
+    match i { 0=>"/MEDIA/TEST.WAV", 1=>"/MEDIA/TEST.MP3", 2=>"/MEDIA/TEST.OGG", _=>"" }
 }
 
 pub fn open_embedded_wav()->bool {
@@ -127,33 +124,14 @@ pub fn open_builtin(i:usize)->bool {
     let p=builtin_path(i);
     if p.is_empty(){return false;}
     add_to_playlist(p);
-
-    // MP3 is decoded natively from the embedded byte stream.  Keep the
-    // already-working HDA PCM sink unchanged: MP3 -> PCM16 -> HDA.
-    if i==1 {
-        let bytes=media_builtin::TEST_MP3;
-        if bytes.is_empty() { return false; }
-        unsafe {
-            PATH_LEN=copy_bytes(&mut PATH,p.as_bytes());
-            TITLE_LEN=PATH_LEN;
-            let mut j=0; while j<TITLE_LEN { TITLE[j]=PATH[j]; j+=1; }
-            FILE_SIZE=bytes.len(); SAMPLE_RATE=0; CHANNELS=0; BITS=16;
-            DATA_OFF=0; DATA_LEN=bytes.len(); PCM_FILE_POS=0; PCM_READY=0;
-            FORMAT=Format::Mp3; LAST_ERROR=0; STATE=State::Stopped;
-            BUILTIN_ACTIVE=2;
-            MP3_DECODER=Mp3Decoder::new();
-        }
-        serial::write_str("[MEDIA] embedded TEST.MP3 opened; native decoder READY\n");
-        return true;
-    }
-
     if open(p){
         unsafe { BUILTIN_ACTIVE = i as u8 + 1; }
         serial::write_str("[MEDIA] opened AetherFS media file\n");
         return true;
     }
 
-    // Built-in WAV remains independent of whether /MEDIA is mounted.
+    // Built-in smoke media is embedded in the kernel image.  Keep AUD2
+    // independent of whether /MEDIA is mounted/populated in AetherFS.
     let bytes=builtin_bytes(i);
     if let Some((size,rate,ch,bits,data,len))=parse_wav_bytes(bytes) {
         unsafe {
@@ -163,10 +141,13 @@ pub fn open_builtin(i:usize)->bool {
             FILE_SIZE=size; SAMPLE_RATE=rate; CHANNELS=ch; BITS=bits;
             DATA_OFF=data; DATA_LEN=len; PCM_FILE_POS=0; PCM_READY=0;
             FORMAT=Format::WavPcm; LAST_ERROR=0; STATE=State::Stopped;
-            BUILTIN_ACTIVE=1;
+            BUILTIN_ACTIVE=i as u8 + 1;
         }
         serial::write_str("[MEDIA] opened embedded WAV smoke source\n");
         return true;
+    }
+    if i==1 || i==2 {
+        serial::write_str("[MEDIA] file is real AetherFS media; decoder pending\n");
     }
     false
 }
@@ -208,7 +189,6 @@ fn parse_wav(path:&str)->Option<(usize,u32,u16,u16,usize,usize)> {
 pub fn init() {
     unsafe {
         STATE=State::Empty; FORMAT=Format::Unknown; SELECTED_BUILTIN=0; PATH_LEN=0; TITLE_LEN=0;
-        MP3_DECODER=Mp3Decoder::new();
         FILE_SIZE=0; SAMPLE_RATE=0; CHANNELS=0; BITS=0; DATA_OFF=0; DATA_LEN=0;
         PCM_FILE_POS=0; PCM_READY=0; VOLUME=100; MUTED=false;
         REPEAT=false; SHUFFLE=false; LAST_ERROR=0; PL_COUNT=0; PL_INDEX=0; BUILTIN_ACTIVE=0;
@@ -251,54 +231,7 @@ pub fn open(path:&str)->bool {
 
 pub fn refill_pcm()->usize {
     unsafe {
-        if DATA_LEN==0 || PCM_FILE_POS>=DATA_LEN { PCM_READY=0; return 0; }
-
-        if FORMAT==Format::Mp3 {
-            let src=media_builtin::TEST_MP3;
-            if BUILTIN_ACTIVE!=2 || src.is_empty() {
-                PCM_READY=0; LAST_ERROR=4; STATE=State::Error; return 0;
-            }
-            loop {
-                let remaining=&src[PCM_FILE_POS..];
-                if remaining.is_empty() { PCM_READY=0; return 0; }
-                let (used, info)=MP3_DECODER.decode(remaining, &mut MP3_FRAME);
-                if used==0 {
-                    PCM_READY=0; LAST_ERROR=4; STATE=State::Error; return 0;
-                }
-                PCM_FILE_POS += used;
-                if let Some(info)=info {
-                    SAMPLE_RATE=info.sample_rate;
-                    CHANNELS=info.channels.num() as u16;
-                    BITS=16;
-                    let mut out=0usize;
-                    let mut s=0usize;
-                    if info.channels.num()==1 {
-                        while s<info.samples_produced && out+4<=PCM_BUF {
-                            let x=MP3_FRAME[s].max(-1.0).min(1.0);
-                            let v=(x*32767.0) as i32;
-                            let u=(v as i16) as u16;
-                            PCM[out]=(u&0xFF) as u8; PCM[out+1]=(u>>8) as u8;
-                            PCM[out+2]=PCM[out]; PCM[out+3]=PCM[out+1];
-                            out+=4; s+=1;
-                        }
-                    } else {
-                        let max=info.samples_produced.min((PCM_BUF/2));
-                        while s<max {
-                            let x=MP3_FRAME[s].max(-1.0).min(1.0);
-                            let v=(x*32767.0) as i32;
-                            let u=(v as i16) as u16;
-                            PCM[out]=(u&0xFF) as u8; PCM[out+1]=(u>>8) as u8;
-                            out+=2; s+=1;
-                        }
-                    }
-                    PCM_READY=out;
-                    LAST_ERROR=0;
-                    return out;
-                }
-            }
-        }
-
-        if FORMAT!=Format::WavPcm { PCM_READY=0; return 0; }
+        if FORMAT!=Format::WavPcm || DATA_LEN==0 || PCM_FILE_POS>=DATA_LEN { PCM_READY=0; return 0; }
         let frame=((CHANNELS as usize)*(BITS as usize))/8;
         if frame==0 { return 0; }
         let remain=DATA_LEN-PCM_FILE_POS;
@@ -364,31 +297,21 @@ pub fn consume_pcm(n:usize) {
         let n=n.min(PCM_READY); PCM_READY-=n; PCM_FILE_POS+=n;
         if PCM_READY==0 && PCM_FILE_POS<DATA_LEN { let _=refill_pcm(); }
         if PCM_FILE_POS>=DATA_LEN {
-            if REPEAT {
-                PCM_FILE_POS=0; PCM_READY=0;
-                if FORMAT==Format::Mp3 { MP3_DECODER=Mp3Decoder::new(); }
-                let _=refill_pcm();
-            } else { STATE=State::Stopped; PCM_READY=0; }
+            if REPEAT { PCM_FILE_POS=0; PCM_READY=0; let _=refill_pcm(); }
+            else { STATE=State::Stopped; PCM_READY=0; }
         }
     }
 }
 
-pub fn play(){unsafe{if DATA_LEN>0 && (STATE==State::Stopped||STATE==State::Paused){if FORMAT==Format::Mp3 && PCM_FILE_POS>=DATA_LEN{PCM_FILE_POS=0;PCM_READY=0;MP3_DECODER=Mp3Decoder::new();}STATE=State::Playing;let _=refill_pcm();if SAMPLE_RATE!=0 && CHANNELS!=0 && !crate::drivers::audio::playback_start(SAMPLE_RATE,CHANNELS,BITS){STATE=State::Error;}}}}
+pub fn play(){unsafe{if DATA_LEN>0 && (STATE==State::Stopped||STATE==State::Paused){STATE=State::Playing;let _=refill_pcm();if !crate::drivers::audio::playback_start(SAMPLE_RATE,CHANNELS,BITS){STATE=State::Error;}}}}
 pub fn pause(){unsafe{if STATE==State::Playing{crate::drivers::audio::playback_stop();STATE=State::Paused;}}}
-pub fn stop(){crate::drivers::audio::playback_stop();unsafe{if DATA_LEN>0{PCM_FILE_POS=0;PCM_READY=0;if FORMAT==Format::Mp3{MP3_DECODER=Mp3Decoder::new();}let _=refill_pcm();STATE=State::Stopped;}}}
-pub fn toggle_play(){unsafe{if STATE==State::Playing{crate::drivers::audio::playback_stop();STATE=State::Paused}else if DATA_LEN>0{if FORMAT==Format::Mp3 && PCM_FILE_POS>=DATA_LEN{PCM_FILE_POS=0;PCM_READY=0;MP3_DECODER=Mp3Decoder::new();}STATE=State::Playing;let _=refill_pcm();if SAMPLE_RATE!=0 && CHANNELS!=0 && !crate::drivers::audio::playback_start(SAMPLE_RATE,CHANNELS,BITS){STATE=State::Error;}}}}
+pub fn stop(){crate::drivers::audio::playback_stop();unsafe{if DATA_LEN>0{PCM_FILE_POS=0;PCM_READY=0;let _=refill_pcm();STATE=State::Stopped;}}}
+pub fn toggle_play(){unsafe{if STATE==State::Playing{crate::drivers::audio::playback_stop();STATE=State::Paused}else if DATA_LEN>0{STATE=State::Playing;let _=refill_pcm();if !crate::drivers::audio::playback_start(SAMPLE_RATE,CHANNELS,BITS){STATE=State::Error;}}}}
 
 pub fn seek_permille(v:u16){
     unsafe{
         if DATA_LEN==0{return;}
-        let x=v.min(1000) as usize;
-        if FORMAT==Format::Mp3 {
-            PCM_FILE_POS=(DATA_LEN*x)/1000;
-            PCM_READY=0;
-            MP3_DECODER=Mp3Decoder::new();
-            if STATE==State::Playing { let _=refill_pcm(); }
-            return;
-        }
+        let x=(v.min(1000) as usize);
         let frame=((CHANNELS as usize)*(BITS as usize))/8;
         if frame==0{return;}
         PCM_FILE_POS=((DATA_LEN*x)/1000/frame)*frame;
