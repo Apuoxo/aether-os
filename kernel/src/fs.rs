@@ -809,6 +809,58 @@ pub fn read_large(path: &str, out: &mut [u8]) -> Option<usize> {
     None
 }
 
+pub fn file_size(path: &str) -> Option<usize> {
+    if !is_mounted() { return None; }
+    let name = strip_slash(path);
+    let mut entries = [DirEntry { name: [0; MAX_NAME], name_len: 0, flags: 0, start_lba: 0, size: 0 }; MAX_DIR_ENTRIES];
+    if !load_root(&mut entries) { return None; }
+    let mut i=0usize;
+    while i<MAX_DIR_ENTRIES {
+        if entries[i].flags & 1 != 0 && name_eq(&entries[i], name) {
+            return Some(entries[i].size as usize);
+        }
+        i+=1;
+    }
+    None
+}
+
+/// Bounded random-access read used by streaming native applications.
+pub fn read_range(path: &str, offset: usize, out: &mut [u8]) -> Option<usize> {
+    if !is_mounted() { return None; }
+    let name = strip_slash(path);
+    let mut entries = [DirEntry { name: [0; MAX_NAME], name_len: 0, flags: 0, start_lba: 0, size: 0 }; MAX_DIR_ENTRIES];
+    if !load_root(&mut entries) { return None; }
+    let mut eidx=None;
+    let mut i=0usize;
+    while i<MAX_DIR_ENTRIES {
+        if entries[i].flags & 1 != 0 && name_eq(&entries[i], name) { eidx=Some(i); break; }
+        i+=1;
+    }
+    let e=match eidx { Some(i)=>entries[i], None=>return None };
+    let total=e.size as usize;
+    if offset>=total || out.is_empty() { return Some(0); }
+    let want=out.len().min(total-offset);
+    let first=offset/512;
+    let last=(offset+want+511)/512;
+    let mut sec=first;
+    let mut copied=0usize;
+    while sec<last {
+        let mut buf=[0u8;512];
+        if !ata::read_sectors(e.start_lba+sec as u32,1,&mut buf) { return None; }
+        let sec_base=sec*512;
+        let from=if offset>sec_base { offset-sec_base } else { 0 };
+        let to=(512usize).min(offset+want-sec_base);
+        if to>from {
+            let n=to-from;
+            let mut j=0usize;
+            while j<n { out[copied+j]=buf[from+j]; j+=1; }
+            copied+=n;
+        }
+        sec+=1;
+    }
+    Some(copied)
+}
+
 // ---- File Manager support ----
 const FLAG_USED: u8 = 1;
 const FLAG_DIR: u8 = 2;
