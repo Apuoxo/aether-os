@@ -342,7 +342,7 @@ fn resolve_parent(path:&str)->Option<(u32,[u8;MAX_NAME],usize)>{
         if last{let mut name=[0u8;MAX_NAME];let mut j=0;while j<len{name[j]=b[start+j];j+=1;}return Some((cur,name,len));}
         while i<b.len()&&b[i]==b'/'{i+=1;}if i>=b.len(){return None;}
         let mut e=[DirEntry{name:[0;MAX_NAME],name_len:0,flags:0,start_lba:0,size:0};MAX_DIR_ENTRIES];if !load_dir_entries_ex(cur,&mut e){return None;}
-        let mut hit=None;let mut n=0;while n<MAX_DIR_ENTRIES{if e[n].flags&FLAG_USED!=0&&e[n].flags&FLAG_DIR!=0&&e[n].name_len as usize==len{let mut ok=true;let mut j=0;while j<len{if e[n].name[j]!=b[start+j]{ok=false;break;}j+=1;}if ok{hit=Some(e[n].start_lba);break;}}n+=1;}cur=match hit{Some(v)=>v,None=>return None;};
+        let mut hit=None;let mut n=0;while n<MAX_DIR_ENTRIES{if e[n].flags&FLAG_USED!=0&&e[n].flags&FLAG_DIR!=0&&e[n].name_len as usize==len{let mut ok=true;let mut j=0;while j<len{if e[n].name[j]!=b[start+j]{ok=false;break;}j+=1;}if ok{hit=Some(e[n].start_lba);break;}}n+=1;}cur=match hit{Some(v)=>v,None=>return None,};
     }
 }
 fn load_entry(parent:u32,name:&[u8],nlen:usize)->Option<DirEntry>{let mut e=[DirEntry{name:[0;MAX_NAME],name_len:0,flags:0,start_lba:0,size:0};MAX_DIR_ENTRIES];if !load_dir_entries_ex(parent,&mut e){return None;}let mut i=0;while i<MAX_DIR_ENTRIES{if e[i].flags&FLAG_USED!=0&&e[i].name_len as usize==nlen{let mut ok=true;let mut j=0;while j<nlen{if e[i].name[j]!=name[j]{ok=false;break;}j+=1;}if ok{return Some(e[i]);}}i+=1;}None}
