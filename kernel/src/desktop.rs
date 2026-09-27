@@ -1038,7 +1038,13 @@ fn handle_mouse_buttons(buttons: u8) {
                     let bx=WINS[idx].x; let by=WINS[idx].y + TITLE_H;
                     let cy=by;
                     let py=cy+154;
-                    if my >= py && my < py+28 {
+                    if my >= cy+240 && my < cy+240+48 {
+                        let row=((my-(cy+240))/16) as usize;
+                        if row==0 && mx >= bx+18 && mx < bx+300 {
+                            let _=crate::media_player::open_builtin(0);
+                            DIRTY_FULL=true;
+                        }
+                    } else if my >= py && my < py+28 {
                         if mx >= bx+24 && mx < bx+96 {
                             // Previous is reserved for playlist navigation.
                             crate::media_player::stop();
@@ -2339,6 +2345,7 @@ pub fn run() -> ! {
         }
 
         crate::drivers::xhci::poll_mouse_live();
+        crate::drivers::audio::playback_poll();
 
         static mut CLOCK_TICK: u32 = 0;
         unsafe {
