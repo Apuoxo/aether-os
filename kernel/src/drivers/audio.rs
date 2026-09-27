@@ -427,7 +427,7 @@ fn probe_hda() {
                         let caps = match send_verb(
                             ((codec as u32) << 28) |
                             ((nid as u32) << 20) |
-                            (0xF09u32 << 8)
+                            ((0xF00u32 << 8) | 0x09u32)
                         ) {
                             Some(v) => v,
                             None => { i += 1; continue; }
@@ -450,7 +450,7 @@ fn probe_hda() {
                             let pin_caps = match send_verb(
                                 ((codec as u32) << 28) |
                                 ((nid as u32) << 20) |
-                                (0xF0Cu32 << 8)
+                                ((0xF00u32 << 8) | 0x0Cu32)
                             ) { Some(v) => v, None => 0 };
                             let output_capable = (pin_caps & (1 << 4)) != 0;
                             if output_capable {
