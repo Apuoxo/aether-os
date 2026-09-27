@@ -396,8 +396,7 @@ fn cmd_aud3() {
                         write_str("  CONN_COUNT="); write_usize(conn_count); write_str("\n");
                         let mut ci = 0usize;
                         while ci < conn_count {
-                            let ent = aud_readback(codec, node, "  CONN", (0xF02u32 << 8) | (ci as u32));
-                            if !ent.ok { break; }
+                            aud_readback(codec, node, "  CONN", (0xF02u32 << 8) | (ci as u32));
                             ci += 1;
                         }
                     }
