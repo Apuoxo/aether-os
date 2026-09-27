@@ -507,16 +507,17 @@ fn draw_desktop_icons() {
     use crate::gui::font;
     use crate::gui::theme;
     // Classic desktop layout: column of icons with labels
-    let items: [(IconId, usize); 6] = [
+    let items: [(IconId, usize); 7] = [
         (IconId::MyComputer, 7),
         (IconId::MyDocuments, 5),
         (IconId::Terminal, 0),
         (IconId::Network, 2),
         (IconId::Settings, 4),
         (IconId::RecycleBin, 99),
+        (IconId::File, 10),
     ];
     let mut i = 0usize;
-    while i < 6 {
+    while i < 7 {
         let (id, _slot) = items[i];
         let x = 24usize;
         let y = 36 + i * 72;
@@ -533,9 +534,9 @@ fn draw_desktop_icons() {
 
 
 fn hit_desktop_icon(mx: i32, my: i32) -> Option<usize> {
-    // Must match draw_desktop_icons: 6 icons, y = 36 + i*72
+    // Must match draw_desktop_icons: 7 icons, y = 36 + i*72
     let mut i = 0usize;
-    while i < 6 {
+    while i < 7 {
         let y = 36 + (i as i32) * 72;
         if mx >= 16 && mx < 80 && my >= y && my < y + 64 {
             return Some(i); // index into items list
@@ -565,6 +566,7 @@ fn draw_taskbar_buttons(w: usize, h: usize) {
                     WinKind::DateTime => "Time",
                     WinKind::About => "About",
                     WinKind::Settings => "Settings",
+                    WinKind::MediaPlayer => "Media",
                 };
                 let bw = short.len() * 8 + 20;
                 if x + bw > w.saturating_sub(100) {
@@ -862,6 +864,7 @@ fn handle_mouse_buttons(buttons: u8) {
                         2 => open_win(0),
                         3 => open_win(2),
                         4 => open_win(9),
+                        6 => open_win(10),
                         _ => {}
                     }
                     LAST_DESKTOP_ICON = usize::MAX;
