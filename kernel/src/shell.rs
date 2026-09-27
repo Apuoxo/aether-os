@@ -471,6 +471,9 @@ fn run_line(line: &[u8], len: usize) {
         cmd_aud();
     } else if eq(line, s, clen, b"AUDPLAY") || eq(line, s, clen, b"audplay") {
         write_str("======== AUD PCM PLAYBACK ========\\n");
+        if crate::media_player::state() == crate::media_player::State::Empty {
+            let _ = crate::media_player::open_builtin(0);
+        }
         let ok = crate::media_player::state() != crate::media_player::State::Empty
             && crate::media_player::state() != crate::media_player::State::Error;
         if ok {
