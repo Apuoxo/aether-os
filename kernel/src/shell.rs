@@ -301,6 +301,12 @@ fn cmd_aud() {
     write_str("STATESTS="); write_hex(crate::drivers::audio::hda_statests() as usize);
     write_str(" CODEC_SELECTED="); write_usize(crate::drivers::audio::hda_codec() as usize); write_str("\n");
 
+    write_str("VERB_MODE=IMMEDIATE OK=");
+    write_str(if crate::drivers::audio::hda_verb_ok() { "YES" } else { "NO" });
+    write_str(" LAST="); write_hex(crate::drivers::audio::hda_verb_last() as usize);
+    write_str(" RESP="); write_hex(crate::drivers::audio::hda_verb_resp() as usize);
+    write_str(" ICIS="); write_hex(crate::drivers::audio::hda_verb_icis() as usize); write_str("\n");
+
     write_str("CODEC0=");
     write_str(if crate::drivers::audio::hda_codec0_vid_did() != 0 { "FOUND" } else { "NONE" });
     write_str(" VID_DID="); write_hex(crate::drivers::audio::hda_codec0_vid_did() as usize);
