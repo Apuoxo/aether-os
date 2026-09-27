@@ -329,7 +329,94 @@ fn probe_hda() {
                 serial::write_str(" VID_DID=");
                 serial::write_hex(resp as usize);
                 serial::write_str("\n");
-                serial::write_str("[AUDIO] HDA CORB/RIRB transport PASS; next: AFG/node enumeration\n");
+
+                // Minimal bounded codec topology discovery.  We need the
+                // Audio Function Group and widget ranges before selecting an
+                // output pin/path; no stream is started at this stage.
+                let mut verb_wp = next;
+                let mut send_verb = |verb: u32| -> Option<u32> {
+                    verb_wp = (verb_wp.wrapping_add(1)) & 0x00FF;
+                    core::ptr::write_volatile(
+                        (corb_phys + (verb_wp as usize) * 4) as *mut u32, verb
+                    );
+                    hda_w16(mmio, 0x48, verb_wp);
+                    let mut t = 0u32;
+                    while t < 200_000 {
+                        if (hda_r16(mmio, 0x58) & 0x00FF) == verb_wp {
+                            return Some(core::ptr::read_volatile(
+                                (rirb_phys + (verb_wp as usize) * 8) as *const u32
+                            ));
+                        }
+                        t += 1;
+                        core::hint::spin_loop();
+                    }
+                    None
+                };
+
+                // Root node 0, Subordinate Node Count (parameter 0x04).
+                let root_nodes = match send_verb(((codec as u32) << 28) | (0xF04u32 << 8)) {
+                    Some(v) => v,
+                    None => {
+                        serial::write_str("[AUDIO] HDA ROOT_NODE_COUNT_TIMEOUT\n");
+                        return;
+                    }
+                };
+                let root_start = ((root_nodes >> 16) & 0xFFFF) as u16;
+                let root_count = (root_nodes & 0xFFFF) as u16;
+                serial::write_str("[AUDIO] HDA ROOT_NODES START=");
+                serial::write_hex(root_start as usize);
+                serial::write_str(" COUNT=");
+                serial::write_hex(root_count as usize);
+                serial::write_str("\n");
+
+                // Scan only the returned root range, bounded to 64 nodes.
+                let scan_count = (root_count as usize).min(64);
+                let mut afg = 0u8;
+                let mut node = root_start as usize;
+                let mut scanned = 0usize;
+                while scanned < scan_count {
+                    let nid = node as u8;
+                    let fg = match send_verb(
+                        ((codec as u32) << 28) | ((nid as u32) << 20) | (0xF05u32 << 8)
+                    ) {
+                        Some(v) => v,
+                        None => { node += 1; scanned += 1; continue; }
+                    };
+                    let fg_type = (fg & 0xFF) as u8;
+                    serial::write_str("[AUDIO] HDA NODE=");
+                    serial::write_hex(nid as usize);
+                    serial::write_str(" TYPE=");
+                    serial::write_hex(fg_type as usize);
+                    serial::write_str("\n");
+                    if fg_type == 1 && afg == 0 {
+                        afg = nid;
+                    }
+                    node += 1;
+                    scanned += 1;
+                }
+
+                if afg != 0 {
+                    let afg_nodes = match send_verb(
+                        ((codec as u32) << 28) | ((afg as u32) << 20) | (0xF04u32 << 8)
+                    ) {
+                        Some(v) => v,
+                        None => {
+                            serial::write_str("[AUDIO] HDA AFG_NODE_COUNT_TIMEOUT\n");
+                            return;
+                        }
+                    };
+                    serial::write_str("[AUDIO] HDA AFG=");
+                    serial::write_hex(afg as usize);
+                    serial::write_str(" WIDGET_START=");
+                    serial::write_hex(((afg_nodes >> 16) & 0xFFFF) as usize);
+                    serial::write_str(" WIDGET_COUNT=");
+                    serial::write_hex((afg_nodes & 0xFFFF) as usize);
+                    serial::write_str("\n");
+                } else {
+                    serial::write_str("[AUDIO] HDA AFG_NOT_FOUND\n");
+                }
+
+                serial::write_str("[AUDIO] HDA CORB/RIRB PASS; codec topology discovered, stream setup pending\n");
                 return;
             }
         }
