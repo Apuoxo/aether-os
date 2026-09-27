@@ -43,7 +43,14 @@ $(BUILD_DIR)/calculator_blob.rs: $(BUILD_DIR)/calculator.elf | $(BUILD_DIR)
 	python3 -c "import pathlib; pathlib.Path('$(BUILD_DIR)/calculator_blob.rs').write_text('pub static CALCULATOR_ELF: &[u8] = include_bytes!(\\\"calculator.elf\\\");\\n')"
 
 $(BUILD_DIR)/iwlwifi-2030-6.ucode: | $(BUILD_DIR)
-	@if [ ! -s $@ ]; then curl -L --fail --silent --show-error --retry 8 --retry-delay 2 --retry-all-errors "https://chromium.googlesource.com/chromiumos/third_party/linux-firmware/+/125c30c10407b5aec05642abea84779fa9e675bd/iwlwifi-2030-6.ucode?format=TEXT" | base64 -d > $@; fi
+	@if [ ! -s $@ ]; then \
+		for u in \
+			"https://kernel.googlesource.com/pub/scm/linux/kernel/git/firmware/linux-firmware.git/+/refs/tags/20250211/iwlwifi-2030-6.ucode?format=TEXT" \
+			"https://chromium.googlesource.com/chromiumos/third_party/linux-firmware/+/125c30c10407b5aec05642abea84779fa9e675bd/iwlwifi-2030-6.ucode?format=TEXT"; do \
+			if curl -L --fail --silent --show-error --retry 8 --retry-delay 2 --retry-all-errors "$u" | base64 -d > "$@.tmp" && test "$(wc -c < "$@.tmp")" -eq 707392; then mv "$@.tmp" "$@"; break; fi; \
+			rm -f "$@.tmp"; \
+		done; \
+	fi
 	test "$$(wc -c < "$@")" -eq 707392
 
 $(BUILD_DIR)/calculator.elf: | $(BUILD_DIR)
