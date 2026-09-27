@@ -133,6 +133,53 @@ unsafe fn hda_corb_verb(mmio: usize, corb_phys: usize, rirb_phys: usize, verb: u
     None
 }
 
+#[derive(Copy, Clone)]
+pub struct HdaVerbDiag {
+    pub ok: bool,
+    pub response: u32,
+    pub meta: u32,
+    pub corb_rp_before: u16,
+    pub corb_wp_before: u16,
+    pub corb_wp_after: u16,
+    pub rirb_wp_before: u16,
+    pub rirb_wp_after: u16,
+    pub rirb_status: u8,
+    pub intsts: u32,
+}
+
+pub fn hda_raw_verb(codec: u8, node: u8, verb12: u16) -> HdaVerbDiag {
+    unsafe {
+        if !HDA_MMIO_READY || HDA_CORB_PHYS == 0 || HDA_RIRB_PHYS == 0 {
+            return HdaVerbDiag {
+                ok: false, response: 0, meta: 0,
+                corb_rp_before: 0, corb_wp_before: 0, corb_wp_after: 0,
+                rirb_wp_before: 0, rirb_wp_after: 0, rirb_status: 0, intsts: 0,
+            };
+        }
+        let mmio = HDA_BAR0 as usize;
+        let corb_rp_before = hda_r16(mmio, 0x4A);
+        let corb_wp_before = hda_r16(mmio, 0x48);
+        let rirb_wp_before = hda_r16(mmio, 0x58);
+        let verb = ((codec as u32) << 28) | ((node as u32) << 20) | ((verb12 as u32) << 8);
+        HDA_VERB_LAST = verb;
+        let ok = hda_corb_verb(mmio, HDA_CORB_PHYS, HDA_RIRB_PHYS, verb).is_some();
+        let corb_wp_after = hda_r16(mmio, 0x48);
+        let rirb_wp_after = hda_r16(mmio, 0x58);
+        HdaVerbDiag {
+            ok,
+            response: HDA_VERB_RESP,
+            meta: HDA_VERB_META,
+            corb_rp_before,
+            corb_wp_before,
+            corb_wp_after,
+            rirb_wp_before,
+            rirb_wp_after,
+            rirb_status: hda_r8(mmio, 0x5D),
+            intsts: hda_r32(mmio, 0x24),
+        }
+    }
+}
+
 pub fn speaker_ok() -> bool { unsafe { SPEAKER_OK } }
 pub fn hda_found() -> bool { unsafe { HDA_FOUND } }
 pub fn hda_bar0() -> u64 { unsafe { HDA_BAR0 } }
