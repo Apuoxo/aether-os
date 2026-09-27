@@ -288,7 +288,7 @@ fn cmd_wf() {
 fn aud_probe_one(codec: u8, node: u8, param: u16) -> crate::drivers::audio::HdaVerbDiag {
     // GET_PARAMETER is a 12-bit verb ID (F00h) plus an 8-bit payload.
     // The complete 20-bit verb field is therefore F00 | parameter.
-    let verb20 = 0x000F_00u32 | (param as u32 & 0xFF);
+    let verb20 = (0x000F_00u32 << 8) | (param as u32 & 0xFF);
     let d = crate::drivers::audio::hda_raw_verb(codec, node, verb20);
     write_str("C="); write_hex(codec as usize);
     write_str(" N="); write_hex(node as usize);
@@ -328,16 +328,16 @@ fn cmd_aud_readback() {
 
     if conv != 0 {
         aud_readback(codec, conv, "CONV_FMT", 0xA0000);
-        aud_readback(codec, conv, "CONV_STREAM", 0xF06);
-        aud_readback(codec, conv, "CONV_POWER", 0xF05);
+        aud_readback(codec, conv, "CONV_STREAM", 0xF06u32 << 8);
+        aud_readback(codec, conv, "CONV_POWER", 0xF05u32 << 8);
         aud_readback(codec, conv, "CONV_AMP_L", 0xB0000 | 0xA000);
         aud_readback(codec, conv, "CONV_AMP_R", 0xB0000 | 0x8000);
     }
 
     if pin != 0 {
-        aud_readback(codec, pin, "PIN_CTL", 0xF07);
-        aud_readback(codec, pin, "PIN_POWER", 0xF05);
-        aud_readback(codec, pin, "PIN_EAPD", 0xF0C);
+        aud_readback(codec, pin, "PIN_CTL", 0xF07u32 << 8);
+        aud_readback(codec, pin, "PIN_POWER", 0xF05u32 << 8);
+        aud_readback(codec, pin, "PIN_EAPD", 0xF0Cu32 << 8);
         aud_readback(codec, pin, "PIN_AMP_L", 0xB0000 | 0xA000);
         aud_readback(codec, pin, "PIN_AMP_R", 0xB0000 | 0x8000);
     }
@@ -384,9 +384,9 @@ fn cmd_aud3() {
                     write_str(" DEV="); write_hex(device as usize);
                     write_str(" CAPS="); write_hex(pin_caps.response as usize); write_str("\n");
 
-                    aud_readback(codec, node, "  CTL", 0xF07);
-                    aud_readback(codec, node, "  PWR", 0xF05);
-                    aud_readback(codec, node, "  EAPD", 0xF0C);
+                    aud_readback(codec, node, "  CTL", 0xF07u32 << 8);
+                    aud_readback(codec, node, "  PWR", 0xF05u32 << 8);
+                    aud_readback(codec, node, "  EAPD", 0xF0Cu32 << 8);
                     aud_readback(codec, node, "  AMP_L", 0xB0000 | 0xA000);
                     aud_readback(codec, node, "  AMP_R", 0xB0000 | 0x8000);
 
@@ -400,7 +400,7 @@ fn cmd_aud3() {
                             ci += 1;
                         }
                     }
-                    aud_readback(codec, node, "  CONN_SEL", 0xF01);
+                    aud_readback(codec, node, "  CONN_SEL", 0xF01u32 << 8);
                 }
             }
         }
