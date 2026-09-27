@@ -13,7 +13,7 @@ $(MEDIA_WAV): | $(MEDIA_DIR)
 	test "$(wc -c < "$@")" -gt 100000
 
 $(MEDIA_MP3): | $(MEDIA_DIR)
-	curl -L --fail --silent --show-error "https://upload.wikimedia.org/wikipedia/commons/3/32/UncleSigmund_-_ahhh_%28cc0%29_%28freesound%29.mp3" -o $@
+	ffmpeg -hide_banner -loglevel error -f lavfi -i "sine=frequency=660:duration=2.6" -ac 1 -ar 44100 -c:a libmp3lame -b:a 320k -y "$@"
 	test "$(wc -c < "$@")" -gt 50000
 
 $(MEDIA_OGG): | $(MEDIA_DIR)
