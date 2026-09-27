@@ -812,8 +812,8 @@ fn handle_mouse_buttons(buttons: u8) {
                         2 => open_win(7), // My Computer
                         3 => open_win(2), // Network
                         4 => open_win(9), // Settings
-                        5 => open_win(5), // Documents -> Files
-                        6 => open_win(10), // Media Player
+                        5 => open_win(10), // Media Player
+                        6 => open_win(5), // Documents -> Files
                         _ => {}
                     }
                 } else if my >= 28 {
