@@ -122,7 +122,10 @@ const SCD_QUEUE_WRPTR: u32 = SCD_BASE + 0x18 + (IWL_DEFAULT_CMD_QUEUE_NUM as u32
 const SCD_QUEUE_RDPTR: u32 = SCD_BASE + 0x68 + (IWL_DEFAULT_CMD_QUEUE_NUM as u32 * 4);
 const SCD_CHAINEXT_EN: u32 = SCD_BASE + 0x244;
 const SCD_QUEUE_STATUS_BITS: u32 = SCD_BASE + 0x10C + (IWL_DEFAULT_CMD_QUEUE_NUM as u32 * 4);
+const SCD_INTERRUPT_MASK: u32 = SCD_BASE + 0x108;
 const SCD_QUEUE_CTX: u32 = 0x0600 + (IWL_DEFAULT_CMD_QUEUE_NUM as u32 * 8);
+const FH_TSSR_TX_STATUS_REG: usize = FH_MEM_LOWER_BOUND + 0xEB0;
+const FH_TX_CHANNEL_COUNT: usize = 8;
 const SCD_GP_CTRL: u32 = SCD_BASE + 0x1A8;
 const SCD_EN_CTRL: u32 = SCD_BASE + 0x254;
 const SCD_GP_CTRL_ENABLE_31_QUEUES: u32 = 1 << 0;
@@ -223,6 +226,10 @@ static mut FW_LOADED: bool = false;
 static mut FW_VER: u32 = 0;
 static mut FW_INST_SIZE: u32 = 0;
 static mut FW_DATA_SIZE: u32 = 0;
+static mut FW_INIT_INST_SIZE: u32 = 0;
+static mut FW_INIT_DATA_SIZE: u32 = 0;
+static mut ALIVE_LOG_PTR: u32 = 0;
+static mut ALIVE_SCD_PTR: u32 = 0;
 static mut FW_EXEC_ATTEMPTED: bool = false;
 static mut FW_EXEC_STARTED: bool = false;
 
@@ -335,6 +342,10 @@ pub fn firmware_loaded() -> bool { unsafe { FW_LOADED } }
 pub fn firmware_version() -> u32 { unsafe { FW_VER } }
 pub fn firmware_inst_size() -> u32 { unsafe { FW_INST_SIZE } }
 pub fn firmware_data_size() -> u32 { unsafe { FW_DATA_SIZE } }
+pub fn firmware_init_inst_size() -> u32 { unsafe { FW_INIT_INST_SIZE } }
+pub fn firmware_init_data_size() -> u32 { unsafe { FW_INIT_DATA_SIZE } }
+pub fn alive_log_ptr() -> u32 { unsafe { ALIVE_LOG_PTR } }
+pub fn alive_scd_ptr() -> u32 { unsafe { ALIVE_SCD_PTR } }
 pub fn firmware_exec_attempted() -> bool { unsafe { FW_EXEC_ATTEMPTED } }
 pub fn firmware_exec_started() -> bool { unsafe { FW_EXEC_STARTED } }
 pub fn rx_ready() -> bool { unsafe { RX_READY } }
@@ -373,8 +384,21 @@ pub fn wf_post_scan_diagnostics() {
         diag_write_str(" CSR_INT="); diag_write_hex(csr_int as usize);
         diag_write_str(" FH_INT="); diag_write_hex(fh_int as usize); diag_write_str("\n");
 
+        diag_write_str("[WIFI] WF-ALIVE log=");
+        diag_write_hex(ALIVE_LOG_PTR as usize);
+        diag_write_str(" scd32=");
+        diag_write_hex(ALIVE_SCD_PTR as usize);
+        diag_write_str(" scd_prph=");
+        diag_write_hex(prph_read(SCD_SRAM_BASE_ADDR) as usize);
+        diag_write_str("\n");
+        diag_write_str("[WIFI] WF-TX TSSR=");
+        diag_write_hex(core::ptr::read_volatile((MMIO + FH_TSSR_TX_STATUS_REG) as *const u32) as usize);
+        diag_write_str(" TCSR4=");
+        diag_write_hex(core::ptr::read_volatile((MMIO + FH_TCSR_CONFIG_CMD) as *const u32) as usize);
+        diag_write_str("\n");
         diag_write_str("[WIFI] WF-CMD FINAL wrptr="); diag_write_hex(prph_read(SCD_QUEUE_WRPTR) as usize);
         diag_write_str(" rdptr="); diag_write_hex(prph_read(SCD_QUEUE_RDPTR) as usize);
+        diag_write_str(" scd_sram="); diag_write_hex(prph_read(SCD_SRAM_BASE_ADDR) as usize);
         diag_write_str(" status="); diag_write_hex(prph_read(SCD_QUEUE_STATUS_BITS) as usize);
         diag_write_str(" dram="); diag_write_hex(prph_read(SCD_DRAM_BASE_ADDR) as usize);
         diag_write_str(" cbbc="); diag_write_hex(core::ptr::read_volatile((MMIO + FH_MEM_CBBC_CMD) as *const u32) as usize);
@@ -446,7 +470,9 @@ pub fn init_command_queue() -> bool {
         // queue read pointer to be valid even for the first host command.
         prph_write(SCD_CHAINEXT_EN, 0);
         prph_write(SCD_GP_CTRL, SCD_GP_CTRL_ENABLE_31_QUEUES);
-        prph_write(SCD_EN_CTRL, 0);
+        prph_write(SCD_EN_CTRL, 1 << IWL_DEFAULT_CMD_QUEUE_NUM);
+        let scd_irq_mask = prph_read(SCD_INTERRUPT_MASK);
+        prph_write(SCD_INTERRUPT_MASK, scd_irq_mask | (1 << IWL_DEFAULT_CMD_QUEUE_NUM));
         prph_write(SCD_QUEUECHAIN_SEL, 0);
         prph_write(SCD_TXFACT, 1u32 << IWL_CMD_FIFO_NUM);
         // SCD_DRAM_BASE_ADDR is the scheduler byte-count table base, not the
@@ -473,11 +499,18 @@ pub fn init_command_queue() -> bool {
         core::ptr::write_volatile((MMIO + 0x418) as *mut u32,
             (SCD_WIN_SIZE & 0x7F) | ((SCD_FRAME_LIMIT & 0x7F) << 16));
 
-        core::ptr::write_volatile((MMIO + FH_TCSR_CONFIG_CMD) as *mut u32, 0);
+        // Linux iwl_pcie_tx_start enables every legacy FH TX DMA/FIFO
+        // channel. Queue #4 still owns the command TFD ring.
+        let mut ch = 0usize;
+        while ch < FH_TX_CHANNEL_COUNT {
+            let cfg = MMIO + FH_TCSR_CONFIG_CMD - (IWL_DEFAULT_CMD_QUEUE_NUM * 0x20) + ch * 0x20;
+            core::ptr::write_volatile(cfg as *mut u32, 0);
+            core::ptr::write_volatile(cfg as *mut u32,
+                FH_TCSR_TX_CMD_DMA_ENABLE | FH_TCSR_TX_CMD_CREDIT_ENABLE |
+                FH_TCSR_TX_CMD_CIRQ_HOST_ENDTFD);
+            ch += 1;
+        }
         core::ptr::write_volatile((MMIO + FH_TCSR_BUF_STS_CMD) as *mut u32, 0);
-        core::ptr::write_volatile((MMIO + FH_TCSR_CONFIG_CMD) as *mut u32,
-            FH_TCSR_TX_CMD_DMA_ENABLE | FH_TCSR_TX_CMD_CREDIT_ENABLE |
-            FH_TCSR_TX_CMD_CIRQ_HOST_ENDTFD);
         prph_write(SCD_QUEUE_WRPTR, 0);
         // Seed the command queue byte-count table entry as an invalid/empty
         // descriptor. send_command() replaces it with the actual frame size.
@@ -522,9 +555,12 @@ pub fn send_command(cmd: u8, payload: &[u8]) -> bool {
         let len = 4 + payload.len();
         let tfd = (&mut CMD_TFD_QUEUE.0[slot * FH_TFD_SIZE]) as *mut u8;
         cmd_tfd_set(tfd, (&FW_DMA_BUF.0[0] as *const u8) as u64, len);
-        // Gen1/2 DVM scheduler byte-count tables are expressed in DWORDs.
-        // Keep the first 64 entries duplicated as required by the hardware.
-        let bc = ((len + 3) / 4) as u16;
+        // DVM SCD byte count is the transmitted command length plus the
+        // 4-byte CRC and 4-byte delimiter. The legacy SCD table stores DW.
+        // Do NOT add sizeof(struct iwl_tfd): the TFD is a descriptor, not
+        // part of the transmitted frame byte count.
+        let bc_bytes = len + 8;
+        let bc = ((bc_bytes + 3) / 4) as u16;
         let bc_off = IWL_DEFAULT_CMD_QUEUE_NUM * SCD_QUEUE_BC_SIZE + slot;
         SCD_BC_TABLE.0[bc_off] = bc;
         if slot < 64 {
@@ -544,6 +580,17 @@ pub fn send_command(cmd: u8, payload: &[u8]) -> bool {
         diag_write_usize(len);
         diag_write_str(" Q=4 BC_DW=");
         diag_write_hex(bc as usize);
+        diag_write_str(" BC_BYTES=");
+        diag_write_usize(bc_bytes);
+        let tssr = core::ptr::read_volatile((MMIO + FH_TSSR_TX_STATUS_REG) as *const u32);
+        let tcsr4 = core::ptr::read_volatile((MMIO + FH_TCSR_CONFIG_CMD) as *const u32);
+        let scd_rd = prph_read(SCD_QUEUE_RDPTR);
+        diag_write_str(" KICK TSSR=");
+        diag_write_hex(tssr as usize);
+        diag_write_str(" TCSR4=");
+        diag_write_hex(tcsr4 as usize);
+        diag_write_str(" SCD_RD=");
+        diag_write_hex(scd_rd as usize);
         diag_write_str("\n");
         true
     }
@@ -877,6 +924,13 @@ pub unsafe fn irq_handler() {
                     if cmd == 1 {
                         let subtype = core::ptr::read_volatile(p.add(4 + 4 + 13));
                         let valid = core::ptr::read_volatile(p.add(4 + 4 + 28));
+                        if len >= 44 {
+                            // 2030/DVM ALIVE layout used by the current bring-up:
+                            // log_event_table_ptr is +24 and scd_base_ptr is +32
+                            // relative to the ALIVE payload structure.
+                            ALIVE_LOG_PTR = core::ptr::read_volatile(p.add(8 + 24) as *const u32);
+                            ALIVE_SCD_PTR = core::ptr::read_volatile(p.add(8 + 32) as *const u32);
+                        }
                         ALIVE_SEEN = true;
                         ALIVE_SUBTYPE = subtype;
                         ALIVE_VALID = valid as u32;
@@ -976,7 +1030,7 @@ pub unsafe fn irq_handler() {
         let ack_fh = core::ptr::read_volatile((MMIO + CSR_FH_INT_STATUS) as *const u32);
         let ack_int = core::ptr::read_volatile((MMIO + CSR_INT) as *const u32);
         diag_write_str("[WIFI] RX-ACK cb_wptr=");
-        diag_write_hex(new_cb_wptr as usize);
+        diag_write_hex(core::ptr::read_volatile((MMIO + FH_RSCSR_RBDCB_WPTR) as *const u32) as usize);
         diag_write_str(" fh_after=");
         diag_write_hex(ack_fh as usize);
         diag_write_str(" inta_after=");
@@ -996,19 +1050,16 @@ fn fw_le32(b: &[u8], off: usize) -> u32 {
     ((b[off + 2] as u32) << 16) | ((b[off + 3] as u32) << 24)
 }
 
-pub fn load_firmware() -> bool {
+fn load_firmware_stage(init: bool) -> bool {
     unsafe {
-        FW_ATTEMPTED = true;
-        FW_LOADED = false;
         if !ACTIVATE_OK || MMIO == 0 || !MMIO_MAPPED {
-            diag_write_str("[WIFI] FW=NOT-ATTEMPTED activation prerequisite missing\n");
+            diag_write_str("[WIFI] FW STAGE=NOT-ATTEMPTED activation prerequisite missing\n");
             return false;
         }
         if IWL2030_FW.len() < 88 {
             diag_write_str("[WIFI] FW=INVALID file too small\n");
             return false;
         }
-
         let magic = fw_le32(IWL2030_FW, 4);
         const IWL_TLV_UCODE_MAGIC: u32 = 0x0A4C5749;
         if fw_le32(IWL2030_FW, 0) != 0 || magic != IWL_TLV_UCODE_MAGIC {
@@ -1018,27 +1069,7 @@ pub fn load_firmware() -> bool {
             return false;
         }
 
-        let ver = fw_le32(IWL2030_FW, 72);
-        let build = fw_le32(IWL2030_FW, 76);
-        let api = (ver >> 8) & 0xFF;
-        FW_VER = ver;
-        FW_INST_SIZE = 0;
-        FW_DATA_SIZE = 0;
-        diag_write_str("[WIFI] FW FORMAT=TLV MAGIC=");
-        diag_write_hex(magic as usize);
-        diag_write_str(" VER=");
-        diag_write_hex(ver as usize);
-        diag_write_str(" API=");
-        diag_write_usize(api as usize);
-        diag_write_str(" BUILD=");
-        diag_write_usize(build as usize);
-        diag_write_str("\n");
-
         let dma_base = (&FW_DMA_BUF.0 as *const u8) as u64;
-        diag_write_str("[WIFI] FW DMA_BUFFER=");
-        diag_write_hex(dma_base as usize);
-        diag_write_str("\n");
-
         let load_chunk = |dst: u32, src: &[u8]| -> bool {
             if src.is_empty() || src.len() > FH_MEM_TB_MAX_LENGTH || (src.len() & 3) != 0 {
                 return false;
@@ -1048,29 +1079,18 @@ pub fn load_firmware() -> bool {
                 FW_DMA_BUF.0[i] = src[i];
                 i += 1;
             }
-
-            // Intel's gen1/gen2 iwlwifi transport uses FH service DMA channel 9.
-            // We poll the same completion interrupt that Linux handles, avoiding
-            // dependence on an Aether PCI ISR while bringing the firmware up.
             core::ptr::write_volatile((MMIO + CSR_INT_MASK) as *mut u32, CSR_INT_BIT_FH_TX);
             core::ptr::write_volatile((MMIO + CSR_FH_INT_STATUS) as *mut u32, CSR_FH_INT_TX_MASK);
             core::ptr::write_volatile((MMIO + CSR_INT) as *mut u32, CSR_INT_BIT_FH_TX);
             core::ptr::write_volatile((MMIO + FH_TCSR_CONFIG_SRVC) as *mut u32, 0);
             core::ptr::write_volatile((MMIO + FH_SRVC_SRAM_ADDR) as *mut u32, dst);
             core::ptr::write_volatile((MMIO + FH_TFDIB_CTRL0_SRVC) as *mut u32, dma_base as u32);
-            core::ptr::write_volatile(
-                (MMIO + FH_TFDIB_CTRL1_SRVC) as *mut u32,
-                (((dma_base >> 32) as u32) << FH_MEM_TFDIB_REG1_ADDR_BITSHIFT) | src.len() as u32
-            );
-            core::ptr::write_volatile(
-                (MMIO + FH_TCSR_BUF_STS_SRVC) as *mut u32,
-                FH_TCSR_TB_NUM | FH_TCSR_TB_IDX | FH_TCSR_TFDB_VALID
-            );
-            core::ptr::write_volatile(
-                (MMIO + FH_TCSR_CONFIG_SRVC) as *mut u32,
-                FH_TCSR_DMA_ENABLE | FH_TCSR_CIRQ_HOST_ENDTFD
-            );
-
+            core::ptr::write_volatile((MMIO + FH_TFDIB_CTRL1_SRVC) as *mut u32,
+                (((dma_base >> 32) as u32) << FH_MEM_TFDIB_REG1_ADDR_BITSHIFT) | src.len() as u32);
+            core::ptr::write_volatile((MMIO + FH_TCSR_BUF_STS_SRVC) as *mut u32,
+                FH_TCSR_TB_NUM | FH_TCSR_TB_IDX | FH_TCSR_TFDB_VALID);
+            core::ptr::write_volatile((MMIO + FH_TCSR_CONFIG_SRVC) as *mut u32,
+                FH_TCSR_DMA_ENABLE | FH_TCSR_CIRQ_HOST_ENDTFD);
             let mut n = 0usize;
             while n < 50_000_000 {
                 let inta = core::ptr::read_volatile((MMIO + CSR_INT) as *const u32);
@@ -1085,11 +1105,13 @@ pub fn load_firmware() -> bool {
             false
         };
 
+        let wanted_a = if init { 3u32 } else { 1u32 };
+        let wanted_b = if init { 4u32 } else { 2u32 };
         let mut pos = 88usize;
-        let mut inst_seen = false;
-        let mut data_seen = false;
-        let mut inst_size = 0usize;
-        let mut data_size = 0usize;
+        let mut seen_a = false;
+        let mut seen_b = false;
+        let mut size_a = 0usize;
+        let mut size_b = 0usize;
 
         while pos + 8 <= IWL2030_FW.len() {
             let tlv_type = fw_le32(IWL2030_FW, pos);
@@ -1100,7 +1122,6 @@ pub fn load_firmware() -> bool {
                 None => return false,
             };
             if data_end > IWL2030_FW.len() { return false; }
-
             let aligned_len = (tlv_len + 3) & !3usize;
             let next = match data_start.checked_add(aligned_len) {
                 Some(v) => v,
@@ -1108,55 +1129,140 @@ pub fn load_firmware() -> bool {
             };
             if next > IWL2030_FW.len() { return false; }
 
-            let (dst, seen) = match tlv_type {
-                1 if !inst_seen => {
-                    inst_seen = true;
-                    inst_size = tlv_len;
-                    (IWLAGN_RTC_INST_LOWER_BOUND, true)
+            let dst = match tlv_type {
+                t if t == wanted_a && !seen_a => {
+                    seen_a = true;
+                    size_a = tlv_len;
+                    IWLAGN_RTC_INST_LOWER_BOUND
                 }
-                2 if !data_seen => {
-                    data_seen = true;
-                    data_size = tlv_len;
-                    (IWLAGN_RTC_DATA_LOWER_BOUND, true)
+                t if t == wanted_b && !seen_b => {
+                    seen_b = true;
+                    size_b = tlv_len;
+                    IWLAGN_RTC_DATA_LOWER_BOUND
                 }
-                _ => (0, false),
+                _ => 0,
             };
 
-            if seen {
+            if dst != 0 {
                 let mut off = 0usize;
                 while off < tlv_len {
-                    let chunk = core::cmp::min(FH_MEM_TB_MAX_LENGTH, tlv_len - off) & !3usize;
-                    if chunk == 0 || !load_chunk(
-                        dst + off as u32,
-                        &IWL2030_FW[data_start + off..data_start + off + chunk]
-                    ) {
-                        diag_write_str("[WIFI] FW SERVICE-DMA=TIMEOUT dst=");
+                    let remaining = tlv_len - off;
+                    let mut chunk = core::cmp::min(FH_MEM_TB_MAX_LENGTH, remaining) & !3usize;
+                    if chunk == 0 { return false; }
+                    if !load_chunk(dst + off as u32,
+                                   &IWL2030_FW[data_start + off..data_start + off + chunk]) {
+                        diag_write_str("[WIFI] FW STAGE DMA TIMEOUT dst=");
                         diag_write_hex((dst + off as u32) as usize);
                         diag_write_str("\n");
                         return false;
                     }
                     off += chunk;
                 }
-                diag_write_str("[WIFI] FW SERVICE-DMA section dst=");
+                diag_write_str("[WIFI] FW ");
+                diag_write_str(if init { "INIT" } else { "RUNTIME" });
+                diag_write_str(" section dst=");
                 diag_write_hex(dst as usize);
                 diag_write_str(" bytes=");
                 diag_write_usize(tlv_len);
                 diag_write_str(" OK\n");
             }
-
             pos = next;
         }
 
-        if !inst_seen || !data_seen {
-            diag_write_str("[WIFI] FW TLV=RUNTIME_SECTIONS_MISSING\n");
+        if !seen_a || !seen_b {
+            diag_write_str("[WIFI] FW STAGE=");
+            diag_write_str(if init { "INIT" } else { "RUNTIME" });
+            diag_write_str(" SECTIONS_MISSING\n");
             return false;
         }
 
-        FW_INST_SIZE = inst_size as u32;
-        FW_DATA_SIZE = data_size as u32;
+        if init {
+            FW_INIT_INST_SIZE = size_a as u32;
+            FW_INIT_DATA_SIZE = size_b as u32;
+        } else {
+            FW_INST_SIZE = size_a as u32;
+            FW_DATA_SIZE = size_b as u32;
+        }
+        true
+    }
+}
+
+pub fn load_firmware() -> bool {
+    unsafe {
+        FW_ATTEMPTED = true;
+        FW_LOADED = false;
+        NEEDS_FW = true;
+        ALIVE_SEEN = false;
+        ALIVE_SUBTYPE = 0;
+        ALIVE_VALID = 0;
+        ALIVE_LOG_PTR = 0;
+        ALIVE_SCD_PTR = 0;
+
+        diag_write_str("[WIFI] FW TWO-STAGE BEGIN\n");
+        if !init_rx_queue() {
+            diag_write_str("[WIFI] FW INIT RX-RING=FAILED\n");
+            return false;
+        }
+        if !load_firmware_stage(true) {
+            diag_write_str("[WIFI] FW STAGE1 INIT=FAILED\n");
+            return false;
+        }
+        diag_write_str("[WIFI] STAGE1 INIT LOADED INST=");
+        diag_write_usize(FW_INIT_INST_SIZE as usize);
+        diag_write_str(" DATA=");
+        diag_write_usize(FW_INIT_DATA_SIZE as usize);
+        diag_write_str("\n");
+
+        core::ptr::write_volatile((MMIO + 0x05C) as *mut u32, 0x0000_0006);
+        core::ptr::write_volatile((MMIO + CSR_RESET) as *mut u32, 0);
+        let mut n = 0usize;
+        while n < 5_000_000 {
+            let inta = core::ptr::read_volatile((MMIO + CSR_INT) as *const u32);
+            if (inta & (CSR_FH_INT_RX | CSR_INT_BIT_ALIVE)) != 0 {
+                irq_handler();
+                if ALIVE_SEEN { break; }
+            }
+            core::hint::spin_loop();
+            n += 1;
+        }
+        diag_write_str("[WIFI] ALIVE INIT=");
+        diag_write_str(if ALIVE_SEEN && ALIVE_SUBTYPE == 9 && ALIVE_VALID == 1 { "YES" } else { "NO" });
+        diag_write_str(" subtype=");
+        diag_write_usize(ALIVE_SUBTYPE as usize);
+        diag_write_str(" valid=");
+        diag_write_hex(ALIVE_VALID as usize);
+        diag_write_str(" log=");
+        diag_write_hex(ALIVE_LOG_PTR as usize);
+        diag_write_str(" scd32=");
+        diag_write_hex(ALIVE_SCD_PTR as usize);
+        diag_write_str("\n");
+        if !(ALIVE_SEEN && ALIVE_SUBTYPE == 9 && ALIVE_VALID == 1) {
+            diag_write_str("[WIFI] FW STAGE1 ALIVE=FAILED\n");
+            return false;
+        }
+
+        // INIT uCode must be stopped before the runtime image is loaded.
+        if !software_reset() || !activate_nic() {
+            diag_write_str("[WIFI] FW STAGE1 RESET/REACTIVATE=FAILED\n");
+            return false;
+        }
+        ALIVE_SEEN = false;
+        ALIVE_SUBTYPE = 0;
+        ALIVE_VALID = 0;
+        ALIVE_LOG_PTR = 0;
+        ALIVE_SCD_PTR = 0;
+
+        if !load_firmware_stage(false) {
+            diag_write_str("[WIFI] FW STAGE2 RUNTIME=FAILED\n");
+            return false;
+        }
         FW_LOADED = true;
         NEEDS_FW = false;
-        diag_write_str("[WIFI] FW LOAD=OK via Intel FH service DMA\n");
+        diag_write_str("[WIFI] FW TWO-STAGE OK runtime_inst=");
+        diag_write_usize(FW_INST_SIZE as usize);
+        diag_write_str(" runtime_data=");
+        diag_write_usize(FW_DATA_SIZE as usize);
+        diag_write_str("\n");
         true
     }
 }
@@ -1211,11 +1317,19 @@ pub fn start_firmware() -> bool {
             core::hint::spin_loop();
             n += 1;
         }
-        diag_write_str("[WIFI] ALIVE=");
-        diag_write_str(if ALIVE_SEEN { "SEEN" } else { "NOT-SEEN" });
+        diag_write_str("[WIFI] ALIVE RUNTIME=");
+        diag_write_str(if ALIVE_SEEN && ALIVE_SUBTYPE != 9 && ALIVE_VALID == 1 { "YES" } else { "NO" });
+        diag_write_str(" subtype=");
+        diag_write_usize(ALIVE_SUBTYPE as usize);
+        diag_write_str(" valid=");
+        diag_write_hex(ALIVE_VALID as usize);
         diag_write_str(" IRQ_COUNT=");
         diag_write_usize(RX_IRQ_COUNT as usize);
         diag_write_str("\n");
+        if !(ALIVE_SEEN && ALIVE_SUBTYPE != 9 && ALIVE_VALID == 1) {
+            diag_write_str("[WIFI] FW RUNTIME ALIVE=FAILED\n");
+            return false;
+        }
         FW_EXEC_STARTED
     }
 }
