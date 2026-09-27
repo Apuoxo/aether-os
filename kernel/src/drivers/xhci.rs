@@ -927,11 +927,28 @@ fn configure_ep_interrupt_in(
 
     unsafe {
         let ic = in_ctx as *mut u32;
+        // Configure Endpoint must receive the current Slot Context, not a
+        // freshly rebuilt one. Preserve the context created by Address Device
+        // and only raise Context Entries for the new endpoint.
         *ic.add(1) = (1u32 << 0) | (1u32 << dci);
 
+        let dcbaa = x.dcbaa as *const u64;
+        let dev_ctx = *dcbaa.add(slot as usize) as usize;
         let slot_ctx = (in_ctx + cs) as *mut u32;
-        *slot_ctx.add(0) = (speed << 20) | ((ctx_entries as u32) << 27);
-        *slot_ctx.add(1) = (port as u32) << 16;
+        let old_slot_ctx = dev_ctx as *const u32;
+        let mut sw = 0usize;
+        while sw < cs / 4 {
+            *slot_ctx.add(sw) = *old_slot_ctx.add(sw);
+            sw += 1;
+        }
+        *slot_ctx.add(0) = (*slot_ctx.add(0) & !(0x1Fu32 << 27))
+            | ((ctx_entries as u32) << 27);
+
+        serial::write_str("  [HID] preserve SlotCtx=");
+        hx(dev_ctx);
+        serial::write_str(" CE=");
+        serial::write_usize(ctx_entries);
+        serial::write_str("\n");
 
         let ep = (in_ctx + (1 + dci) * cs) as *mut u32;
         // xHCI Interval is encoded as bInterval-1 for interrupt endpoints.
