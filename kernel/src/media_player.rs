@@ -255,7 +255,7 @@ fn refill_mp3()->usize {
         // Keep PCM as a continuous byte FIFO. HDA consumes fixed 4096-byte
         // periods, while an MP3 frame normally decodes to 4608 bytes
         // (1152 stereo samples). Never expose a partial frame to HDA.
-        while PCM_READY < 4096 && MP3_FILE_POS < FILE_SIZE {
+        while PCM_READY < 16384 && MP3_FILE_POS < FILE_SIZE {
             let remain=FILE_SIZE-MP3_FILE_POS;
             let n=remain.min(MP3_INPUT_BUF);
             if n==0 { break; }
@@ -462,7 +462,7 @@ pub fn consume_pcm(n:usize) {
         } else {
             // MP3_FILE_POS is advanced by the decoder, not by PCM playback.
             // Refill whenever the FIFO drops below one HDA period.
-            if PCM_READY<4096 && MP3_FILE_POS<DATA_LEN {
+            if PCM_READY<16384 && MP3_FILE_POS<DATA_LEN {
                 let _=refill_pcm();
             }
         }
