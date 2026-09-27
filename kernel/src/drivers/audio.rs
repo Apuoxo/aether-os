@@ -817,7 +817,7 @@ fn probe_hda() {
                     if oss == 0 {
                         serial::write_str("[AUDIO] HDA NO_OUTPUT_STREAM\n");
                     } else {
-                        HDA_STREAM_BASE = 0x80 + HDA_ISS * 0x20;
+                        HDA_STREAM_BASE = 0x80 + (HDA_ISS as usize) * 0x20;
                         HDA_STREAM_READY = true;
                         HDA_STREAM_RUNNING = false;
                         HDA_STREAM_FMT = 0x4011;
