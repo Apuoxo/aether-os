@@ -654,8 +654,9 @@ pub fn playback_start(rate:u32,ch:u16,bits:u16)->bool {
         while i<4 {
             let got=crate::media_player::pcm_buffer(
                 core::slice::from_raw_parts_mut((HDA_DMA_PHYS+i*4096) as *mut u8,4096));
-            if got==0 {break;}
+            if got==0 { break; }
             HDA_DMA_TOTAL+=got;
+            crate::media_player::consume_pcm(got);
             i+=1;
         }
         if i==0 { serial::write_str("[AUDIO] PLAYBACK_NO_PCM\n"); return false; }
@@ -701,13 +702,19 @@ pub fn playback_poll() {
         let base=HDA_BAR0 as usize; let sd=HDA_STREAM_BASE;
         let lp=hda_r32(base,sd+0x04);
         let period=HDA_DMA_PERIOD as u32;
-        while HDA_DMA_NEXT<4 && lp >= ((HDA_DMA_NEXT+1) as u32)*period {
-            crate::media_player::consume_pcm(period as usize);
+        while HDA_DMA_NEXT<1024 && lp >= (((HDA_DMA_NEXT%4)+1) as u32)*period {
+            let slot=HDA_DMA_NEXT%4;
+            let got=crate::media_player::pcm_buffer(
+                core::slice::from_raw_parts_mut((HDA_DMA_PHYS+slot*4096) as *mut u8,4096));
+            if got==0 {
+                hda_w32(base,sd,hda_r32(base,sd)&!0x2);
+                HDA_STREAM_RUNNING=false;
+                serial::write_str("[AUDIO] HDA PLAY EOF\n");
+                break;
+            }
+            crate::media_player::consume_pcm(got);
+            HDA_DMA_TOTAL+=got;
             HDA_DMA_NEXT+=1;
-        }
-        if HDA_DMA_NEXT>=4 {
-            HDA_STREAM_RUNNING=false;
-            serial::write_str("[AUDIO] HDA PLAY BUFFER END\n");
         }
     }
 }
