@@ -1,10 +1,9 @@
 //! Aether native audio hardware foundation.
 //!
-//! Final media playback is HDA/PCM DMA based. The PC speaker remains only as a
-//! diagnostic fallback; it is not the media-player output path.
-//!
-//! This stage deliberately performs discovery only. It does not reset or touch
-//! HDA MMIO until BAR mapping and the controller/codec bring-up path are ready.
+//! PC speaker is diagnostic only. The media path is HDA/PCM DMA.
+//! This stage discovers the HDA controller, records BAR0, maps one MMIO page,
+//! and reads capability/status registers. It deliberately does not reset HDA,
+//! start DMA, or send codec verbs yet.
 
 use crate::serial;
 
@@ -12,7 +11,7 @@ static mut SPEAKER_OK: bool = true;
 static mut HDA_FOUND: bool = false;
 static mut HDA_BDF: u16 = 0;
 static mut HDA_BAR0: u64 = 0;
-static mut HDA_BAR0_SIZE_HINT: u32 = 0;
+static mut HDA_MMIO_READY: bool = false;
 
 unsafe fn outb(port: u16, val: u8) {
     core::arch::asm!("out dx, al", in("dx") port, in("al") val, options(nostack, preserves_flags));
@@ -22,40 +21,41 @@ unsafe fn inb(port: u16) -> u8 {
     core::arch::asm!("in al, dx", in("dx") port, out("al") v, options(nostack, preserves_flags));
     v
 }
-
+unsafe fn pci_addr(bus: u8, dev: u8, func: u8, off: u8) -> u32 {
+    0x8000_0000u32 | ((bus as u32) << 16) | ((dev as u32) << 11)
+        | ((func as u32) << 8) | ((off as u32) & 0xFC)
+}
 unsafe fn pci_r32(bus: u8, dev: u8, func: u8, off: u8) -> u32 {
-    let a = 0x8000_0000u32
-        | ((bus as u32) << 16)
-        | ((dev as u32) << 11)
-        | ((func as u32) << 8)
-        | ((off as u32) & 0xFC);
+    let a = pci_addr(bus, dev, func, off);
     core::arch::asm!("out dx, eax", in("dx") 0xCF8u16, in("eax") a, options(nostack, preserves_flags));
     let v: u32;
     core::arch::asm!("in eax, dx", in("dx") 0xCFCu16, out("eax") v, options(nostack, preserves_flags));
     v
 }
-
-pub fn speaker_ok() -> bool {
-    unsafe { SPEAKER_OK }
+unsafe fn pci_w32(bus: u8, dev: u8, func: u8, off: u8, value: u32) {
+    let a = pci_addr(bus, dev, func, off);
+    core::arch::asm!("out dx, eax", in("dx") 0xCF8u16, in("eax") a, options(nostack, preserves_flags));
+    core::arch::asm!("out dx, eax", in("dx") 0xCFCu16, in("eax") value, options(nostack, preserves_flags));
+}
+unsafe fn hda_r8(base: usize, off: usize) -> u8 {
+    core::ptr::read_volatile((base + off) as *const u8)
+}
+unsafe fn hda_r16(base: usize, off: usize) -> u16 {
+    core::ptr::read_volatile((base + off) as *const u16)
+}
+unsafe fn hda_r32(base: usize, off: usize) -> u32 {
+    core::ptr::read_volatile((base + off) as *const u32)
 }
 
-pub fn hda_found() -> bool {
-    unsafe { HDA_FOUND }
-}
+pub fn speaker_ok() -> bool { unsafe { SPEAKER_OK } }
+pub fn hda_found() -> bool { unsafe { HDA_FOUND } }
+pub fn hda_bar0() -> u64 { unsafe { HDA_BAR0 } }
+pub fn hda_mmio_ready() -> bool { unsafe { HDA_MMIO_READY } }
 
-pub fn hda_bar0() -> u64 {
-    unsafe { HDA_BAR0 }
-}
-
-/// Default short diagnostic beep. This is intentionally not the media path.
-pub fn beep() {
-    beep_hz(880, 12);
-}
+pub fn beep() { beep_hz(880, 12); }
 
 pub fn beep_hz(freq_hz: u32, duration_units: u32) {
-    if freq_hz < 20 || freq_hz > 20000 {
-        return;
-    }
+    if freq_hz < 20 || freq_hz > 20000 { return; }
     unsafe {
         let div = 1193182u32 / freq_hz;
         outb(0x43, 0xB6);
@@ -68,13 +68,8 @@ pub fn beep_hz(freq_hz: u32, duration_units: u32) {
             i += 1;
             core::hint::spin_loop();
         }
-        let t2 = inb(0x61);
-        outb(0x61, t2 & !3);
+        outb(0x61, inb(0x61) & !3);
     }
-}
-
-fn print_hex(v: u64) {
-    serial::write_hex(v as usize);
 }
 
 fn probe_hda() {
@@ -82,31 +77,22 @@ fn probe_hda() {
         HDA_FOUND = false;
         HDA_BDF = 0;
         HDA_BAR0 = 0;
-        HDA_BAR0_SIZE_HINT = 0;
+        HDA_MMIO_READY = false;
 
         for dev in 0u8..32 {
             for func in 0u8..8 {
                 let id = pci_r32(0, dev, func, 0);
-                if id == 0xFFFF_FFFF || id == 0 {
-                    continue;
-                }
-
+                if id == 0xFFFF_FFFF || id == 0 { continue; }
                 let cr = pci_r32(0, dev, func, 0x08);
                 let class = ((cr >> 24) & 0xFF) as u8;
                 let sub = ((cr >> 16) & 0xFF) as u8;
-
-                if class != 0x04 || sub != 0x03 {
-                    continue;
-                }
+                if class != 0x04 || sub != 0x03 { continue; }
 
                 let vendor = (id & 0xFFFF) as u16;
                 let device = (id >> 16) as u16;
                 let bar0 = pci_r32(0, dev, func, 0x10);
                 let bar1 = pci_r32(0, dev, func, 0x14);
                 let bar_is_io = (bar0 & 1) != 0;
-
-                // HDA uses a memory BAR. Do not access it until the MMIO
-                // mapping layer explicitly owns the physical address.
                 let base = if bar_is_io {
                     0
                 } else if (bar0 & 0x6) == 0x4 {
@@ -118,9 +104,8 @@ fn probe_hda() {
                 HDA_FOUND = true;
                 HDA_BDF = ((dev as u16) << 3) | func as u16;
                 HDA_BAR0 = base;
-                HDA_BAR0_SIZE_HINT = 0x1000;
 
-                serial::write_str("[AUDIO] HDA controller discovered BDF=00:");
+                serial::write_str("[AUDIO] HDA BDF=00:");
                 serial::write_usize(dev as usize);
                 serial::write_str(".");
                 serial::write_usize(func as usize);
@@ -129,27 +114,68 @@ fn probe_hda() {
                 serial::write_str(" DID=");
                 serial::write_hex(device as usize);
                 serial::write_str(" BAR0=");
-                print_hex(base);
-                serial::write_str(bar_is_io.then_some(" IO").unwrap_or(" MMIO"));
+                serial::write_hex(base as usize);
                 serial::write_str("\n");
 
                 if base == 0 || bar_is_io {
-                    serial::write_str("[AUDIO] HDA BAR0 is not usable yet; MMIO bring-up deferred\n");
-                } else {
-                    serial::write_str("[AUDIO] HDA BAR0 candidate recorded; no MMIO access performed\n");
+                    serial::write_str("[AUDIO] HDA BAR0 unusable; MMIO deferred\n");
+                    return;
                 }
+
+                let cmd = pci_r32(0, dev, func, 0x04);
+                let new_cmd = cmd | 0x0000_0006;
+                if new_cmd != cmd { pci_w32(0, dev, func, 0x04, new_cmd); }
+
+                let phys = base as usize & !0xFFF;
+                let cr3 = crate::mm::paging::read_cr3();
+                let mapped = crate::mm::paging::map_page(
+                    cr3, phys, phys,
+                    crate::mm::paging::PAGE_PRESENT
+                        | crate::mm::paging::PAGE_WRITE
+                        | crate::mm::paging::PAGE_PCD
+                        | crate::mm::paging::PAGE_PWT,
+                );
+                if !mapped {
+                    serial::write_str("[AUDIO] HDA MMIO map failed; untouched\n");
+                    return;
+                }
+                crate::mm::paging::load_cr3(cr3);
+
+                let mmio = base as usize;
+                let gcap = hda_r16(mmio, 0x00);
+                let gctl = hda_r32(mmio, 0x08);
+                let statests = hda_r16(mmio, 0x0E);
+                let intsts = hda_r32(mmio, 0x24);
+                let walclk = hda_r32(mmio, 0x30);
+                let corb_size = hda_r8(mmio, 0x4E);
+                let rirb_size = hda_r8(mmio, 0x5E);
+                HDA_MMIO_READY = true;
+
+                serial::write_str("[AUDIO] HDA MMIO READY GCAP=");
+                serial::write_hex(gcap as usize);
+                serial::write_str(" GCTL=");
+                serial::write_hex(gctl as usize);
+                serial::write_str(" STATESTS=");
+                serial::write_hex(statests as usize);
+                serial::write_str(" INTSTS=");
+                serial::write_hex(intsts as usize);
+                serial::write_str(" WALCLK=");
+                serial::write_hex(walclk as usize);
+                serial::write_str(" CORBSIZE=");
+                serial::write_hex(corb_size as usize);
+                serial::write_str(" RIRBSIZE=");
+                serial::write_hex(rirb_size as usize);
+                serial::write_str("\n");
+                serial::write_str("[AUDIO] HDA controller not reset; codec/DMA stage pending\n");
                 return;
             }
         }
-
         serial::write_str("[AUDIO] HDA controller not found on bus0\n");
     }
 }
 
 pub fn init() {
-    unsafe {
-        SPEAKER_OK = true;
-    }
-    serial::write_str("[AUDIO] PC speaker diagnostic path OK\n");
+    unsafe { SPEAKER_OK = true; }
+    serial::write_str("[AUDIO] native HDA foundation init\n");
     probe_hda();
 }
