@@ -53,3 +53,4 @@ jobs:
 # Keep build workflow content committed so main receives a fresh push event for firmware builds.
 
 # Build trigger: package current main revision.
+# Build trigger: validate latest HDA output-stream descriptor fix.
