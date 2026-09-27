@@ -25,6 +25,11 @@ static mut HDA_BSS: u8 = 0;
 static mut HDA_AFG: u8 = 0;
 static mut HDA_ANALOG_PIN: u8 = 0;
 static mut HDA_OUTPUT_CONV: u8 = 0;
+static mut HDA_CODEC: u8 = 0;
+static mut HDA_CODEC0_VID_DID: u32 = 0;
+static mut HDA_CODEC3_VID_DID: u32 = 0;
+static mut HDA_CODEC0_AFG: u8 = 0;
+static mut HDA_CODEC3_AFG: u8 = 0;
 static mut HDA_STREAM_TAG: u8 = 1;
 static mut HDA_STREAM_FMT: u16 = 0;
 static mut HDA_DMA_PHYS: usize = 0;
@@ -98,6 +103,11 @@ pub fn hda_bss() -> u8 { unsafe { HDA_BSS } }
 pub fn hda_afg() -> u8 { unsafe { HDA_AFG } }
 pub fn hda_analog_pin() -> u8 { unsafe { HDA_ANALOG_PIN } }
 pub fn hda_output_conv() -> u8 { unsafe { HDA_OUTPUT_CONV } }
+pub fn hda_codec() -> u8 { unsafe { HDA_CODEC } }
+pub fn hda_codec0_vid_did() -> u32 { unsafe { HDA_CODEC0_VID_DID } }
+pub fn hda_codec3_vid_did() -> u32 { unsafe { HDA_CODEC3_VID_DID } }
+pub fn hda_codec0_afg() -> u8 { unsafe { HDA_CODEC0_AFG } }
+pub fn hda_codec3_afg() -> u8 { unsafe { HDA_CODEC3_AFG } }
 pub fn hda_dma_phys() -> usize { unsafe { HDA_DMA_PHYS } }
 pub fn hda_bdl_phys() -> usize { unsafe { HDA_BDL_PHYS } }
 pub fn hda_dma_total() -> usize { unsafe { HDA_DMA_TOTAL } }
@@ -169,6 +179,11 @@ fn probe_hda() {
         HDA_AFG = 0;
         HDA_ANALOG_PIN = 0;
         HDA_OUTPUT_CONV = 0;
+        HDA_CODEC = 0;
+        HDA_CODEC0_VID_DID = 0;
+        HDA_CODEC3_VID_DID = 0;
+        HDA_CODEC0_AFG = 0;
+        HDA_CODEC3_AFG = 0;
 
         for dev in 0u8..32 {
             for func in 0u8..8 {
@@ -480,7 +495,10 @@ fn probe_hda() {
                         }
 
                         if found_afg != 0 {
+                            if ca == 0 { HDA_CODEC0_AFG = found_afg; }
+                            if ca == 3 { HDA_CODEC3_AFG = found_afg; }
                             codec = ca;
+                            HDA_CODEC = ca;
                             selected_next = verb_wp;
                             selected_root_start = root_start;
                             selected_root_count = root_count;
