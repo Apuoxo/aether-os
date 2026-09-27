@@ -56,12 +56,15 @@ impl Decoder {
             2 => Channels::Stereo,
             _ => return (frame_bytes, None),
         };
-        Some(FrameInfo {
-            samples_produced: samples as usize,
-            channels,
-            sample_rate: info.hz as u32,
-            bitrate: info.bitrate_kbps as u32,
-        }).map(|f| (frame_bytes, Some(f))).unwrap()
+        (
+            frame_bytes,
+            Some(FrameInfo {
+                samples_produced: samples as usize,
+                channels,
+                sample_rate: info.hz as u32,
+                bitrate: info.bitrate_kbps as u32,
+            })
+        )
     }
 }
 
