@@ -51,6 +51,9 @@ unsafe fn hda_r32(base: usize, off: usize) -> u32 {
 unsafe fn hda_w8(base: usize, off: usize, v: u8) {
     core::ptr::write_volatile((base + off) as *mut u8, v);
 }
+unsafe fn hda_w16(base: usize, off: usize, v: u16) {
+    core::ptr::write_volatile((base + off) as *mut u16, v);
+}
 unsafe fn hda_w32(base: usize, off: usize, v: u32) {
     core::ptr::write_volatile((base + off) as *mut u32, v);
 }
