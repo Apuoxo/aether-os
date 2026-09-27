@@ -141,7 +141,7 @@ const SCD_QUEUE_BC_SIZE: usize = 320; // 256 TFD entries + 64 duplicate entries
 #[repr(align(256))]
 struct CmdTfdQueue([u8; FH_TFD_CMD_SLOTS * FH_TFD_SIZE]);
 static mut CMD_TFD_QUEUE: CmdTfdQueue = CmdTfdQueue([0; FH_TFD_CMD_SLOTS * FH_TFD_SIZE]);
-#[repr(align(256))]
+#[repr(align(1024))]
 struct ScdBcTable([u16; SCD_QUEUE_COUNT * SCD_QUEUE_BC_SIZE]);
 static mut SCD_BC_TABLE: ScdBcTable = ScdBcTable([0; SCD_QUEUE_COUNT * SCD_QUEUE_BC_SIZE]);
 static mut CMD_QUEUE_READY: bool = false;
@@ -518,7 +518,8 @@ pub fn init_command_queue() -> bool {
         CMD_WRITE_PTR = 0;
         CMD_SEQ = 0;
         CMD_QUEUE_READY = true;
-        diag_write_str("[WIFI] CMDQ READY QUEUE=4 FIFO=7 SCD5000=YES STATUS=");\n        diag_write_hex(prph_read(SCD_QUEUE_STATUS_BITS) as usize);\n        diag_write_str(" TFD=256\\n");
+        diag_write_str("[WIFI] CMDQ READY QUEUE=4 FIFO=7 SCD5000=YES STATUS=");
+        diag_write_hex(prph_read(SCD_QUEUE_STATUS_BITS) as usize);\n        diag_write_str(" TFD=256\\n");
         true
     }
 }
