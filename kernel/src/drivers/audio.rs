@@ -801,6 +801,29 @@ fn probe_hda() {
                         let _ = send_verb(pin_cmd | (0x707u32<<8) | 0x40); // output enable
                         let _ = send_verb(pin_cmd | (0x705u32<<8)); // D0
                          let _ = send_verb(pin_cmd | (0x70Cu32<<8) | 0x02); // EAPD on
+                        // Explicitly select the converter exposed by the pin connection list.
+                        // HDA connection-select (0x701) is zero-based; do not assume index 0.
+                        let pin_lp = send_verb(pin_cmd | (0xF02u32<<8));
+                        let mut pin_sel = 0xFFu8;
+                        if let Some(lp) = pin_lp {
+                            let n = (lp & 0x7F).min(16) as u8;
+                            let mut ci = 0u8;
+                            while ci < n {
+                                let ent = send_verb(pin_cmd | (0xF02u32<<8) | ci as u32).unwrap_or(0);
+                                if (ent & 0x7F) as u8 == output_conv { pin_sel = ci; break; }
+                                ci += 1;
+                            }
+                        }
+                        if pin_sel != 0xFF {
+                            let _ = send_verb(pin_cmd | (0x701u32<<8) | pin_sel as u32);
+                            serial::write_str("[AUDIO] HDA PIN ROUTE SEL=");
+                            serial::write_hex(pin_sel as usize);
+                            serial::write_str(" CONV=");
+                            serial::write_hex(output_conv as usize);
+                            serial::write_str("\n");
+                        } else {
+                            serial::write_str("[AUDIO] HDA PIN ROUTE SEL_NOT_FOUND\n");
+                        }
                         let _ = send_verb(pin_cmd | (0x300u32<<8) | 0xB000); // output amp, unmuted, gain 0
                         let conv_cmd = ((codec as u32)<<28)|((output_conv as u32)<<20);
                         // ALC269 laptop speaker path: unmute DAC with usable output gain.
