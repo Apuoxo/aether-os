@@ -824,23 +824,41 @@ fn probe_hda() {
                         } else {
                             serial::write_str("[AUDIO] HDA PIN ROUTE SEL_NOT_FOUND\n");
                         }
-                        // Program the complete confirmed ALC269 speaker path:
+                        // Program the confirmed ALC269 speaker path:
                         // DAC 02 -> mixer 0C input[0] -> mixer 0C output -> PIN 14.
-                        // Explicitly unmute/gain the selected DAC input amplifier and
-                        // the mixer output amplifier so PCM has a non-zero analog level.
+                        // HDA Set Amplifier Gain/Mute payload:
+                        //   OUT=bit15, IN=bit14, LEFT=bit13, RIGHT=bit12,
+                        //   INDEX=bits11:8, MUTE=bit7, GAIN=bits6:0.
+                        // The previous 0x7026 used INDEX=7 and therefore did not
+                        // program mixer input[0]. Use index 0 explicitly.
                         let mixer_cmd = ((codec as u32)<<28)|((0x0Cu32)<<20);
-                        // Set input amp index 0 (connection-list entry 0 = DAC 02).
-                        // 0x4000=input, 0x3000=left+right, 0x26=gain 38.
-                        let _ = send_verb(mixer_cmd | (0x300u32<<8) | 0x7026);
-                        // Set mixer output amp, left+right, unmuted, gain 38.
-                        let _ = send_verb(mixer_cmd | (0x300u32<<8) | 0xB026); // mixer output gain/unmute
                         let conv_cmd = ((codec as u32)<<28)|((output_conv as u32)<<20);
-                        // ALC269 laptop speaker DAC: unmute with usable output gain.
-                        let _ = send_verb(conv_cmd | (0x300u32<<8) | 0xB026);
+
+                        // Keep both endpoint widgets explicitly in D0 (fully on).
+                        // D0 is value 0 by HDA definition; do not write 1 here,
+                        // because 1 is D1 rather than "power on".
+                        let _ = send_verb(pin_cmd | (0x705u32<<8) | 0x00);
+                        let _ = send_verb(conv_cmd | (0x705u32<<8) | 0x00);
+                        let _ = send_verb(mixer_cmd | (0x705u32<<8) | 0x00);
+
+                        // Select the actual mixer input[0] = DAC 02 and force D0.
+                        let _ = send_verb(mixer_cmd | (0x701u32<<8) | 0x00);
+
+                        // Gain 80, unmuted, both channels:
+                        // input amp index 0: 0x5000 | 0x50
+                        // output amp:        0xB000 | 0x50
+                        let _ = send_verb(mixer_cmd | (0x300u32<<8) | 0x5050);
+                        let _ = send_verb(mixer_cmd | (0x300u32<<8) | 0xB050);
+
+                        // Also explicitly open the DAC output and pin output amps.
+                        let _ = send_verb(conv_cmd | (0x300u32<<8) | 0xB050);
+                        let _ = send_verb(pin_cmd | (0x300u32<<8) | 0xB050);
+
                         serial::write_str("[AUDIO] HDA ANALOG PATH PROGRAMMED PIN=");
                         serial::write_hex(analog_pin as usize);
                         serial::write_str(" CONV=");
                         serial::write_hex(output_conv as usize);
+                        serial::write_str(" MIXER=0C INDEX=0 GAIN=80 D0");
                         serial::write_str("\n");
                     }
 
