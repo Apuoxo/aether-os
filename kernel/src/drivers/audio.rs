@@ -30,6 +30,10 @@ static mut HDA_CODEC0_VID_DID: u32 = 0;
 static mut HDA_CODEC3_VID_DID: u32 = 0;
 static mut HDA_CODEC0_AFG: u8 = 0;
 static mut HDA_CODEC3_AFG: u8 = 0;
+static mut HDA_VERB_OK: bool = false;
+static mut HDA_VERB_LAST: u32 = 0;
+static mut HDA_VERB_RESP: u32 = 0;
+static mut HDA_VERB_ICIS: u16 = 0;
 static mut HDA_STREAM_TAG: u8 = 1;
 static mut HDA_STREAM_FMT: u16 = 0;
 static mut HDA_DMA_PHYS: usize = 0;
@@ -108,6 +112,10 @@ pub fn hda_codec0_vid_did() -> u32 { unsafe { HDA_CODEC0_VID_DID } }
 pub fn hda_codec3_vid_did() -> u32 { unsafe { HDA_CODEC3_VID_DID } }
 pub fn hda_codec0_afg() -> u8 { unsafe { HDA_CODEC0_AFG } }
 pub fn hda_codec3_afg() -> u8 { unsafe { HDA_CODEC3_AFG } }
+pub fn hda_verb_ok() -> bool { unsafe { HDA_VERB_OK } }
+pub fn hda_verb_last() -> u32 { unsafe { HDA_VERB_LAST } }
+pub fn hda_verb_resp() -> u32 { unsafe { HDA_VERB_RESP } }
+pub fn hda_verb_icis() -> u16 { unsafe { HDA_VERB_ICIS } }
 pub fn hda_dma_phys() -> usize { unsafe { HDA_DMA_PHYS } }
 pub fn hda_bdl_phys() -> usize { unsafe { HDA_BDL_PHYS } }
 pub fn hda_dma_total() -> usize { unsafe { HDA_DMA_TOTAL } }
@@ -184,6 +192,10 @@ fn probe_hda() {
         HDA_CODEC3_VID_DID = 0;
         HDA_CODEC0_AFG = 0;
         HDA_CODEC3_AFG = 0;
+        HDA_VERB_OK = false;
+        HDA_VERB_LAST = 0;
+        HDA_VERB_RESP = 0;
+        HDA_VERB_ICIS = 0;
 
         for dev in 0u8..32 {
             for func in 0u8..8 {
@@ -393,7 +405,7 @@ fn probe_hda() {
                 hda_w8(mmio, 0x4C, 0x02);
                 hda_w8(mmio, 0x5C, 0x02);
 
-                serial::write_str("[AUDIO] HDA CORB/RIRB READY CORB=");
+                serial::write_str("[AUDIO] HDA CODEC_CMD=IMMEDIATE; CORB/RIRB reserved for PCM/event path CORB=");
                 serial::write_hex(corb_phys);
                 serial::write_str(" RIRB=");
                 serial::write_hex(rirb_phys);
@@ -409,23 +421,45 @@ fn probe_hda() {
                 let mut selected_root_count = 0u16;
                 let mut selected_afg = 0u8;
 
-                let mut verb_wp = hda_r16(mmio, 0x48) & 0x00FF;
+                // Use HDA Immediate Command Output (ICOI/ICIS/ICII) for codec
+                // discovery first.  This is deliberately independent of CORB/RIRB DMA:
+                // if codec verbs work here, any later ring/DMA issue is isolated.
                 let mut send_verb = |verb: u32| -> Option<u32> {
-                    verb_wp = (verb_wp.wrapping_add(1)) & 0x00FF;
-                    core::ptr::write_volatile(
-                        (corb_phys + (verb_wp as usize) * 4) as *mut u32, verb
-                    );
-                    hda_w16(mmio, 0x48, verb_wp);
+                    HDA_VERB_LAST = verb;
+                    // ICIS bit0 = command busy; bit1 = response valid.
                     let mut t = 0u32;
                     while t < 200_000 {
-                        if (hda_r16(mmio, 0x58) & 0x00FF) == verb_wp {
-                            return Some(core::ptr::read_volatile(
-                                (rirb_phys + (verb_wp as usize) * 8) as *const u32
-                            ));
-                        }
+                        let s = hda_r16(mmio, 0x68);
+                        HDA_VERB_ICIS = s;
+                        if (s & 0x0001) == 0 { break; }
                         t += 1;
                         core::hint::spin_loop();
                     }
+                    if t >= 200_000 {
+                        HDA_VERB_OK = false;
+                        return None;
+                    }
+                    // Clear a stale response-valid indication before issuing the command.
+                    hda_w16(mmio, 0x68, 0x0002);
+                    hda_w32(mmio, 0x60, verb);
+                    hda_w16(mmio, 0x68, 0x0001);
+                    t = 0;
+                    while t < 200_000 {
+                        let s = hda_r16(mmio, 0x68);
+                        HDA_VERB_ICIS = s;
+                        if (s & 0x0002) != 0 {
+                            let r = hda_r32(mmio, 0x64);
+                            HDA_VERB_RESP = r;
+                            HDA_VERB_OK = true;
+                            hda_w16(mmio, 0x68, 0x0002);
+                            return Some(r);
+                        }
+                        // A command that remains busy is still in flight.
+                        t += 1;
+                        core::hint::spin_loop();
+                    }
+                    HDA_VERB_OK = false;
+                    HDA_VERB_RESP = 0;
                     None
                 };
 
