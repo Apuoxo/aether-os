@@ -87,28 +87,23 @@ pub fn builtin_kind(i:usize)->&'static str {
 pub fn builtin_bytes(i:usize)->&'static [u8] {
     match i { 0=>media_builtin::TEST_WAV, 1=>media_builtin::TEST_MP3, 2=>media_builtin::TEST_OGG, _=>&[] }
 }
+pub fn builtin_path(i:usize)->&'static str {
+    match i { 0=>"/MEDIA/TEST.WAV", 1=>"/MEDIA/TEST.MP3", 2=>"/MEDIA/TEST.OGG", _=>"" }
+}
+
 pub fn open_builtin(i:usize)->bool {
-    let b=builtin_bytes(i);
-    if i!=0 {
-        unsafe { STATE=State::Error; FORMAT=Format::Unknown; LAST_ERROR=10; }
-        serial::write_str("[MEDIA] bundled compressed track present; decoder pending\n");
-        return false;
+    let p=builtin_path(i);
+    if p.is_empty(){return false;}
+    add_to_playlist(p);
+    if open(p){
+        serial::write_str("[MEDIA] opened AetherFS media file\n");
+        true
+    } else {
+        if i==1 || i==2 {
+            serial::write_str("[MEDIA] file is real AetherFS media; decoder pending\n");
+        }
+        false
     }
-    let (size,rate,ch,bits,data,len)=match parse_wav_bytes(b) {
-        Some(v)=>v, None=>{unsafe{STATE=State::Error;FORMAT=Format::Unknown;LAST_ERROR=2;} return false;}
-    };
-    unsafe {
-        BUILTIN_ACTIVE=(i+1) as u8;
-        PATH_LEN=0;
-        TITLE_LEN=0;
-        let name=builtin_name(i).as_bytes();
-        TITLE_LEN=copy_bytes(&mut TITLE,name);
-        FILE_SIZE=size; SAMPLE_RATE=rate; CHANNELS=ch; BITS=bits;
-        DATA_OFF=data; DATA_LEN=len; PCM_FILE_POS=0; PCM_READY=0;
-        FORMAT=Format::WavPcm; LAST_ERROR=0; STATE=State::Stopped;
-    }
-    serial::write_str("[MEDIA] bundled WAV opened\n");
-    true
 }
 
 fn parse_wav(path:&str)->Option<(usize,u32,u16,u16,usize,usize)> {
@@ -197,17 +192,11 @@ pub fn refill_pcm()->usize {
         let n=PCM_BUF.min(remain);
         let n=n-(n%frame);
         if n==0 { PCM_READY=0; return 0; }
-        let got = if BUILTIN_ACTIVE != 0 {
-            let src = builtin_bytes((BUILTIN_ACTIVE-1) as usize);
-            let start = DATA_OFF + PCM_FILE_POS;
-            if start < src.len() {
-                let m = n.min(src.len()-start);
-                PCM[..m].copy_from_slice(&src[start..start+m]);
-                Some(m)
-            } else { Some(0) }
-        } else {
-            fs::read_range(core::str::from_utf8_unchecked(&PATH[..PATH_LEN]),DATA_OFF+PCM_FILE_POS,&mut PCM[..n])
-        };
+        let got = fs::read_range(
+            core::str::from_utf8_unchecked(&PATH[..PATH_LEN]),
+            DATA_OFF + PCM_FILE_POS,
+            &mut PCM[..n]
+        );
         match got {
             Some(got) if got>0 => { PCM_READY=got; got },
             _ => { PCM_READY=0; LAST_ERROR=3; STATE=State::Error; 0 }
