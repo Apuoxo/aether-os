@@ -69,6 +69,8 @@ pub fn hda_mmio_ready() -> bool { unsafe { HDA_MMIO_READY } }
 
 pub fn beep() { beep_hz(880, 12); }
 
+pub fn play_startup_chime() { beep_hz(880, 8); beep_hz(1320, 8); }
+
 pub fn beep_hz(freq_hz: u32, duration_units: u32) {
     if freq_hz < 20 || freq_hz > 20000 { return; }
     unsafe {

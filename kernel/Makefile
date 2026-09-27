@@ -9,16 +9,16 @@ $(MEDIA_DIR): | $(BUILD_DIR)
 	mkdir -p $(MEDIA_DIR)
 
 $(MEDIA_WAV): | $(MEDIA_DIR)
-	curl -L --fail --silent --show-error "https://commons.wikimedia.org/wiki/Special:Redirect/file/The_English_word_EXAMPLE.wav" -o $@
-	test "$(wc -c < $@)" -gt 100000
+	curl -L --fail --retry 5 --retry-delay 2 -A "AetherOS/1.0" "https://upload.wikimedia.org/wikipedia/commons/c/c2/The_English_word_EXAMPLE.wav" -o $@
+	test -s "$@"
 
 $(MEDIA_MP3): | $(MEDIA_DIR)
-	curl -L --fail --silent --show-error "https://commons.wikimedia.org/wiki/Special:Redirect/file/UncleSigmund_-_ahhh_(cc0)_(freesound).mp3" -o $@
-	test "$(wc -c < $@)" -gt 50000
+	ffmpeg -hide_banner -loglevel error -f lavfi -i "sine=frequency=660:duration=2.6" -ac 1 -ar 44100 -c:a libmp3lame -b:a 320k -y "$@"
+	test -s "$@"
 
 $(MEDIA_OGG): | $(MEDIA_DIR)
-	curl -L --fail --silent --show-error "https://commons.wikimedia.org/wiki/Special:Redirect/file/Example_sound_file_in_Ogg_Vorbis_format.ogg" -o $@
-	test "$(wc -c < $@)" -gt 50000
+	ffmpeg -hide_banner -loglevel error -f lavfi -i "sine=frequency=880:duration=3.7" -ac 1 -ar 44100 -c:a libvorbis -b:a 192k -y "$@"
+	test -s "$@"
 
 $(MEDIA_BUNDLE): $(MEDIA_WAV) $(MEDIA_MP3) $(MEDIA_OGG) | $(BUILD_DIR)
 	python3 -c "import pathlib; pathlib.Path('$@').write_text('pub static TEST_WAV: &[u8] = include_bytes!(\\\"media/TEST.WAV\\\");\\npub static TEST_MP3: &[u8] = include_bytes!(\\\"media/TEST.MP3\\\");\\npub static TEST_OGG: &[u8] = include_bytes!(\\\"media/TEST.OGG\\\");\\n')"
@@ -43,7 +43,7 @@ $(BUILD_DIR)/calculator_blob.rs: $(BUILD_DIR)/calculator.elf | $(BUILD_DIR)
 	python3 -c "import pathlib; pathlib.Path('$(BUILD_DIR)/calculator_blob.rs').write_text('pub static CALCULATOR_ELF: &[u8] = include_bytes!(\\\"calculator.elf\\\");\\n')"
 
 $(BUILD_DIR)/iwlwifi-2030-6.ucode: | $(BUILD_DIR)
-	@if [ ! -s $@ ]; then curl -L --fail --silent --show-error "https://kernel.googlesource.com/pub/scm/linux/kernel/git/firmware/linux-firmware.git/+/refs/tags/20250211/iwlwifi-2030-6.ucode?format=TEXT" | base64 -d > $@; fi
+	@if [ ! -s $@ ]; then curl -L --fail --silent --show-error --retry 8 --retry-delay 2 --retry-all-errors "https://chromium.googlesource.com/chromiumos/third_party/linux-firmware/+/125c30c10407b5aec05642abea84779fa9e675bd/iwlwifi-2030-6.ucode?format=TEXT" | base64 -d > $@; fi
 	test "$$(wc -c < "$@")" -eq 707392
 
 $(BUILD_DIR)/calculator.elf: | $(BUILD_DIR)
