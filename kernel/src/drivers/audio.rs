@@ -747,12 +747,12 @@ fn probe_hda() {
                             let mut fi = 0usize;
                             while fi < fcount && found == 0 {
                                 let cur = frontier[fi];
-                                let caps = match send_verb(((codec as u32)<<28)|((cur as u32)<<20)|(0xF00u32<<8)|0x09) {
+                                let caps = match send_verb(((codec as u32)<<28)|((cur as u32)<<20)|0x000F0009u32) {
                                     Some(v)=>v, None=>{fi+=1;continue}
                                 };
                                 let typ=((caps>>20)&0xF) as u8;
                                 if typ==0 { found=cur; break; }
-                                let lp=match send_verb(((codec as u32)<<28)|((cur as u32)<<20)|(0xF00u32<<8)|0x0E) {
+                                let lp=match send_verb(((codec as u32)<<28)|((cur as u32)<<20)|0x000F000Eu32) {
                                     Some(v)=>v, None=>{fi+=1;continue}
                                 };
                                 let n=(lp&0xFF).min(16) as usize;
