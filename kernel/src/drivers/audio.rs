@@ -736,7 +736,6 @@ pub fn playback_poll() {
                 serial::write_str("[AUDIO] HDA PLAY EOF\n");
                 return;
             }
-            crate::mm::zero_pages(HDA_DMA_PHYS+slot*4096,1);
             crate::media_player::consume_pcm(got);
             HDA_DMA_TOTAL+=got;
             HDA_DMA_NEXT+=1;
