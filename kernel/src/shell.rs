@@ -671,6 +671,15 @@ fn cmd_aud() {
     cmd_aud_extended();
 }
 fn cmd_mous() {
+    // The desktop used to enumerate xHCI only during boot. On AH532 the
+    // mouse is commonly plugged after that probe, so MOUS must first retry
+    // enumeration when no USB device was found. This keeps MOUS a diagnostic
+    // command while making the documented "plug mouse, then rerun" path real.
+    if !crate::drivers::xhci::diag_dev_found() {
+        write_str("MOUS: USB device not enumerated; re-probing xHCI...\n");
+        crate::drivers::xhci::probe();
+    }
+
     write_str("======== MOUS USB MOUSE DIAGNOSTIC ========\n");
     write_str("XHCI=");
     write_str(if crate::drivers::xhci::diag_xhci_ok() { "OK" } else { "NO" });
