@@ -9,7 +9,7 @@ $(MEDIA_DIR): | $(BUILD_DIR)
 	mkdir -p $(MEDIA_DIR)
 
 $(MEDIA_WAV): | $(MEDIA_DIR)
-	curl -L --fail --silent --show-error "https://upload.wikimedia.org/wikipedia/commons/c/c2/The_English_word_EXAMPLE.wav" -o $@
+	curl -L --fail --retry 5 --retry-delay 2 -A "AetherOS/1.0" "https://upload.wikimedia.org/wikipedia/commons/c/c2/The_English_word_EXAMPLE.wav" -o $@
 	test "$(wc -c < "$@")" -gt 100000
 
 $(MEDIA_MP3): | $(MEDIA_DIR)
