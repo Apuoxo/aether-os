@@ -1040,16 +1040,26 @@ fn handle_mouse_buttons(buttons: u8) {
                     let py=cy+154;
                     if my >= cy+240 && my < cy+240+48 {
                         let row=((my-(cy+240))/16) as usize;
-                        if row==0 && mx >= bx+18 && mx < bx+300 {
-                            let _=crate::media_player::open_builtin(0);
+                        if row < crate::media_player::builtin_count() && mx >= bx+18 && mx < bx+300 {
+                            let _=crate::media_player::select_builtin(row);
+                            if row==0 {
+                                let _=crate::media_player::open_builtin(0);
+                            }
                             DIRTY_FULL=true;
                         }
                     } else if my >= py && my < py+28 {
                         if mx >= bx+24 && mx < bx+96 {
-                            // Previous is reserved for playlist navigation.
                             crate::media_player::stop();
                         } else if mx >= bx+108 && mx < bx+190 {
-                            crate::media_player::toggle_play();
+                            let selected=crate::media_player::selected_builtin();
+                            if selected==0 {
+                                if crate::media_player::data_bytes()==0 {
+                                    let _=crate::media_player::open_builtin(selected);
+                                }
+                                crate::media_player::toggle_play();
+                            } else {
+                                let _=crate::media_player::open_builtin(selected);
+                            }
                         } else if mx >= bx+202 && mx < bx+284 {
                             crate::media_player::stop();
                         } else if mx >= bx+296 && mx < bx+378 {
@@ -1324,16 +1334,20 @@ fn draw_window(idx: usize) {
                 };
                 graphics::draw_str(wx+18,cy+204,st,COL_TEXT_DIM);
                 graphics::draw_str(wx+18,cy+230,"Bundled test media:",COL_TEXT_DIM);
+                let selected=crate::media_player::selected_builtin();
                 let mut bi=0usize;
                 while bi<crate::media_player::builtin_count() {
                     let yy=cy+248+bi*16;
                     let name=crate::media_player::builtin_name(bi);
                     let kind=crate::media_player::builtin_kind(bi);
-                    graphics::draw_str(wx+28,yy,name,COL_TEXT);
+                    if bi==selected {
+                        graphics::fill_rect(wx+20,yy-2,292,14,0x00D8E8FF);
+                    }
+                    graphics::draw_str(wx+28,yy,name,if bi==selected { 0x00000080 } else { COL_TEXT });
                     graphics::draw_str(wx+112,yy,kind,COL_TEXT_DIM);
                     bi+=1;
                 }
-                graphics::draw_str(wx+330,cy+248,"Click WAV to play",COL_TEXT_DIM);
+                graphics::draw_str(wx+330,cy+248,"Select a track, then Play",COL_TEXT_DIM);
                 graphics::draw_str(wx+330,cy+264,"MP3/OGG: decoder pending",COL_TEXT_DIM);
             }
             WinKind::About => {
@@ -1442,7 +1456,13 @@ fn draw_window(idx: usize) {
                     graphics::draw_str(wx + 12, wy + 40, "PC Speaker: not available", 0x00800000);
                 }
                 if crate::drivers::audio::hda_found() {
-                    graphics::draw_str(wx + 12, wy + 76, "HDA: found (no PCM yet)", 0x00808000);
+                    if crate::drivers::audio::hda_stream_running() {
+                        graphics::draw_str(wx + 12, wy + 76, "HDA: found (PCM active)", 0x00008000);
+                    } else if crate::drivers::audio::hda_stream_ready() {
+                        graphics::draw_str(wx + 12, wy + 76, "HDA: found (PCM ready)", 0x00008000);
+                    } else {
+                        graphics::draw_str(wx + 12, wy + 76, "HDA: found (PCM not selected)", 0x00808000);
+                    }
                 } else {
                     graphics::draw_str(wx + 12, wy + 76, "HDA PCM: Not available", COL_TEXT_DIM);
                 }
