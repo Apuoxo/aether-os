@@ -811,6 +811,7 @@ fn handle_mouse_buttons(buttons: u8) {
                         3 => open_win(2), // Network
                         4 => open_win(9), // Settings
                         5 => open_win(5), // Documents -> Files
+                        6 => open_win(10), // Media Player
                         _ => {}
                     }
                 } else if my >= 28 {
@@ -2015,7 +2016,7 @@ fn draw_start_menu() {
     use crate::gui::icon::{self, IconId};
     let h = graphics::height();
     let tb = TASKBAR_H;
-    let menu_h = 280usize;
+    let menu_h = 308usize;
     let menu_w = 220usize;
     let mx = 2usize;
     let my = h.saturating_sub(tb + menu_h);
@@ -2027,17 +2028,18 @@ fn draw_start_menu() {
     graphics::fill_rect(mx, my, menu_w, 28, 0x00245EDC);
     graphics::draw_str(mx + 12, my + 10, "Aether User", 0x00FFFFFF);
     // items with icons
-    let items: [(IconId, &str, usize); 7] = [
+    let items: [(IconId, &str, usize); 8] = [
         (IconId::Terminal, "Terminal", 0),
         (IconId::Folder, "Files", 5),
         (IconId::MyComputer, "My Computer", 7),
         (IconId::Network, "Network", 2),
         (IconId::Settings, "Settings", 8),
+        (IconId::File, "Media Player", 10),
         (IconId::MyDocuments, "Documents", 5),
         (IconId::RecycleBin, "Recycle Bin", 99),
     ];
     let mut i = 0usize;
-    while i < 7 {
+    while i < 8 {
         let (id, name, _) = items[i];
         let iy = my + 36 + i * 28;
         icon::blit(id, mx + 10, iy, false);
@@ -2055,7 +2057,7 @@ fn draw_start_menu() {
 fn hit_start_menu(mx: i32, my: i32) -> Option<usize> {
     let h = graphics::height() as i32;
     let tb = TASKBAR_H as i32;
-    let menu_h = 280i32;
+    let menu_h = 308i32;
     let menu_w = 220i32;
     let x0 = 2i32;
     let y0 = h - tb - menu_h;
@@ -2068,7 +2070,7 @@ fn hit_start_menu(mx: i32, my: i32) -> Option<usize> {
         return None;
     }
     let idx = (rel / 28) as usize;
-    if idx < 7 {
+    if idx < 8 {
         Some(idx)
     } else {
         None
