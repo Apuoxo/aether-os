@@ -292,11 +292,23 @@ fn cmd_aud() {
     write_str(" MMIO=");
     write_str(if crate::drivers::audio::hda_mmio_ready() { "READY" } else { "NO" });
     write_str(" BAR0="); write_hex(crate::drivers::audio::hda_bar0() as usize); write_str("\n");
+
+    write_str("GCAP="); write_hex(crate::drivers::audio::hda_gcap() as usize);
+    write_str(" OSS="); write_usize(crate::drivers::audio::hda_oss() as usize);
+    write_str(" ISS="); write_usize(crate::drivers::audio::hda_iss() as usize);
+    write_str(" BSS="); write_usize(crate::drivers::audio::hda_bss() as usize); write_str("\n");
+
+    write_str("STATESTS="); write_hex(crate::drivers::audio::hda_statests() as usize);
+    write_str(" AFG="); write_hex(crate::drivers::audio::hda_afg() as usize);
+    write_str(" ANALOG_PIN="); write_hex(crate::drivers::audio::hda_analog_pin() as usize);
+    write_str(" OUTPUT_CONV="); write_hex(crate::drivers::audio::hda_output_conv() as usize); write_str("\n");
+
     write_str("STREAM_READY=");
     write_str(if crate::drivers::audio::hda_stream_ready() { "YES" } else { "NO" });
     write_str(" RUNNING=");
     write_str(if crate::drivers::audio::hda_stream_running() { "YES" } else { "NO" });
     write_str(" BASE="); write_hex(crate::drivers::audio::hda_stream_base()); write_str("\n");
+
     write_str("FMT="); write_hex(crate::drivers::audio::hda_stream_format() as usize);
     write_str(" CTL="); write_hex(crate::drivers::audio::hda_stream_control() as usize);
     write_str(" STAT="); write_hex(crate::drivers::audio::hda_stream_status() as usize); write_str("\n");
@@ -307,6 +319,26 @@ fn cmd_aud() {
     write_str(" BDL="); write_hex(crate::drivers::audio::hda_bdl_phys());
     write_str(" TOTAL="); write_usize(crate::drivers::audio::hda_dma_total());
     write_str(" NEXT="); write_usize(crate::drivers::audio::hda_dma_next()); write_str("\n");
+
+    write_str("CAUSE=");
+    if !crate::drivers::audio::hda_found() {
+        write_str("HDA_NOT_FOUND");
+    } else if !crate::drivers::audio::hda_mmio_ready() {
+        write_str("MMIO_NOT_READY");
+    } else if crate::drivers::audio::hda_afg() == 0 {
+        write_str("AFG_NOT_FOUND");
+    } else if crate::drivers::audio::hda_analog_pin() == 0 {
+        write_str("NO_ANALOG_PIN");
+    } else if crate::drivers::audio::hda_output_conv() == 0 {
+        write_str("NO_OUTPUT_CONVERTER");
+    } else if crate::drivers::audio::hda_oss() == 0 {
+        write_str("NO_OUTPUT_STREAM");
+    } else if !crate::drivers::audio::hda_stream_ready() {
+        write_str("STREAM_NOT_SELECTED");
+    } else {
+        write_str("READY_FOR_PCM");
+    }
+    write_str("\n");
     write_str("======== AUD END ========\n");
 }
 
