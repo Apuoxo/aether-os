@@ -1309,11 +1309,10 @@ pub fn poll_mouse_live() {
                 let trb = ring.add(idx);
                 (*trb).lo = MOUSE_REPORT as u32;
                 (*trb).hi = 0;
-                (*trb).status = 4 | (1 << 22); // 4 bytes residual? length
+                (*trb).status = 4;
                 (*trb).control = (TRB_NORMAL << 10) | TRB_IOC | MOUSE_CYCLE;
                 MOUSE_ENQ += 1;
-                if MOUSE_ENQ >= 16 {
-                    // simple ring wrap without link for small ring
+                if MOUSE_ENQ >= 63 {
                     MOUSE_ENQ = 0;
                     MOUSE_CYCLE ^= 1;
                 }
