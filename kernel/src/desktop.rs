@@ -553,6 +553,20 @@ fn win_title(kind: WinKind) -> &'static str {
     }
 }
 
+pub fn open_media_path(path:&str)->bool {
+    if !crate::media_player::open(path) {
+        return false;
+    }
+    // Media Player is window slot 10. Keep the Explorer in the background.
+    unsafe {
+        WINS[10].minimized=false;
+        WINS[10].visible=true;
+        bring_to_front(10);
+        DIRTY_FULL=true;
+    }
+    true
+}
+
 fn open_win(slot: usize) {
     unsafe {
         if slot == 99 {
