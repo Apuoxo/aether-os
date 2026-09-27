@@ -699,23 +699,52 @@ pub fn playback_stop() {
 pub fn playback_poll() {
     unsafe {
         if !HDA_STREAM_RUNNING { return; }
-        let base=HDA_BAR0 as usize; let sd=HDA_STREAM_BASE;
+        let base=HDA_BAR0 as usize;
+        let sd=HDA_STREAM_BASE;
         let lp=hda_r32(base,sd+0x04);
         let period=HDA_DMA_PERIOD as u32;
-        while HDA_DMA_NEXT<1024 && lp >= (((HDA_DMA_NEXT%4)+1) as u32)*period {
-            let slot=HDA_DMA_NEXT%4;
+        let cbl=(HDA_DMA_PERIOD*HDA_DMA_PERIODS) as u32;
+
+        // LPIB is the cyclic position. Refill every period that the DMA
+        // has fully passed; when LPIB wraps, finish the tail periods first.
+        if lp < HDA_DMA_LAST_LPIB {
+            while HDA_DMA_NEXT < HDA_DMA_PERIODS {
+                let slot=HDA_DMA_NEXT;
+                let got=crate::media_player::pcm_buffer(
+                    core::slice::from_raw_parts_mut((HDA_DMA_PHYS+slot*4096) as *mut u8,4096));
+                if got==0 {
+                    hda_w32(base,sd,hda_r32(base,sd)&!0x2);
+                    HDA_STREAM_RUNNING=false;
+                    serial::write_str("[AUDIO] HDA PLAY EOF\n");
+                    return;
+                }
+                crate::media_player::consume_pcm(got);
+                HDA_DMA_TOTAL+=got;
+                HDA_DMA_NEXT+=1;
+            }
+            HDA_DMA_NEXT=0;
+        }
+
+        let completed=((lp/period) as usize).min(HDA_DMA_PERIODS);
+        while HDA_DMA_NEXT < completed {
+            let slot=HDA_DMA_NEXT;
             let got=crate::media_player::pcm_buffer(
                 core::slice::from_raw_parts_mut((HDA_DMA_PHYS+slot*4096) as *mut u8,4096));
             if got==0 {
                 hda_w32(base,sd,hda_r32(base,sd)&!0x2);
                 HDA_STREAM_RUNNING=false;
                 serial::write_str("[AUDIO] HDA PLAY EOF\n");
-                break;
+                return;
             }
+            crate::mm::zero_pages(HDA_DMA_PHYS+slot*4096,1);
             crate::media_player::consume_pcm(got);
             HDA_DMA_TOTAL+=got;
             HDA_DMA_NEXT+=1;
         }
+        if HDA_DMA_NEXT>=HDA_DMA_PERIODS && lp>=cbl {
+            HDA_DMA_NEXT=0;
+        }
+        HDA_DMA_LAST_LPIB=lp;
     }
 }
 
