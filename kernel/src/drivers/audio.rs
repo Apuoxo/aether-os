@@ -103,11 +103,13 @@ pub fn hda_stream_status() -> u8 {
         if !HDA_MMIO_READY || !HDA_STREAM_READY { return 0; }
         hda_r8(HDA_BAR0 as usize, HDA_STREAM_BASE + 0x03)
     }
+}
 pub fn hda_stream_cbl() -> u32 {
     unsafe {
         if !HDA_MMIO_READY || !HDA_STREAM_READY { return 0; }
         hda_r32(HDA_BAR0 as usize, HDA_STREAM_BASE + 0x08)
     }
+}
 pub fn hda_stream_lvi() -> u16 {
     unsafe {
         if !HDA_MMIO_READY || !HDA_STREAM_READY { return 0; }
