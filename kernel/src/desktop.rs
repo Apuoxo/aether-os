@@ -729,8 +729,8 @@ fn handle_terminal_scroll_click(mx: i32, my: i32) -> bool {
             };
             // Grab the thumb with a small hit tolerance.  Clicking anywhere
             // inside the thumb must start a continuous drag, not a page jump.
-            let hit_top = thumb_y - 4;
-            let hit_bottom = thumb_y + thumb_h + 4;
+            let mut hit_top = thumb_y - 4;
+            let mut hit_bottom = thumb_y + thumb_h + 4;
             if hit_top < track_top { hit_top = track_top; }
             if hit_bottom > track_bottom { hit_bottom = track_bottom; }
             if my >= hit_top && my < hit_bottom {
