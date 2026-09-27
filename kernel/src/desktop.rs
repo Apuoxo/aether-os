@@ -1210,6 +1210,12 @@ fn handle_mouse_buttons(buttons: u8) {
                             let _=crate::media_player::next();
                         } else if mx >= bx+390 && mx < bx+472 {
                             crate::media_player::toggle_mute();
+                        } else if mx >= bx+520 && mx < bx+620 {
+                            let rel=(mx-(bx+520)).max(0).min(100) as u32;
+                            crate::media_player::set_volume(rel as u8);
+                            if crate::media_player::muted() && rel > 0 {
+                                crate::media_player::toggle_mute();
+                            }
                         }
                         DIRTY_FULL=true;
                     } else if my >= cy+126 && my < cy+142 {
@@ -1222,7 +1228,20 @@ fn handle_mouse_buttons(buttons: u8) {
                 } else if WINS[idx].kind == WinKind::Sound
                     && my >= WINS[idx].y + TITLE_H
                 {
-                    crate::drivers::audio::beep();
+                    let sx=WINS[idx].x;
+                    let sy=WINS[idx].y;
+                    if my >= sy+54 && my < sy+76 && mx >= sx+12 && mx < sx+232 {
+                        let rel=(mx-(sx+12)).max(0).min(220) as u32;
+                        crate::media_player::set_volume((rel*100/220) as u8);
+                        if crate::media_player::muted() && rel > 0 {
+                            crate::media_player::toggle_mute();
+                        }
+                    } else if my >= sy+78 && my < sy+102 && mx >= sx+12 && mx < sx+86 {
+                        crate::media_player::toggle_mute();
+                    } else {
+                        crate::drivers::audio::beep();
+                    }
+                    DIRTY_FULL=true;
                 } else if in_title(idx, mx, my) {
                     // Double-click title → maximize
                     if LAST_CLICK_WIN == idx && FRAME_N.wrapping_sub(LAST_CLICK_FRAME) < 25 {
@@ -1481,8 +1500,19 @@ fn draw_window(idx: usize) {
                 graphics::fill_rect(wx+390,by,82,28,COL_BTN_FACE); graphics::border_rect(wx+390,by,82,28,0x00606060);
                 graphics::draw_str(wx+408,by+9,"Mute",COL_TEXT);
                 graphics::draw_str(wx+488,by+9,"Vol",COL_TEXT_DIM);
+                let vol=crate::media_player::volume() as usize;
+                let muted=crate::media_player::muted();
                 graphics::fill_rect(wx+520,by+8,100,10,0x00C0C0C0);
-                graphics::fill_rect(wx+520,by+8,(crate::media_player::volume() as usize),10,COL_ACCENT);
+                graphics::fill_rect(wx+520,by+8,(100usize*vol/100),10,
+                    if muted { 0x00808080 } else { COL_ACCENT });
+                let knob_x=wx+520+(100usize*vol/100).min(99);
+                graphics::fill_rect(knob_x,by+5,3,16,if muted { 0x00606060 } else { COL_ACCENT });
+                if muted {
+                    graphics::draw_str(wx+520,by+22,"MUTED",0x00800000);
+                } else {
+                    draw_u32(wx+568,by+22,vol as u32,COL_TEXT_DIM);
+                    graphics::draw_str(wx+588,by+22,"%",COL_TEXT_DIM);
+                }
                 let st=match crate::media_player::state() {
                     crate::media_player::State::Playing=>"PLAYING",
                     crate::media_player::State::Paused=>"PAUSED",
@@ -1606,7 +1636,23 @@ fn draw_window(idx: usize) {
                 graphics::draw_str(wx + ww - 245, sy + 10, "Aether native Wi-Fi", 0x00717D89);
             }
             WinKind::Sound => {
-                                graphics::fill_rect(wx + 3, wy + TITLE_H as usize, ww - 6, wh - TITLE_H as usize - 3, COL_CLIENT);
+                graphics::fill_rect(wx + 3, wy + TITLE_H as usize, ww - 6, wh - TITLE_H as usize - 3, COL_CLIENT);
+                graphics::draw_str(wx + 12, wy + 38, "Master volume", COL_TEXT);
+                let vol=crate::media_player::volume() as usize;
+                let muted=crate::media_player::muted();
+                graphics::fill_rect(wx + 12, wy + 58, 220, 12, 0x00C0C0C0);
+                graphics::fill_rect(wx + 12, wy + 58, 220*vol/100, 12,
+                    if muted { 0x00808080 } else { COL_ACCENT });
+                let knob=wx + 12 + (220*vol/100).min(219);
+                graphics::fill_rect(knob, wy + 54, 4, 20, if muted { 0x00606060 } else { COL_ACCENT });
+                let mute_x=wx + 12;
+                let mute_y=wy + 78;
+                graphics::fill_rect(mute_x, mute_y, 74, 24, COL_BTN_FACE);
+                graphics::border_rect(mute_x, mute_y, 74, 24, 0x00404040);
+                graphics::draw_str(mute_x + 17, mute_y + 8, if muted { "Unmute" } else { "Mute" },
+                    if muted { 0x00800000 } else { COL_TEXT });
+                draw_u32(wx + 100, mute_y + 8, vol as u32, COL_TEXT_DIM);
+                graphics::draw_str(wx + 124, mute_y + 8, "%", COL_TEXT_DIM);
                 if crate::drivers::audio::speaker_ok() {
                     graphics::draw_str(wx + 12, wy + 40, "PC Speaker: available", 0x00008000);
                     graphics::draw_str(wx + 12, wy + 56, "Click window = beep test", COL_TEXT_DIM);
