@@ -4,6 +4,7 @@
 
 use crate::fs;
 use crate::serial;
+use crate::media_builtin;
 
 const MAX_PATH: usize = 96;
 const HEADER_BUF: usize = 4096;
@@ -40,6 +41,7 @@ static mut PLAYLIST: [[u8; MAX_PATH]; MAX_PLAYLIST] = [[0; MAX_PATH]; MAX_PLAYLI
 static mut PL_LEN: [usize; MAX_PLAYLIST] = [0; MAX_PLAYLIST];
 static mut PL_COUNT: usize = 0;
 static mut PL_INDEX: usize = 0;
+static mut BUILTIN_ACTIVE: u8 = 0;
 
 fn le16(b: &[u8], p: usize) -> u16 { (b[p] as u16) | ((b[p+1] as u16) << 8) }
 fn le32(b: &[u8], p: usize) -> u32 {
@@ -49,6 +51,65 @@ fn copy_bytes(dst: &mut [u8], src: &[u8]) -> usize {
     let n=dst.len().min(src.len()); let mut i=0; while i<n { dst[i]=src[i]; i+=1; } n
 }
 fn four(b:&[u8],p:usize,s:&[u8;4])->bool { p+4<=b.len() && b[p..p+4]==s[..] }
+
+fn parse_wav_bytes(b:&[u8])->Option<(usize,u32,u16,u16,usize,usize)> {
+    if b.len()<12 || !four(b,0,b"RIFF") || !four(b,8,b"WAVE") { return None; }
+    let mut p=12usize; let mut rate=0u32; let mut ch=0u16; let mut bits=0u16;
+    let mut data_off=0usize; let mut data_len=0usize; let mut fmt=false;
+    while p+8<=b.len() {
+        let sz=le32(b,p+4) as usize; let body=p+8;
+        let end=body.checked_add(sz)?;
+        if end>b.len() { return None; }
+        if four(b,p,b"fmt ") && sz>=16 {
+            if le16(b,body)!=1 { return None; }
+            ch=le16(b,body+2); rate=le32(b,body+4); bits=le16(b,body+14);
+            if rate==0 || (ch!=1 && ch!=2) || (bits!=8 && bits!=16) { return None; }
+            fmt=true;
+        } else if four(b,p,b"data") {
+            data_off=body; data_len=sz.min(b.len().saturating_sub(body));
+            let frame=((ch as usize)*(bits as usize))/8;
+            if frame==0 { return None; }
+            data_len-=data_len%frame;
+            return if fmt { Some((b.len(),rate,ch,bits,data_off,data_len)) } else { None };
+        }
+        p=end+(sz&1);
+    }
+    None
+}
+
+pub fn builtin_count()->usize { 3 }
+pub fn builtin_name(i:usize)->&'static str {
+    match i { 0=>"TEST.WAV", 1=>"TEST.MP3", 2=>"TEST.OGG", _=>"" }
+}
+pub fn builtin_kind(i:usize)->&'static str {
+    match i { 0=>"WAV PCM", 1=>"MP3", 2=>"OGG Vorbis", _=>"" }
+}
+pub fn builtin_bytes(i:usize)->&'static [u8] {
+    match i { 0=>media_builtin::TEST_WAV, 1=>media_builtin::TEST_MP3, 2=>media_builtin::TEST_OGG, _=>&[] }
+}
+pub fn open_builtin(i:usize)->bool {
+    let b=builtin_bytes(i);
+    if i!=0 {
+        unsafe { STATE=State::Error; FORMAT=Format::Unknown; LAST_ERROR=10; }
+        serial::write_str("[MEDIA] bundled compressed track present; decoder pending\n");
+        return false;
+    }
+    let (size,rate,ch,bits,data,len)=match parse_wav_bytes(b) {
+        Some(v)=>v, None=>{unsafe{STATE=State::Error;FORMAT=Format::Unknown;LAST_ERROR=2;} return false;}
+    };
+    unsafe {
+        BUILTIN_ACTIVE=(i+1) as u8;
+        PATH_LEN=0;
+        TITLE_LEN=0;
+        let name=builtin_name(i).as_bytes();
+        TITLE_LEN=copy_bytes(&mut TITLE,name);
+        FILE_SIZE=size; SAMPLE_RATE=rate; CHANNELS=ch; BITS=bits;
+        DATA_OFF=data; DATA_LEN=len; PCM_FILE_POS=0; PCM_READY=0;
+        FORMAT=Format::WavPcm; LAST_ERROR=0; STATE=State::Stopped;
+    }
+    serial::write_str("[MEDIA] bundled WAV opened\n");
+    true
+}
 
 fn parse_wav(path:&str)->Option<(usize,u32,u16,u16,usize,usize)> {
     let size=fs::file_size(path)?;
@@ -89,7 +150,7 @@ pub fn init() {
         STATE=State::Empty; FORMAT=Format::Unknown; PATH_LEN=0; TITLE_LEN=0;
         FILE_SIZE=0; SAMPLE_RATE=0; CHANNELS=0; BITS=0; DATA_OFF=0; DATA_LEN=0;
         PCM_FILE_POS=0; PCM_READY=0; VOLUME=100; MUTED=false;
-        REPEAT=false; SHUFFLE=false; LAST_ERROR=0; PL_COUNT=0; PL_INDEX=0;
+        REPEAT=false; SHUFFLE=false; LAST_ERROR=0; PL_COUNT=0; PL_INDEX=0; BUILTIN_ACTIVE=0;
     }
     serial::write_str("[MEDIA] native streaming player core ready\n");
 }
@@ -136,7 +197,18 @@ pub fn refill_pcm()->usize {
         let n=PCM_BUF.min(remain);
         let n=n-(n%frame);
         if n==0 { PCM_READY=0; return 0; }
-        match fs::read_range(core::str::from_utf8_unchecked(&PATH[..PATH_LEN]),DATA_OFF+PCM_FILE_POS,&mut PCM[..n]) {
+        let got = if BUILTIN_ACTIVE != 0 {
+            let src = builtin_bytes((BUILTIN_ACTIVE-1) as usize);
+            let start = DATA_OFF + PCM_FILE_POS;
+            if start < src.len() {
+                let m = n.min(src.len()-start);
+                PCM[..m].copy_from_slice(&src[start..start+m]);
+                Some(m)
+            } else { Some(0) }
+        } else {
+            fs::read_range(core::str::from_utf8_unchecked(&PATH[..PATH_LEN]),DATA_OFF+PCM_FILE_POS,&mut PCM[..n])
+        };
+        match got {
             Some(got) if got>0 => { PCM_READY=got; got },
             _ => { PCM_READY=0; LAST_ERROR=3; STATE=State::Error; 0 }
         }
