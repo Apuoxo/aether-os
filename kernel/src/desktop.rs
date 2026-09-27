@@ -237,7 +237,9 @@ fn term_page_next() {
             TERM_PAGE_MODE = false;
             return;
         }
-        let rows = term_visible_rows().saturating_sub(1).max(1);
+        // Use the same viewport height as draw_window(). The footer occupies
+        // the last visible row, so the page step must match the scroll range.
+        let rows = term_visible_rows();
         if TERM_VIEW > rows {
             TERM_VIEW -= rows;
         } else {
@@ -251,10 +253,23 @@ fn term_page_next() {
 fn term_page_prev() {
     unsafe {
         let total = TERM_ROW + 1;
-        let rows = term_visible_rows().saturating_sub(1).max(1);
-        let max_start = if total > rows { total - rows } else { 0 };
-        if TERM_VIEW < max_start {
-            TERM_VIEW = (TERM_VIEW + rows).min(max_start);
+        let rows = term_visible_rows();
+        let max_view = if total > rows { total - rows } else { 0 };
+        if max_view == 0 {
+            TERM_VIEW = 0;
+            TERM_PAGE_MODE = false;
+            return;
+        }
+        if TERM_VIEW == 0 {
+            // Re-opened terminal starts at the live bottom. Backspace must
+            // enter the previous page from there.
+            TERM_VIEW = rows.min(max_view);
+            TERM_PAGE_MODE = true;
+            DIRTY_FULL = true;
+            return;
+        }
+        if TERM_VIEW < max_view {
+            TERM_VIEW = (TERM_VIEW + rows).min(max_view);
             TERM_PAGE_MODE = true;
             DIRTY_FULL = true;
         }
@@ -264,7 +279,7 @@ fn term_page_prev() {
 fn term_page_begin(start_row: usize) {
     unsafe {
         let total = TERM_ROW + 1;
-        let rows = term_visible_rows().saturating_sub(1).max(1);
+        let rows = term_visible_rows();
         if total <= rows || total <= start_row {
             TERM_PAGE_MODE = false;
             TERM_VIEW = 0;
@@ -549,6 +564,13 @@ fn open_win(slot: usize) {
         if WINS[slot].kind == WinKind::Settings {
             SETTINGS_VIEW = 0;
             CURSOR_PENDING = 0;
+        }
+        if WINS[slot].kind == WinKind::Terminal {
+            // A closed terminal is reopened at the live bottom. Do not leave
+            // stale pager/focus state from the previous window instance.
+            TERM_PAGE_MODE = false;
+            TERM_VIEW = 0;
+            INPUT_LEN = 0;
         }
         let was = WINS[slot].visible && !WINS[slot].minimized;
         WINS[slot].minimized = false;
