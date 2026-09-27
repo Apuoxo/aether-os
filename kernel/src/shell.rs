@@ -486,9 +486,26 @@ fn run_line(line: &[u8], len: usize) {
             write_str("PLAY_REQUEST=YES\n");
             write_str("STREAM_RUNNING=");
             write_str(if crate::drivers::audio::hda_stream_running() { "YES" } else { "NO" });
-            write_str("\nLPIB="); write_hex(crate::drivers::audio::hda_lpib() as usize);
+            write_str("\nLPIB0="); write_hex(crate::drivers::audio::hda_lpib() as usize);
+            // Sample the hardware position repeatedly. If LPIB advances, the
+            // HDA stream engine is consuming the BDL/DMA buffer; only then
+            // should codec pin/amp routing be investigated.
+            unsafe {
+                let mut d = 0u32;
+                while d < 500_000 { core::arch::asm!("pause", options(nostack, preserves_flags)); d += 1; }
+            }
+            crate::drivers::audio::playback_poll();
+            write_str(" LPIB1="); write_hex(crate::drivers::audio::hda_lpib() as usize);
+            unsafe {
+                let mut d = 0u32;
+                while d < 500_000 { core::arch::asm!("pause", options(nostack, preserves_flags)); d += 1; }
+            }
+            crate::drivers::audio::playback_poll();
+            write_str(" LPIB2="); write_hex(crate::drivers::audio::hda_lpib() as usize);
             write_str(" CTL="); write_hex(crate::drivers::audio::hda_stream_control() as usize);
-            write_str(" STAT="); write_hex(crate::drivers::audio::hda_stream_status() as usize); write_str("\n");
+            write_str(" STAT="); write_hex(crate::drivers::audio::hda_stream_status() as usize);
+            write_str(" CBL="); write_hex(crate::drivers::audio::hda_stream_cbl() as usize);
+            write_str(" LVI="); write_hex(crate::drivers::audio::hda_stream_lvi() as usize); write_str("\n");
         } else {
             write_str("PLAY_REQUEST=NO_EMBEDDED_WAV\n");
         }
