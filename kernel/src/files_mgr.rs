@@ -592,7 +592,40 @@ fn open_selected(){
         if SEL<0{return;}
         let mut a=[fs::ListItem{name:[0;24],name_len:0,size:0,is_dir:false};16];let n=fs::list_ex_path(core::str::from_utf8_unchecked(&CWD[..CWD_LEN]),&mut a);let s=SEL as usize;if s>=n{return;}
         if a[s].is_dir{let mut j=0;while j<a[s].name_len&&CWD_LEN<32{if CWD_LEN>1{CWD[CWD_LEN]=b'/';CWD_LEN+=1;}CWD[CWD_LEN]=a[s].name[j];CWD_LEN+=1;j+=1;}SEL=-1;VIEW=VIEW_ROOT;status(b"folder opened");return;}
-        let mut buf=[0u8;512];if let Some(r)=fs::read_name(&a[s].name,a[s].name_len,&mut buf){let mut i=0;while i<r&&i<512{PREVIEW[i]=buf[i];i+=1;}PREVIEW_LEN=r;VIEW=VIEW_TEXT;status(b"Preview opened");}else{status(b"Cannot open file");}
+        // Audio files are opened directly by the native media player.
+        // This is the Explorer -> Media Player handoff; no host-disk write is
+        // required and the player streams the selected AetherFS file.
+        let mut ext=[0u8;4];
+        if a[s].name_len>=4 {
+            let p=a[s].name_len-4;
+            ext[0]=a[s].name[p]; ext[1]=a[s].name[p+1]; ext[2]=a[s].name[p+2]; ext[3]=a[s].name[p+3];
+        }
+        let is_mp3=ext[0]==b'.' && (ext[1]|0x20)==b'm' && (ext[2]|0x20)==b'p' && (ext[3]|0x20)==b'3';
+        let is_wav=ext[0]==b'.' && (ext[1]|0x20)==b'w' && (ext[2]|0x20)==b'a' && (ext[3]|0x20)==b'v';
+        if is_mp3 || is_wav {
+            let mut path=[0u8;96];
+            let mut n=0usize;
+            if CWD_LEN>0 {
+                while n<CWD_LEN && n<95 { path[n]=CWD[n]; n+=1; }
+            }
+            if n==0 { path[0]=b'/'; n=1; }
+            if n>1 && path[n-1]!=b'/' && n<95 { path[n]=b'/'; n+=1; }
+            let mut j=0usize;
+            while j<a[s].name_len && n<95 { path[n]=a[s].name[j]; n+=1; j+=1; }
+            if let Ok(p)=core::str::from_utf8(&path[..n]) {
+                if crate::desktop::open_media_path(p) {
+                    status(b"Loaded in Media Player");
+                    return;
+                }
+            }
+            status(b"Media file open failed");
+            return;
+        }
+        let mut buf=[0u8;512];
+        if let Some(r)=fs::read_name(&a[s].name,a[s].name_len,&mut buf){
+            let mut i=0;while i<r&&i<512{PREVIEW[i]=buf[i];i+=1;}
+            PREVIEW_LEN=r;VIEW=VIEW_TEXT;status(b"Preview opened");
+        }else{status(b"Cannot open file");}
     }
 }
 fn delete_selected(){unsafe{if SEL<0{return;}let mut a=[fs::ListItem{name:[0;24],name_len:0,size:0,is_dir:false};16];let n=fs::list_ex(&mut a);let s=SEL as usize;if s<n&&fs::delete_name(&a[s].name,a[s].name_len){SEL=-1;status(b"Item deleted");}else{status(b"Delete failed");}}}
