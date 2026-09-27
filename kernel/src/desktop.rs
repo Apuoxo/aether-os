@@ -237,7 +237,7 @@ fn term_page_next() {
             TERM_PAGE_MODE = false;
             return;
         }
-        let rows = term_visible_rows().saturating_sub(1).max(1);
+        let rows = term_visible_rows().saturating_sub(2).max(1);
         if TERM_VIEW > rows {
             TERM_VIEW -= rows;
         } else {
@@ -248,10 +248,23 @@ fn term_page_next() {
     }
 }
 
+fn term_page_prev() {
+    unsafe {
+        let total = TERM_ROW + 1;
+        let rows = term_visible_rows().saturating_sub(2).max(1);
+        let max_start = if total > rows { total - rows } else { 0 };
+        if TERM_VIEW < max_start {
+            TERM_VIEW = (TERM_VIEW + rows).min(max_start);
+            TERM_PAGE_MODE = true;
+            DIRTY_FULL = true;
+        }
+    }
+}
+
 fn term_page_begin(start_row: usize) {
     unsafe {
         let total = TERM_ROW + 1;
-        let rows = term_visible_rows().saturating_sub(1).max(1);
+        let rows = term_visible_rows().saturating_sub(2).max(1);
         if total <= rows || total <= start_row {
             TERM_PAGE_MODE = false;
             TERM_VIEW = 0;
@@ -1397,9 +1410,7 @@ fn draw_window(idx: usize) {
                 }
                 let y = wy + TITLE_H as usize + 6 + (view_rows.saturating_sub(1)) * 10;
                 if y + 8 < wy + wh && focused {
-                    if TERM_PAGE_MODE {
-                        graphics::draw_str(wx + 8, y, "[SPACE] NEXT PAGE", 0x00FFFF00);
-                    } else {
+                    if !TERM_PAGE_MODE {
                         graphics::draw_str(wx + 8, y, "aether> ", 0x0000FF00);
                         let mut k = 0usize;
                         while k < INPUT_LEN {
@@ -1408,6 +1419,16 @@ fn draw_window(idx: usize) {
                         }
                         graphics::fill_rect(wx + 8 + 64 + INPUT_LEN * 8, y, 6, 8, COL_ACCENT);
                     }
+                }
+                // Terminal pager footer: always visible, so the controls do not
+                // consume a diagnostic output line or clutter the command text.
+                let footer_y = wy + wh - 22;
+                graphics::fill_rect(wx + 4, footer_y, ww - 8, 18, 0x00202020);
+                graphics::border_rect(wx + 4, footer_y, ww - 8, 18, 0x00505050);
+                if TERM_PAGE_MODE {
+                    graphics::draw_str(wx + 10, footer_y + 5, "SPACE: NEXT SCREEN    BACKSPACE: PREVIOUS SCREEN", 0x00FFFF00);
+                } else {
+                    graphics::draw_str(wx + 10, footer_y + 5, "SPACE: NEXT SCREEN    BACKSPACE: PREVIOUS SCREEN", 0x00A0A0A0);
                 }
             }
             WinKind::MediaPlayer => {
@@ -2357,6 +2378,8 @@ fn handle_key(ch: u8) {
             DIRTY_FULL = true;
         } else if ch == b' ' && INPUT_LEN == 0 && (TERM_PAGE_MODE || TERM_VIEW > 0) {
             term_page_next();
+        } else if ch == 0x08 && INPUT_LEN == 0 && (TERM_PAGE_MODE || TERM_VIEW > 0) {
+            term_page_prev();
         } else if ch == 0x08 {
             TERM_PAGE_MODE = false;
             TERM_VIEW = 0;
@@ -2495,64 +2518,3 @@ pub fn run() -> ! {
                             }
                         }
                     }
-                }
-            } else if let Some(ch) = ps2::scancode_to_ascii(sc) {
-                handle_key(ch);
-            }
-        }
-        while let Some(ev) = input::poll() {
-            if ev.pressed {
-                if handle_special_key(ev.hid_code) {
-                    continue;
-                }
-                if ev.key != 0 {
-                    handle_key(ev.key);
-                }
-            }
-        }
-
-        unsafe {
-            if WIFI_UI_SCAN_REQUESTED {
-                WIFI_UI_SCAN_REQUESTED = false;
-                if crate::drivers::wifi::alive_seen() && crate::drivers::wifi::command_queue_ready() {
-                    WIFI_UI_STATUS = if crate::drivers::wifi::scan_24ghz() { 1 } else { 3 };
-                } else {
-                    WIFI_UI_STATUS = 3;
-                }
-                DIRTY_FULL = true;
-            }
-        }
-
-        crate::drivers::xhci::poll_mouse_live();
-        crate::drivers::audio::playback_poll();
-
-        static mut CLOCK_TICK: u32 = 0;
-        unsafe {
-            CLOCK_TICK += 1;
-            // Clock strip only when second changes — no full-screen fill
-            if CLOCK_TICK >= 800 {
-                CLOCK_TICK = 0;
-                let (_y, _mo, _d, _h, _mi, s) = crate::time::rtc_read();
-                if s != LAST_SEC {
-                    LAST_SEC = s;
-                    cursor_restore();
-                    redraw_status_strip();
-                    cursor_save_and_draw(MX, MY);
-                }
-            }
-            if DIRTY_FULL {
-                CURSOR_SAVED = false;
-                render();
-                DIRTY_FULL = false;
-                DIRTY_CURSOR = false;
-            } else if DIRTY_CURSOR {
-                cursor_save_and_draw(MX, MY);
-                DIRTY_CURSOR = false;
-            }
-        }
-        let mut d = 0u32;
-        while d < 200 {
-            d += 1;
-        }
-    }
-}
