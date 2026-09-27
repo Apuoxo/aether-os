@@ -14,6 +14,9 @@ static mut DIAG_REPORTS: u32 = 0;
 static mut DIAG_TRB_QUEUED: u32 = 0;
 static mut DIAG_COMPLETIONS: u32 = 0;
 static mut DIAG_FOUND: u32 = 0;
+static mut DIAG_PORTS: u8 = 0;
+static mut DIAG_CCS_MASK: u32 = 0;
+static mut DIAG_PORTSC_LAST: u32 = 0;
 
 pub fn diag_xhci_ok() -> bool { unsafe { DIAG_XHCI } }
 pub fn diag_dev_found() -> bool { unsafe { DIAG_DEV } }
@@ -24,6 +27,9 @@ pub fn diag_reports() -> u32 { unsafe { DIAG_REPORTS } }
 pub fn diag_trb_queued() -> u32 { unsafe { DIAG_TRB_QUEUED } }
 pub fn diag_completions() -> u32 { unsafe { DIAG_COMPLETIONS } }
 pub fn diag_found_count() -> u32 { unsafe { DIAG_FOUND } }
+pub fn diag_ports() -> u8 { unsafe { DIAG_PORTS } }
+pub fn diag_ccs_mask() -> u32 { unsafe { DIAG_CCS_MASK } }
+pub fn diag_portsc_last() -> u32 { unsafe { DIAG_PORTSC_LAST } }
 
 // Persistent HID mouse interrupt path for desktop loop
 static mut MOUSE_LIVE: bool = false;
@@ -388,9 +394,20 @@ fn setup_rings(x: &mut Xhci) -> bool {
 // ─── Port reset ───────────────────────────────────────────────
 
 fn find_connected_port(x: &Xhci) -> Option<u8> {
+    unsafe {
+        DIAG_PORTS = x.ports;
+        DIAG_CCS_MASK = 0;
+        DIAG_PORTSC_LAST = 0;
+    }
     let mut p = 1u8;
     while p <= x.ports {
         let ps = unsafe { r32(x.portsc(p), 0) };
+        unsafe {
+            if ps & PORTSC_CCS != 0 {
+                DIAG_CCS_MASK |= 1u32 << ((p - 1) as u32);
+            }
+            DIAG_PORTSC_LAST = ps;
+        }
         serial::write_str("  [PORT] ");
         serial::write_usize(p as usize);
         serial::write_str(" PORTSC=");
