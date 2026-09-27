@@ -10,6 +10,7 @@ const MAX_PAGES: usize = 32768;
 static mut BITMAP: [u64; MAX_PAGES / 64] = [0; MAX_PAGES / 64];
 static TOTAL: AtomicUsize = AtomicUsize::new(0);
 static FREE: AtomicUsize = AtomicUsize::new(0);
+static START_PAGE: AtomicUsize = AtomicUsize::new(0);
 
 pub fn init(start: usize, size: usize) {
     let start_page = start / PAGE_SIZE;
@@ -27,6 +28,7 @@ pub fn init(start: usize, size: usize) {
             i += 1;
         }
     }
+    START_PAGE.store(start_page, Ordering::SeqCst);
     TOTAL.store(usable, Ordering::SeqCst);
     FREE.store(usable, Ordering::SeqCst);
 }
@@ -42,7 +44,7 @@ pub fn alloc_page() -> Option<usize> {
                 let bit = word.trailing_zeros() as usize;
                 BITMAP[idx] &= !(1u64 << bit);
                 FREE.fetch_sub(1, Ordering::SeqCst);
-                return Some((start_page + idx * 64 + bit) * PAGE_SIZE);
+                return Some((START_PAGE.load(Ordering::SeqCst) + idx * 64 + bit) * PAGE_SIZE);
             }
             idx += 1;
         }
@@ -72,11 +74,11 @@ pub fn alloc_pages(count: usize) -> Option<usize> {
     let total = TOTAL.load(Ordering::SeqCst);
     unsafe {
         let mut start = 0usize;
-        while start + count <= total && start + count <= MAX_PAGES.saturating_sub(start_page) {
+        while start + count <= total && start + count <= MAX_PAGES.saturating_sub(START_PAGE.load(Ordering::SeqCst)) {
             let mut ok = true;
             let mut i = 0usize;
             while i < count {
-                let page = start_page + start + i;
+                let page = START_PAGE.load(Ordering::SeqCst) + start + i;
                 let idx = page / 64;
                 let bit = page % 64;
                 if idx >= BITMAP.len() || (BITMAP[idx] & (1u64 << bit)) == 0 {
@@ -88,14 +90,14 @@ pub fn alloc_pages(count: usize) -> Option<usize> {
             if ok {
                 i = 0;
                 while i < count {
-                    let page = start + i;
+                    let page = START_PAGE.load(Ordering::SeqCst) + start + i;
                     let idx = page / 64;
                     let bit = page % 64;
                     BITMAP[idx] &= !(1u64 << bit);
                     i += 1;
                 }
                 FREE.fetch_sub(count, Ordering::SeqCst);
-                return Some((start_page + start) * PAGE_SIZE);
+                return Some((START_PAGE.load(Ordering::SeqCst) + start) * PAGE_SIZE);
             }
             start += 1;
         }
