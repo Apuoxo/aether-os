@@ -1,5 +1,3 @@
-#![no_std]
-
 mod minimp3;
 
 #[cfg(test)]
