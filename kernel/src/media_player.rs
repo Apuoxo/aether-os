@@ -222,10 +222,10 @@ pub fn consume_pcm(n:usize) {
     }
 }
 
-pub fn play(){unsafe{if DATA_LEN>0 && (STATE==State::Stopped||STATE==State::Paused){STATE=State::Playing;let _=refill_pcm();}}}
-pub fn pause(){unsafe{if STATE==State::Playing{STATE=State::Paused;}}}
-pub fn stop(){unsafe{if DATA_LEN>0{PCM_FILE_POS=0;PCM_READY=0;STATE=State::Stopped;}}}
-pub fn toggle_play(){unsafe{if STATE==State::Playing{STATE=State::Paused}else if DATA_LEN>0{STATE=State::Playing;let _=refill_pcm();}}}
+pub fn play(){unsafe{if DATA_LEN>0 && (STATE==State::Stopped||STATE==State::Paused){STATE=State::Playing;let _=refill_pcm();if !crate::drivers::audio::playback_start(SAMPLE_RATE,CHANNELS,BITS){STATE=State::Error;}}}}
+pub fn pause(){unsafe{if STATE==State::Playing{crate::drivers::audio::playback_stop();STATE=State::Paused;}}}
+pub fn stop(){crate::drivers::audio::playback_stop();unsafe{if DATA_LEN>0{PCM_FILE_POS=0;PCM_READY=0;let _=refill_pcm();STATE=State::Stopped;}}}
+pub fn toggle_play(){unsafe{if STATE==State::Playing{crate::drivers::audio::playback_stop();STATE=State::Paused}else if DATA_LEN>0{STATE=State::Playing;let _=refill_pcm();if !crate::drivers::audio::playback_start(SAMPLE_RATE,CHANNELS,BITS){STATE=State::Error;}}}}
 
 pub fn seek_permille(v:u16){
     unsafe{
