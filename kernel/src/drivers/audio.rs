@@ -402,10 +402,12 @@ fn probe_hda() {
 
                 // One response is enough for synchronous codec discovery.
                 hda_w16(mmio, 0x5A, 1);
-                hda_w8(mmio, 0x4C, 0x02);
-                hda_w8(mmio, 0x5C, 0x02);
+                // Immediate Command/Response must not run while CORB/RIRB engines
+                // are active. Leave the rings programmed but disabled during codec probe.
+                hda_w8(mmio, 0x4C, 0);
+                hda_w8(mmio, 0x5C, 0);
 
-                serial::write_str("[AUDIO] HDA CODEC_CMD=IMMEDIATE; CORB/RIRB reserved for PCM/event path CORB=");
+                serial::write_str("[AUDIO] HDA CODEC_CMD=IMMEDIATE; CORB/RIRB DISABLED DURING PROBE CORB=");
                 serial::write_hex(corb_phys);
                 serial::write_str(" RIRB=");
                 serial::write_hex(rirb_phys);
