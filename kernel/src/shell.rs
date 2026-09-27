@@ -300,6 +300,51 @@ fn aud_probe_one(codec: u8, node: u8, param: u16) -> crate::drivers::audio::HdaV
     d
 }
 
+fn aud_readback(codec: u8, node: u8, label: &str, verb20: u32) {
+    let d = crate::drivers::audio::hda_raw_verb(codec, node, verb20);
+    write_str(label);
+    write_str("=");
+    write_str(if d.ok { "OK:" } else { "ERR:" });
+    write_hex(d.response as usize);
+    write_str("\n");
+}
+
+fn cmd_aud_readback() {
+    let codec = crate::drivers::audio::hda_codec();
+    let pin = crate::drivers::audio::hda_analog_pin();
+    let conv = crate::drivers::audio::hda_output_conv();
+
+    write_str("======== AUD CODEC READBACK ========\n");
+    write_str("CODEC="); write_hex(codec as usize);
+    write_str(" PIN="); write_hex(pin as usize);
+    write_str(" CONV="); write_hex(conv as usize);
+    write_str("\n");
+
+    if codec == 0 && pin == 0 && conv == 0 {
+        write_str("READBACK=NO_ACTIVE_CODEC_PATH\n");
+        write_str("======== AUD READBACK END ========\n");
+        return;
+    }
+
+    if conv != 0 {
+        aud_readback(codec, conv, "CONV_FMT", 0xF0A);
+        aud_readback(codec, conv, "CONV_STREAM", 0xF06);
+        aud_readback(codec, conv, "CONV_POWER", 0xF05);
+        aud_readback(codec, conv, "CONV_AMP_L", 0xB00 | 0xA000);
+        aud_readback(codec, conv, "CONV_AMP_R", 0xB00 | 0x8000);
+    }
+
+    if pin != 0 {
+        aud_readback(codec, pin, "PIN_CTL", 0xF07);
+        aud_readback(codec, pin, "PIN_POWER", 0xF05);
+        aud_readback(codec, pin, "PIN_EAPD", 0xF0C);
+        aud_readback(codec, pin, "PIN_AMP_L", 0xB00 | 0xA000);
+        aud_readback(codec, pin, "PIN_AMP_R", 0xB00 | 0x8000);
+    }
+
+    write_str("======== AUD READBACK END ========\n");
+}
+
 fn cmd_aud_extended() {
     write_str("======== AUD HDA TOPOLOGY ========\n");
     if !crate::drivers::audio::hda_mmio_ready() {
@@ -506,6 +551,7 @@ fn run_line(line: &[u8], len: usize) {
             write_str(" STAT="); write_hex(crate::drivers::audio::hda_stream_status() as usize);
             write_str(" CBL="); write_hex(crate::drivers::audio::hda_stream_cbl() as usize);
             write_str(" LVI="); write_hex(crate::drivers::audio::hda_stream_lvi() as usize); write_str("\n");
+            cmd_aud_readback();
         } else {
             write_str("PLAY_REQUEST=NO_EMBEDDED_WAV\n");
         }
