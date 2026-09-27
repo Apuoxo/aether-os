@@ -686,6 +686,9 @@ fn cmd_mous() {
     write_str(" PORTS="); write_usize(crate::drivers::xhci::diag_ports() as usize);
     write_str(" CCS_MASK="); write_hex(crate::drivers::xhci::diag_ccs_mask() as usize);
     write_str(" PORTSC_LAST="); write_hex(crate::drivers::xhci::diag_portsc_last() as usize);
+    write_str("\n");
+    write_str("PRE_CCS_MASK="); write_hex(crate::drivers::xhci::diag_pre_ccs_mask() as usize);
+    write_str(" PRE_PORTSC_LAST="); write_hex(crate::drivers::xhci::diag_pre_portsc_last() as usize);
     write_str(" DEV=");
     write_str(if crate::drivers::xhci::diag_dev_found() { "FOUND" } else { "NO" });
     write_str(" HID=");
