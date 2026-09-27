@@ -307,14 +307,18 @@ fn refill_mp3()->usize {
             CHANNELS=info.channels.num() as u16;
             BITS=16;
 
-            let samples=info.samples_produced.min(MP3_FRAME_SAMPLES);
-            let bytes_needed=samples.saturating_mul(2);
+            // minimp3 reports samples per channel. PCM is interleaved,
+            // so stereo needs samples * channels values.
+            let channels=info.channels.num() as usize;
+            let sample_count=info.samples_produced.min(MP3_FRAME_SAMPLES / channels.max(1));
+            let sample_values=sample_count.saturating_mul(channels);
+            let bytes_needed=sample_values.saturating_mul(2);
             let space=PCM_BUF.saturating_sub(PCM_READY);
             let bytes=bytes_needed.min(space);
             let mut src=0usize;
             let mut dst=PCM_READY;
 
-            while src+1 < bytes {
+            while src < bytes {
                 let mut v=MP3_FRAME[src/2];
                 if v>1.0 { v=1.0; } else if v < -1.0 { v=-1.0; }
                 let s=(v*32767.0) as i16;
