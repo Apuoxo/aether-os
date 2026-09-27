@@ -301,10 +301,25 @@ fn cmd_aud() {
     write_str("STATESTS="); write_hex(crate::drivers::audio::hda_statests() as usize);
     write_str(" CODEC_SELECTED="); write_usize(crate::drivers::audio::hda_codec() as usize); write_str("\n");
 
-    write_str("VERB_MODE=IMMEDIATE OK=");
+    write_str("CTRL GCTL="); write_hex(crate::drivers::audio::hda_gctl() as usize);
+    write_str(" INTSTS="); write_hex(crate::drivers::audio::hda_intsts() as usize);
+    write_str(" WALCLK="); write_hex(crate::drivers::audio::hda_walclk() as usize); write_str("\n");
+
+    write_str("RINGS CORBSIZE="); write_hex(crate::drivers::audio::hda_corb_size() as usize);
+    write_str(" RIRBSIZE="); write_hex(crate::drivers::audio::hda_rirb_size() as usize);
+    write_str(" CORBRP="); write_hex(crate::drivers::audio::hda_corb_rp() as usize);
+    write_str(" CORBWP="); write_hex(crate::drivers::audio::hda_corb_wp() as usize); write_str("\n");
+    write_str("CORBCTL="); write_hex(crate::drivers::audio::hda_corb_ctl() as usize);
+    write_str(" RIRBWP="); write_hex(crate::drivers::audio::hda_rirb_wp() as usize);
+    write_str(" RIRBCTL="); write_hex(crate::drivers::audio::hda_rirb_ctl() as usize);
+    write_str(" RIRBSTS="); write_hex(crate::drivers::audio::hda_rirb_sts() as usize);
+    write_str(" RINTCNT="); write_hex(crate::drivers::audio::hda_rintcnt() as usize); write_str("\n");
+
+    write_str("VERB_MODE=CORB_RIRB OK=");
     write_str(if crate::drivers::audio::hda_verb_ok() { "YES" } else { "NO" });
     write_str(" LAST="); write_hex(crate::drivers::audio::hda_verb_last() as usize);
     write_str(" RESP="); write_hex(crate::drivers::audio::hda_verb_resp() as usize);
+    write_str(" META="); write_hex(crate::drivers::audio::hda_verb_meta() as usize);
     write_str(" ICIS="); write_hex(crate::drivers::audio::hda_verb_icis() as usize); write_str("\n");
 
     write_str("CODEC0=");
