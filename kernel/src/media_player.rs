@@ -523,9 +523,41 @@ pub fn toggle_repeat(){unsafe{REPEAT=!REPEAT;}}
 pub fn toggle_shuffle(){unsafe{SHUFFLE=!SHUFFLE;}}
 
 pub fn add_to_playlist(path:&str)->bool{
-    unsafe{if PL_COUNT>=MAX_PLAYLIST{return false;}PL_LEN[PL_COUNT]=copy_bytes(&mut PLAYLIST[PL_COUNT],path.as_bytes());PL_COUNT+=1;true}
+    unsafe{
+        let n=path.as_bytes().len().min(MAX_PATH);
+        let mut i=0usize;
+        while i<PL_COUNT{
+            if PL_LEN[i]==n {
+                let mut same=true;
+                let mut j=0usize;
+                while j<n { if PLAYLIST[i][j]!=path.as_bytes()[j] {same=false;break;} j+=1; }
+                if same { PL_INDEX=i; return true; }
+            }
+            i+=1;
+        }
+        if PL_COUNT>=MAX_PLAYLIST{return false;}
+        PL_LEN[PL_COUNT]=copy_bytes(&mut PLAYLIST[PL_COUNT],path.as_bytes());
+        PL_INDEX=PL_COUNT;
+        PL_COUNT+=1;
+        true
+    }
 }
 pub fn playlist_count()->usize{unsafe{PL_COUNT}}
+fn open_playlist_index(i:usize)->bool{
+    unsafe{
+        if i>=PL_COUNT{return false;}
+        let n=PL_LEN[i]; let mut p=[0u8;MAX_PATH]; let mut j=0usize;
+        while j<n{p[j]=PLAYLIST[i][j];j+=1;}
+        if let Ok(s)=core::str::from_utf8(&p[..n]) { open(s) } else { false }
+    }
+}
+pub fn previous()->bool{
+    unsafe{
+        if PL_COUNT==0{return false;}
+        if PL_INDEX>0{PL_INDEX-=1}else if REPEAT{PL_INDEX=PL_COUNT-1}else{return false;}
+        open_playlist_index(PL_INDEX)
+    }
+}
 pub fn next()->bool{
     unsafe{
         if PL_COUNT==0{return false;}
@@ -533,7 +565,6 @@ pub fn next()->bool{
         else if PL_INDEX+1<PL_COUNT{PL_INDEX+=1}
         else if REPEAT{PL_INDEX=0}
         else{return false}
-        let n=PL_LEN[PL_INDEX]; let mut p=[0u8;MAX_PATH]; let mut i=0; while i<n{p[i]=PLAYLIST[PL_INDEX][i];i+=1;}
-        if let Ok(s)=core::str::from_utf8(&p[..n]) { open(s) } else { false }
+        open_playlist_index(PL_INDEX)
     }
 }
