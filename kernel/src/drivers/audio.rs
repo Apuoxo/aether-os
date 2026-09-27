@@ -510,7 +510,7 @@ fn probe_hda() {
                                 let typ=((caps>>20)&0xF) as u8;
                                 if typ==0 { found=cur; break; }
                                 let lp=match send_verb(((codec as u32)<<28)|((cur as u32)<<20)|(0xF00u32<<8)|0x0E) {
-                                    Some(v)=v, None=>{fi+=1;continue}
+                                    Some(v)=>v, None=>{fi+=1;continue}
                                 };
                                 let n=(lp&0xFF).min(16) as usize;
                                 let mut ci=0usize;
