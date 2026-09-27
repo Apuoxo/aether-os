@@ -825,11 +825,14 @@ fn probe_hda() {
                             serial::write_str("[AUDIO] HDA PIN ROUTE SEL_NOT_FOUND\n");
                         }
                         // Program the complete confirmed ALC269 speaker path:
-                        // DAC 02 -> mixer 0C -> PIN 14.  The mixer was previously
-                        // left at gain 0 on its output.  Explicitly unmute/gain both
-                        // the selected mixer input and output so the PCM stream has
-                        // a non-zero analog level before reaching the pin.
+                        // DAC 02 -> mixer 0C input[0] -> mixer 0C output -> PIN 14.
+                        // Explicitly unmute/gain the selected DAC input amplifier and
+                        // the mixer output amplifier so PCM has a non-zero analog level.
                         let mixer_cmd = ((codec as u32)<<28)|((0x0Cu32)<<20);
+                        // Set input amp index 0 (connection-list entry 0 = DAC 02).
+                        // 0x4000=input, 0x3000=left+right, 0x26=gain 38.
+                        let _ = send_verb(mixer_cmd | (0x300u32<<8) | 0x7026);
+                        // Set mixer output amp, left+right, unmuted, gain 38.
                         let _ = send_verb(mixer_cmd | (0x300u32<<8) | 0xB026); // mixer output gain/unmute
                         let conv_cmd = ((codec as u32)<<28)|((output_conv as u32)<<20);
                         // ALC269 laptop speaker DAC: unmute with usable output gain.
