@@ -37,8 +37,11 @@ pub fn alloc_page() -> Option<usize> {
     if FREE.load(Ordering::SeqCst) == 0 { return None; }
     let total = TOTAL.load(Ordering::SeqCst);
     unsafe {
-        let mut idx = 0;
-        while idx < (total + 63) / 64 && idx < BITMAP.len() {
+        let start_page = START_PAGE.load(Ordering::SeqCst);
+        let first_idx = start_page / 64;
+        let end_idx = (start_page + total + 63) / 64;
+        let mut idx = first_idx;
+        while idx < end_idx && idx < BITMAP.len() {
             let word = BITMAP[idx];
             if word != 0 {
                 let bit = word.trailing_zeros() as usize;
