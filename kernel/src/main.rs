@@ -25,6 +25,7 @@ mod desktop;
 mod files_mgr;
 mod ring3_resume;
 mod time;
+mod media_player;
 mod log;
 mod shell;
 mod userspace;
@@ -252,6 +253,7 @@ pub extern "C" fn kernel_main(mbi: usize) -> ! {
         serial::write_str("[DESKTOP] starting (no Ring3)\n");
         drivers::video::init();
         drivers::audio::init();
+        media_player::init();
         drivers::net::init();
         drivers::wifi::init();
         drivers::pci_usb_diag::dump_usb_controllers();
