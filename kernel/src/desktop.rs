@@ -694,10 +694,14 @@ fn apply_mouse_delta(dx: i32, dy: i32) {
 
 fn handle_terminal_scroll_click(mx: i32, my: i32) -> bool {
     unsafe {
-        if FOCUS >= MAX_WIN || !WINS[FOCUS].visible || WINS[FOCUS].kind != WinKind::Terminal {
-            return false;
-        }
-        let w = &WINS[FOCUS];
+        // Resolve the terminal under the pointer, not merely the current focus.
+        // This makes the scrollbar usable even when another window owns focus.
+        let idx = match hit_window(mx, my) {
+            Some(i) if WINS[i].kind == WinKind::Terminal => i,
+            _ => return false,
+        };
+        FOCUS = idx;
+        let w = &WINS[idx];
         let bar_x = w.x + w.w - 18;
         let bar_top = w.y + TITLE_H as i32 + 4;
         let bar_bottom = w.y + w.h - 6;
@@ -820,7 +824,8 @@ fn handle_mouse_buttons(buttons: u8) {
             }
         }
         if left != 0 && prev_left == 0 {
-            // Terminal scrollbar is a real clickable control, independent of keyboard input.
+            // Terminal scrollbar gets first refusal on a mouse-down.
+            // Do not let generic window dragging/content handlers consume it.
             if handle_terminal_scroll_click(mx, my) {
                 PREV_MB = buttons;
                 MB = buttons;
@@ -1149,14 +1154,17 @@ fn handle_mouse_buttons(buttons: u8) {
             RESIZING = false;
             TERM_SCROLL_DRAG = false;
         }
+        if TERM_SCROLL_DRAG && left != 0 {
+            term_scroll_set_from_mouse(my);
+            PREV_MB = buttons;
+            MB = buttons;
+            return;
+        }
         if DRAGGING && left != 0 {
             WINS[DRAG_WIN].x = mx - DRAG_OX;
             WINS[DRAG_WIN].y = my - DRAG_OY;
             clamp_win(DRAG_WIN);
             render_drag_step();
-        }
-        if TERM_SCROLL_DRAG && left != 0 {
-            term_scroll_set_from_mouse(my);
         }
         if RESIZING && left != 0 {
             let idx = RESIZE_WIN;
