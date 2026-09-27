@@ -1195,7 +1195,7 @@ fn hid_queue_interrupt_in_len(
         let t = &mut *trbs.add(*enq);
         t.lo = buf as u32;
         t.hi = 0;
-        t.status = core::cmp::min(len, 0x1FFFF);
+        t.status = core::cmp::min(len, 0x1FFFFusize) as u32;
         t.control = (TRB_NORMAL << 10) | TRB_IOC | *cycle;
         *enq += 1;
         DIAG_TRB_QUEUED = DIAG_TRB_QUEUED.wrapping_add(1);
