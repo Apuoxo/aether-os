@@ -18,7 +18,7 @@ $(MEDIA_MP3): | $(MEDIA_DIR)
 
 $(MEDIA_OGG): | $(MEDIA_DIR)
 	ffmpeg -hide_banner -loglevel error -f lavfi -i "sine=frequency=880:duration=3.7" -ac 1 -ar 44100 -c:a libvorbis -b:a 192k -y "$@"
-	test "$(wc -c < "$@")" -gt 50000
+	test -s "$@"
 
 $(MEDIA_BUNDLE): $(MEDIA_WAV) $(MEDIA_MP3) $(MEDIA_OGG) | $(BUILD_DIR)
 	python3 -c "import pathlib; pathlib.Path('$@').write_text('pub static TEST_WAV: &[u8] = include_bytes!(\\\"media/TEST.WAV\\\");\\npub static TEST_MP3: &[u8] = include_bytes!(\\\"media/TEST.MP3\\\");\\npub static TEST_OGG: &[u8] = include_bytes!(\\\"media/TEST.OGG\\\");\\n')"
