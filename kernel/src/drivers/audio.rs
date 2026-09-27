@@ -46,6 +46,13 @@ unsafe fn hda_r16(base: usize, off: usize) -> u16 {
 unsafe fn hda_r32(base: usize, off: usize) -> u32 {
     core::ptr::read_volatile((base + off) as *const u32)
 }
+unsafe fn hda_w32(base: usize, off: usize, v: u32) {
+    core::ptr::write_volatile((base + off) as *mut u32, v);
+}
+fn wait_short() {
+    let mut i = 0u32;
+    while i < 100_000 { core::hint::spin_loop(); i += 1; }
+}
 
 pub fn speaker_ok() -> bool { unsafe { SPEAKER_OK } }
 pub fn hda_found() -> bool { unsafe { HDA_FOUND } }
@@ -166,7 +173,48 @@ fn probe_hda() {
                 serial::write_str(" RIRBSIZE=");
                 serial::write_hex(rirb_size as usize);
                 serial::write_str("\n");
-                serial::write_str("[AUDIO] HDA controller not reset; codec/DMA stage pending\n");
+                hda_w32(mmio, 0x08, gctl & !1);
+                let mut reset_ok = false;
+                let mut n = 0u32;
+                while n < 1000 {
+                    if hda_r32(mmio, 0x08) & 1 == 0 { reset_ok = true; break; }
+                    n += 1;
+                    core::hint::spin_loop();
+                }
+                if !reset_ok {
+                    serial::write_str("[AUDIO] HDA RESET_ASSERT_TIMEOUT\n");
+                    return;
+                }
+
+                hda_w32(mmio, 0x08, hda_r32(mmio, 0x08) | 1);
+                let mut running = false;
+                n = 0;
+                while n < 5000 {
+                    if hda_r32(mmio, 0x08) & 1 != 0 { running = true; break; }
+                    n += 1;
+                    core::hint::spin_loop();
+                }
+                if !running {
+                    serial::write_str("[AUDIO] HDA RESET_RELEASE_TIMEOUT\n");
+                    return;
+                }
+
+                // Codec enumeration may take up to 25 HDA frames after CRST=1.
+                let mut d = 0;
+                while d < 6 { wait_short(); d += 1; }
+
+                let states = hda_r16(mmio, 0x0E);
+                serial::write_str("[AUDIO] HDA RESET=OK STATESTS=");
+                serial::write_hex(states as usize);
+                serial::write_str("\n");
+                if states == 0 {
+                    serial::write_str("[AUDIO] HDA CODEC_NONE\n");
+                    return;
+                }
+                serial::write_str("[AUDIO] HDA CODEC_ADDRS=");
+                serial::write_hex(states as usize);
+                serial::write_str("\n");
+                serial::write_str("[AUDIO] HDA codec transport next: CORB/RIRB\n");
                 return;
             }
         }
