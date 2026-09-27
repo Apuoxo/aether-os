@@ -26,6 +26,7 @@ mod files_mgr;
 mod ring3_resume;
 mod time;
 mod media_builtin;
+mod mp3;
 mod media_player;
 mod log;
 mod shell;
