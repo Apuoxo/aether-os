@@ -78,6 +78,42 @@ pub fn speaker_ok() -> bool { unsafe { SPEAKER_OK } }
 pub fn hda_found() -> bool { unsafe { HDA_FOUND } }
 pub fn hda_bar0() -> u64 { unsafe { HDA_BAR0 } }
 pub fn hda_mmio_ready() -> bool { unsafe { HDA_MMIO_READY } }
+pub fn hda_stream_ready() -> bool { unsafe { HDA_STREAM_READY } }
+pub fn hda_stream_running() -> bool { unsafe { HDA_STREAM_RUNNING } }
+pub fn hda_stream_base() -> usize { unsafe { HDA_STREAM_BASE } }
+pub fn hda_stream_format() -> u16 { unsafe { HDA_STREAM_FMT } }
+pub fn hda_dma_phys() -> usize { unsafe { HDA_DMA_PHYS } }
+pub fn hda_bdl_phys() -> usize { unsafe { HDA_BDL_PHYS } }
+pub fn hda_dma_total() -> usize { unsafe { HDA_DMA_TOTAL } }
+pub fn hda_dma_next() -> usize { unsafe { HDA_DMA_NEXT } }
+pub fn hda_lpib() -> u32 {
+    unsafe {
+        if !HDA_MMIO_READY || !HDA_STREAM_READY { return 0; }
+        hda_r32(HDA_BAR0 as usize, HDA_STREAM_BASE + 0x04)
+    }
+}
+pub fn hda_stream_control() -> u32 {
+    unsafe {
+        if !HDA_MMIO_READY || !HDA_STREAM_READY { return 0; }
+        hda_r32(HDA_BAR0 as usize, HDA_STREAM_BASE)
+    }
+}
+pub fn hda_stream_status() -> u8 {
+    unsafe {
+        if !HDA_MMIO_READY || !HDA_STREAM_READY { return 0; }
+        hda_r8(HDA_BAR0 as usize, HDA_STREAM_BASE + 0x03)
+    }
+pub fn hda_stream_cbl() -> u32 {
+    unsafe {
+        if !HDA_MMIO_READY || !HDA_STREAM_READY { return 0; }
+        hda_r32(HDA_BAR0 as usize, HDA_STREAM_BASE + 0x08)
+    }
+pub fn hda_stream_lvi() -> u16 {
+    unsafe {
+        if !HDA_MMIO_READY || !HDA_STREAM_READY { return 0; }
+        hda_r16(HDA_BAR0 as usize, HDA_STREAM_BASE + 0x0C)
+    }
+}
 
 pub fn beep() { beep_hz(880, 12); }
 
