@@ -830,8 +830,7 @@ fn probe_hda() {
                         // the selected mixer input and output so the PCM stream has
                         // a non-zero analog level before reaching the pin.
                         let mixer_cmd = ((codec as u32)<<28)|((0x0Cu32)<<20);
-                        let _ = send_verb(mixer_cmd | (0x300u32<<8) | 0xB026); // mixer output amp
-                        let _ = send_verb(mixer_cmd | (0x300u32<<8) | 0xB026); // explicit output gain/unmute
+                        let _ = send_verb(mixer_cmd | (0x300u32<<8) | 0xB026); // mixer output gain/unmute
                         let conv_cmd = ((codec as u32)<<28)|((output_conv as u32)<<20);
                         // ALC269 laptop speaker DAC: unmute with usable output gain.
                         let _ = send_verb(conv_cmd | (0x300u32<<8) | 0xB026);
