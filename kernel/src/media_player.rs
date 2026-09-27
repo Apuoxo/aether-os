@@ -42,6 +42,7 @@ static mut PL_LEN: [usize; MAX_PLAYLIST] = [0; MAX_PLAYLIST];
 static mut PL_COUNT: usize = 0;
 static mut PL_INDEX: usize = 0;
 static mut BUILTIN_ACTIVE: u8 = 0;
+static mut SELECTED_BUILTIN: usize = 0;
 
 fn le16(b: &[u8], p: usize) -> u16 { (b[p] as u16) | ((b[p+1] as u16) << 8) }
 fn le32(b: &[u8], p: usize) -> u32 {
@@ -87,6 +88,13 @@ pub fn builtin_kind(i:usize)->&'static str {
 pub fn builtin_bytes(i:usize)->&'static [u8] {
     match i { 0=>media_builtin::TEST_WAV, 1=>media_builtin::TEST_MP3, 2=>media_builtin::TEST_OGG, _=>&[] }
 }
+pub fn selected_builtin()->usize { unsafe { SELECTED_BUILTIN } }
+pub fn select_builtin(i:usize)->bool {
+    if i>=builtin_count() { return false; }
+    unsafe { SELECTED_BUILTIN=i; }
+    true
+}
+
 pub fn builtin_path(i:usize)->&'static str {
     match i { 0=>"/MEDIA/TEST.WAV", 1=>"/MEDIA/TEST.MP3", 2=>"/MEDIA/TEST.OGG", _=>"" }
 }
@@ -104,7 +112,7 @@ pub fn open_embedded_wav()->bool {
             FORMAT=Format::WavPcm; LAST_ERROR=0; STATE=State::Stopped;
             BUILTIN_ACTIVE=1;
         }
-        serial::write_str("[MEDIA] embedded TEST.WAV opened directly\\n");
+        serial::write_str("[MEDIA] embedded TEST.WAV opened directly\n");
         true
     } else {
         serial::write_str("[MEDIA] embedded TEST.WAV parse failed\\n");
@@ -180,7 +188,7 @@ fn parse_wav(path:&str)->Option<(usize,u32,u16,u16,usize,usize)> {
 
 pub fn init() {
     unsafe {
-        STATE=State::Empty; FORMAT=Format::Unknown; PATH_LEN=0; TITLE_LEN=0;
+        STATE=State::Empty; FORMAT=Format::Unknown; SELECTED_BUILTIN=0; PATH_LEN=0; TITLE_LEN=0;
         FILE_SIZE=0; SAMPLE_RATE=0; CHANNELS=0; BITS=0; DATA_OFF=0; DATA_LEN=0;
         PCM_FILE_POS=0; PCM_READY=0; VOLUME=100; MUTED=false;
         REPEAT=false; SHUFFLE=false; LAST_ERROR=0; PL_COUNT=0; PL_INDEX=0; BUILTIN_ACTIVE=0;
