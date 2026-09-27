@@ -670,6 +670,35 @@ fn cmd_aud() {
     write_str("======== AUD END ========\n");
     cmd_aud_extended();
 }
+fn cmd_usbtop() {
+    crate::drivers::xhci::scan_usb_controllers();
+    write_str("======== USB HOST CONTROLLER TOPOLOGY ========\n");
+    let n = crate::drivers::xhci::diag_usbctl_count();
+    write_str("COUNT="); write_usize(n); write_str("\n");
+    let mut i = 0usize;
+    while i < n {
+        let bdf = crate::drivers::xhci::diag_usbctl_bdf(i);
+        let id = crate::drivers::xhci::diag_usbctl_id(i);
+        let cl = crate::drivers::xhci::diag_usbctl_class(i);
+        let bar = crate::drivers::xhci::diag_usbctl_bar0(i);
+        let bus = (bdf >> 8) & 0xFF;
+        let devfn = bdf & 0xFF;
+        let dev = (devfn >> 3) & 0x1F;
+        let func = devfn & 7;
+        let prog = (cl >> 8) & 0xFF;
+        write_str("USB["); write_usize(i); write_str("] BDF=");
+        write_usize(bus); write_str(":"); write_usize(dev); write_str(".");
+        write_usize(func); write_str(" VID:DID="); write_hex(id);
+        write_str(" IF="); write_hex(prog as usize);
+        write_str(" BAR0="); write_hex(bar as usize);
+        write_str(" TYPE=");
+        write_str(if prog == 0x30 { "xHCI" } else { "EHCI" });
+        write_str("\n");
+        i += 1;
+    }
+    write_str("======== USB TOPOLOGY END ========\n");
+}
+
 fn cmd_mous() {
     // The desktop used to enumerate xHCI only during boot. On AH532 the
     // mouse is commonly plugged after that probe, so MOUS must first retry
@@ -760,6 +789,8 @@ fn run_line(line: &[u8], len: usize) {
         cmd_wf();
     } else if eq(line, s, clen, b"MOUS") || eq(line, s, clen, b"mous") {
         cmd_mous();
+    } else if eq(line, s, clen, b"USB") || eq(line, s, clen, b"usb") {
+        cmd_usbtop();
     } else if eq(line, s, clen, b"AUD") || eq(line, s, clen, b"aud") {
         cmd_aud();
     } else if eq(line, s, clen, b"AUD3") || eq(line, s, clen, b"aud3") {
