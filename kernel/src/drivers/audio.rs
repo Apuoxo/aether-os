@@ -412,6 +412,73 @@ fn probe_hda() {
                     serial::write_str(" WIDGET_COUNT=");
                     serial::write_hex((afg_nodes & 0xFFFF) as usize);
                     serial::write_str("\n");
+
+                    // Bounded widget capability discovery. Do not program the
+                    // codec yet: first identify a real analog output pin and
+                    // an Audio Output converter.
+                    let start = ((afg_nodes >> 16) & 0xFFFF) as usize;
+                    let count = (afg_nodes & 0xFFFF) as usize;
+                    let limit = count.min(64);
+                    let mut analog_pin = 0u8;
+                    let mut output_conv = 0u8;
+                    let mut i = 0usize;
+                    while i < limit {
+                        let nid = (start + i) as u8;
+                        let caps = match send_verb(
+                            ((codec as u32) << 28) |
+                            ((nid as u32) << 20) |
+                            (0xF09u32 << 8)
+                        ) {
+                            Some(v) => v,
+                            None => { i += 1; continue; }
+                        };
+                        let wtype = ((caps >> 20) & 0xF) as u8;
+                        serial::write_str("[AUDIO] HDA WIDGET NID=");
+                        serial::write_hex(nid as usize);
+                        serial::write_str(" TYPE=");
+                        serial::write_hex(wtype as usize);
+                        serial::write_str("\n");
+
+                        // Audio Output widget type = 0.
+                        if wtype == 0 && output_conv == 0 {
+                            output_conv = nid;
+                        }
+
+                        // Pin Complex widget type = 4. Query pin caps and
+                        // default configuration, but do not change state.
+                        if wtype == 4 && analog_pin == 0 {
+                            let pin_caps = match send_verb(
+                                ((codec as u32) << 28) |
+                                ((nid as u32) << 20) |
+                                (0xF0Cu32 << 8)
+                            ) { Some(v) => v, None => 0 };
+                            let output_capable = (pin_caps & (1 << 4)) != 0;
+                            if output_capable {
+                                let cfg = match send_verb(
+                                    ((codec as u32) << 28) |
+                                    ((nid as u32) << 20) |
+                                    (0xF1Cu32 << 8)
+                                ) { Some(v) => v, None => 0 };
+                                let device = ((cfg >> 20) & 0xF) as u8;
+                                // 0x0 = line out, 0x1 = speaker, 0x2 = HP out
+                                // are useful analog endpoint candidates.
+                                if device <= 2 {
+                                    analog_pin = nid;
+                                    serial::write_str("[AUDIO] HDA ANALOG_PIN NID=");
+                                    serial::write_hex(nid as usize);
+                                    serial::write_str(" DEV=");
+                                    serial::write_hex(device as usize);
+                                    serial::write_str("\n");
+                                }
+                            }
+                        }
+                        i += 1;
+                    }
+                    serial::write_str("[AUDIO] HDA OUTPUT_CANDIDATES PIN=");
+                    serial::write_hex(analog_pin as usize);
+                    serial::write_str(" CONV=");
+                    serial::write_hex(output_conv as usize);
+                    serial::write_str("\n");
                 } else {
                     serial::write_str("[AUDIO] HDA AFG_NOT_FOUND\n");
                 }
