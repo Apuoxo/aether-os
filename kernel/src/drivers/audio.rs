@@ -384,37 +384,18 @@ fn probe_hda() {
                 serial::write_hex(rirb_phys);
                 serial::write_str("\n");
 
-                // Get Parameter(Vendor ID) from root node 0 of codec address 0.
-                let codec = states.trailing_zeros() as u8;
-                let cmd = ((codec as u32) << 28) | (0xF00u32 << 8);
-                let wp = hda_r16(mmio, 0x48) & 0x00FF;
-                let next = (wp.wrapping_add(1)) & 0x00FF;
-                core::ptr::write_volatile((corb_phys + (next as usize) * 4) as *mut u32, cmd);
-                hda_w16(mmio, 0x48, next);
+                // STATESTS is a bit mask: more than one codec can be present.
+                // The first codec on many machines is HDMI; the analog codec may
+                // live at a higher address. Select the first codec that actually
+                // exposes an Audio Function Group instead of assuming the lowest
+                // set bit is the playback codec.
+                let mut codec = 0u8;
+                let mut selected_next = 0u8;
+                let mut selected_root_start = 0u16;
+                let mut selected_root_count = 0u16;
+                let mut selected_afg = 0u8;
 
-                let mut got = false;
-                let mut tries = 0u32;
-                while tries < 200_000 {
-                    if (hda_r16(mmio, 0x58) & 0x00FF) == next { got = true; break; }
-                    tries += 1;
-                    core::hint::spin_loop();
-                }
-                if !got {
-                    serial::write_str("[AUDIO] HDA VERB_TIMEOUT\n");
-                    return;
-                }
-
-                let resp = core::ptr::read_volatile((rirb_phys + (next as usize) * 8) as *const u32);
-                serial::write_str("[AUDIO] HDA CODEC=");
-                serial::write_usize(codec as usize);
-                serial::write_str(" VID_DID=");
-                serial::write_hex(resp as usize);
-                serial::write_str("\n");
-
-                // Minimal bounded codec topology discovery.  We need the
-                // Audio Function Group and widget ranges before selecting an
-                // output pin/path; no stream is started at this stage.
-                let mut verb_wp = next;
+                let mut verb_wp = hda_r16(mmio, 0x48) & 0x00FF;
                 let mut send_verb = |verb: u32| -> Option<u32> {
                     verb_wp = (verb_wp.wrapping_add(1)) & 0x00FF;
                     core::ptr::write_volatile(
@@ -434,48 +415,94 @@ fn probe_hda() {
                     None
                 };
 
-                // Root node 0, Subordinate Node Count (parameter 0x04).
-                let root_nodes = match send_verb(((codec as u32) << 28) | (0xF04u32 << 8)) {
-                    Some(v) => v,
-                    None => {
-                        serial::write_str("[AUDIO] HDA ROOT_NODE_COUNT_TIMEOUT\n");
-                        return;
-                    }
-                };
-                let root_start = ((root_nodes >> 16) & 0xFFFF) as u16;
-                let root_count = (root_nodes & 0xFFFF) as u16;
-                serial::write_str("[AUDIO] HDA ROOT_NODES START=");
-                serial::write_hex(root_start as usize);
-                serial::write_str(" COUNT=");
-                serial::write_hex(root_count as usize);
-                serial::write_str("\n");
+                let mut ca = 0u8;
+                while ca < 16 {
+                    if (states & (1u16 << ca)) != 0 {
+                        let vendor = match send_verb(((ca as u32) << 28) | (0xF00u32 << 8)) {
+                            Some(v) => v,
+                            None => {
+                                serial::write_str("[AUDIO] HDA CODEC=");
+                                serial::write_usize(ca as usize);
+                                serial::write_str(" VID_DID_TIMEOUT\n");
+                                ca += 1;
+                                continue;
+                            }
+                        };
+                        serial::write_str("[AUDIO] HDA CODEC=");
+                        serial::write_usize(ca as usize);
+                        serial::write_str(" VID_DID=");
+                        serial::write_hex(vendor as usize);
+                        serial::write_str("\n");
 
-                // Scan only the returned root range, bounded to 64 nodes.
-                let scan_count = (root_count as usize).min(64);
-                let mut afg = 0u8;
-                let mut node = root_start as usize;
-                let mut scanned = 0usize;
-                while scanned < scan_count {
-                    let nid = node as u8;
-                    let fg = match send_verb(
-                        ((codec as u32) << 28) | ((nid as u32) << 20) | (0xF05u32 << 8)
-                    ) {
-                        Some(v) => v,
-                        None => { node += 1; scanned += 1; continue; }
-                    };
-                    let fg_type = (fg & 0xFF) as u8;
-                    serial::write_str("[AUDIO] HDA NODE=");
-                    serial::write_hex(nid as usize);
-                    serial::write_str(" TYPE=");
-                    serial::write_hex(fg_type as usize);
-                    serial::write_str("\n");
-                    if fg_type == 1 && afg == 0 {
-                        afg = nid;
-                        HDA_AFG = nid;
+                        let root_nodes = match send_verb(((ca as u32) << 28) | (0xF04u32 << 8)) {
+                            Some(v) => v,
+                            None => {
+                                serial::write_str("[AUDIO] HDA CODEC_ROOT_TIMEOUT=");
+                                serial::write_usize(ca as usize);
+                                serial::write_str("\n");
+                                ca += 1;
+                                continue;
+                            }
+                        };
+                        let root_start = ((root_nodes >> 16) & 0xFFFF) as u16;
+                        let root_count = (root_nodes & 0xFFFF) as u16;
+                        serial::write_str("[AUDIO] HDA CODEC_ROOT=");
+                        serial::write_usize(ca as usize);
+                        serial::write_str(" START=");
+                        serial::write_hex(root_start as usize);
+                        serial::write_str(" COUNT=");
+                        serial::write_hex(root_count as usize);
+                        serial::write_str("\n");
+
+                        let scan_count = (root_count as usize).min(64);
+                        let mut found_afg = 0u8;
+                        let mut node = root_start as usize;
+                        let mut scanned = 0usize;
+                        while scanned < scan_count {
+                            let nid = node as u8;
+                            if let Some(fg) = send_verb(
+                                ((ca as u32) << 28) | ((nid as u32) << 20) | (0xF05u32 << 8)
+                            ) {
+                                let fg_type = (fg & 0xFF) as u8;
+                                serial::write_str("[AUDIO] HDA CODEC=");
+                                serial::write_usize(ca as usize);
+                                serial::write_str(" NODE=");
+                                serial::write_hex(nid as usize);
+                                serial::write_str(" TYPE=");
+                                serial::write_hex(fg_type as usize);
+                                serial::write_str("\n");
+                                if fg_type == 1 && found_afg == 0 {
+                                    found_afg = nid;
+                                }
+                            }
+                            node += 1;
+                            scanned += 1;
+                        }
+
+                        if found_afg != 0 {
+                            codec = ca;
+                            selected_next = verb_wp;
+                            selected_root_start = root_start;
+                            selected_root_count = root_count;
+                            selected_afg = found_afg;
+                            break;
+                        }
                     }
-                    node += 1;
-                    scanned += 1;
+                    ca += 1;
                 }
+
+                if selected_afg == 0 {
+                    serial::write_str("[AUDIO] HDA AFG_NOT_FOUND_ALL_CODECS\n");
+                    return;
+                }
+
+                HDA_AFG = selected_afg;
+                let afg = selected_afg;
+                let root_start = selected_root_start;
+                let root_count = selected_root_count;
+                let _ = root_start;
+                let _ = root_count;
+                let next = selected_next;
 
                 if afg != 0 {
                     let afg_nodes = match send_verb(
