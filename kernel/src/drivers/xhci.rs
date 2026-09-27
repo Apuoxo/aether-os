@@ -44,6 +44,18 @@ static mut MOUSE_EVENTS: u32 = 0; // internal events delivered to input
 
 pub fn diag_mouse_events() -> u32 { unsafe { MOUSE_EVENTS } }
 pub fn diag_mouse_live() -> bool { unsafe { MOUSE_LIVE } }
+pub fn diag_mouse_er() -> usize { unsafe { MOUSE_ER } }
+pub fn diag_mouse_er_deq() -> usize { unsafe { MOUSE_ER_DEQ } }
+pub fn diag_mouse_er_cycle() -> u32 { unsafe { MOUSE_ER_CYCLE } }
+pub fn diag_mouse_er_size() -> usize { unsafe { MOUSE_ER_SIZE } }
+pub fn diag_mouse_ep_ring() -> usize { unsafe { MOUSE_EP_RING } }
+pub fn diag_mouse_enq() -> usize { unsafe { MOUSE_ENQ } }
+pub fn diag_mouse_cycle() -> u32 { unsafe { MOUSE_CYCLE } }
+pub fn diag_mouse_report() -> usize { unsafe { MOUSE_REPORT } }
+pub fn diag_mouse_report_len() -> usize { unsafe { MOUSE_REPORT_LEN } }
+pub fn diag_mouse_slot() -> u8 { unsafe { MOUSE_SLOT } }
+pub fn diag_mouse_db() -> usize { unsafe { MOUSE_DB } }
+pub fn diag_mouse_dci() -> u32 { unsafe { MOUSE_DCI } }
 
 
 // ─── PCI / MMIO ───────────────────────────────────────────────
