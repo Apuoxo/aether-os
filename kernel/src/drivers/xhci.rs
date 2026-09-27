@@ -36,6 +36,7 @@ static mut MOUSE_EP_RING: usize = 0;
 static mut MOUSE_ENQ: usize = 0;
 static mut MOUSE_CYCLE: u32 = 1;
 static mut MOUSE_REPORT: usize = 0;
+static mut MOUSE_REPORT_LEN: usize = 4;
 static mut MOUSE_SLOT: u8 = 0;
 static mut MOUSE_DB: usize = 0;
 static mut MOUSE_DCI: u32 = 3;
@@ -1164,6 +1165,7 @@ fn hid_boot_mouse(
         MOUSE_ENQ = enq;
         MOUSE_CYCLE = cycle;
         MOUSE_REPORT = report_buf;
+        MOUSE_REPORT_LEN = report_len;
         MOUSE_SLOT = slot;
         MOUSE_DB = x.db();
         MOUSE_DCI = ((desc.ep_addr & 0x0F) as u32) * 2 + 1;
@@ -1355,7 +1357,6 @@ pub fn poll_mouse_live() {
         // Process a few event ring entries
         let mut spins = 0u32;
         while spins < 32 {
-            if MOUSE_ER_SIZE == 0 || MOUSE_ENQ >= 63 { MOUSE_ENQ = 0; MOUSE_CYCLE ^= 1; }
             let trbs = MOUSE_ER as *const Trb;
             let ev = *trbs.add(MOUSE_ER_DEQ);
             if (ev.control & 1) != MOUSE_ER_CYCLE {
@@ -1375,9 +1376,10 @@ pub fn poll_mouse_live() {
             }
             if ty == TRB_TRANSFER && (cc == 1 || cc == 13) {
                 DIAG_COMPLETIONS = DIAG_COMPLETIONS.wrapping_add(1);
-                let mut report = [0u8; 4];
+                let mut report = [0u8; 8];
+                let report_len = core::cmp::min(MOUSE_REPORT_LEN, 8);
                 let mut i = 0usize;
-                while i < 4 {
+                while i < report_len {
                     report[i] = *((MOUSE_REPORT + i) as *const u8);
                     i += 1;
                 }
@@ -1386,7 +1388,7 @@ pub fn poll_mouse_live() {
                 MOUSE_EVENTS = MOUSE_EVENTS.wrapping_add(1);
                 // clear + re-queue
                 let mut j = 0usize;
-                while j < 4 {
+                while j < report_len {
                     *((MOUSE_REPORT + j) as *mut u8) = 0;
                     j += 1;
                 }
@@ -1396,7 +1398,7 @@ pub fn poll_mouse_live() {
                 let trb = ring.add(idx);
                 (*trb).lo = MOUSE_REPORT as u32;
                 (*trb).hi = 0;
-                (*trb).status = 4;
+                (*trb).status = report_len as u32;
                 (*trb).control = (TRB_NORMAL << 10) | TRB_IOC | MOUSE_CYCLE;
                 MOUSE_ENQ += 1;
                 if MOUSE_ENQ >= 63 {
