@@ -299,7 +299,19 @@ fn cmd_aud() {
     write_str(" BSS="); write_usize(crate::drivers::audio::hda_bss() as usize); write_str("\n");
 
     write_str("STATESTS="); write_hex(crate::drivers::audio::hda_statests() as usize);
-    write_str(" AFG="); write_hex(crate::drivers::audio::hda_afg() as usize);
+    write_str(" CODEC_SELECTED="); write_usize(crate::drivers::audio::hda_codec() as usize); write_str("\n");
+
+    write_str("CODEC0=");
+    write_str(if crate::drivers::audio::hda_codec0_vid_did() != 0 { "FOUND" } else { "NONE" });
+    write_str(" VID_DID="); write_hex(crate::drivers::audio::hda_codec0_vid_did() as usize);
+    write_str(" AFG="); write_hex(crate::drivers::audio::hda_codec0_afg() as usize); write_str("\n");
+
+    write_str("CODEC3=");
+    write_str(if crate::drivers::audio::hda_codec3_vid_did() != 0 { "FOUND" } else { "NONE" });
+    write_str(" VID_DID="); write_hex(crate::drivers::audio::hda_codec3_vid_did() as usize);
+    write_str(" AFG="); write_hex(crate::drivers::audio::hda_codec3_afg() as usize); write_str("\n");
+
+    write_str("AFG="); write_hex(crate::drivers::audio::hda_afg() as usize);
     write_str(" ANALOG_PIN="); write_hex(crate::drivers::audio::hda_analog_pin() as usize);
     write_str(" OUTPUT_CONV="); write_hex(crate::drivers::audio::hda_output_conv() as usize); write_str("\n");
 
@@ -341,7 +353,6 @@ fn cmd_aud() {
     write_str("\n");
     write_str("======== AUD END ========\n");
 }
-
 fn run_line(line: &[u8], len: usize) {
     let mut s = 0usize;
     while s < len && line[s] == b' ' { s += 1; }
