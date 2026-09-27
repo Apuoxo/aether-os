@@ -96,14 +96,31 @@ pub fn open_builtin(i:usize)->bool {
     if p.is_empty(){return false;}
     add_to_playlist(p);
     if open(p){
+        unsafe { BUILTIN_ACTIVE = i as u8 + 1; }
         serial::write_str("[MEDIA] opened AetherFS media file\n");
-        true
-    } else {
-        if i==1 || i==2 {
-            serial::write_str("[MEDIA] file is real AetherFS media; decoder pending\n");
-        }
-        false
+        return true;
     }
+
+    // Built-in smoke media is embedded in the kernel image.  Keep AUD2
+    // independent of whether /MEDIA is mounted/populated in AetherFS.
+    let bytes=builtin_bytes(i);
+    if let Some((size,rate,ch,bits,data,len))=parse_wav_bytes(bytes) {
+        unsafe {
+            PATH_LEN=copy_bytes(&mut PATH,p.as_bytes());
+            TITLE_LEN=PATH_LEN;
+            let mut j=0; while j<TITLE_LEN { TITLE[j]=PATH[j]; j+=1; }
+            FILE_SIZE=size; SAMPLE_RATE=rate; CHANNELS=ch; BITS=bits;
+            DATA_OFF=data; DATA_LEN=len; PCM_FILE_POS=0; PCM_READY=0;
+            FORMAT=Format::WavPcm; LAST_ERROR=0; STATE=State::Stopped;
+            BUILTIN_ACTIVE=i as u8 + 1;
+        }
+        serial::write_str("[MEDIA] opened embedded WAV smoke source\n");
+        return true;
+    }
+    if i==1 || i==2 {
+        serial::write_str("[MEDIA] file is real AetherFS media; decoder pending\n");
+    }
+    false
 }
 
 fn parse_wav(path:&str)->Option<(usize,u32,u16,u16,usize,usize)> {
@@ -192,11 +209,22 @@ pub fn refill_pcm()->usize {
         let n=PCM_BUF.min(remain);
         let n=n-(n%frame);
         if n==0 { PCM_READY=0; return 0; }
-        let got = fs::read_range(
-            core::str::from_utf8_unchecked(&PATH[..PATH_LEN]),
-            DATA_OFF + PCM_FILE_POS,
-            &mut PCM[..n]
-        );
+        let got = if BUILTIN_ACTIVE != 0 {
+            let bi=(BUILTIN_ACTIVE-1) as usize;
+            let src=builtin_bytes(bi);
+            let off=DATA_OFF + PCM_FILE_POS;
+            if off < src.len() {
+                let avail=(src.len()-off).min(n);
+                let mut i=0; while i<avail { PCM[i]=src[off+i]; i+=1; }
+                Some(avail)
+            } else { None }
+        } else {
+            fs::read_range(
+                core::str::from_utf8_unchecked(&PATH[..PATH_LEN]),
+                DATA_OFF + PCM_FILE_POS,
+                &mut PCM[..n]
+            )
+        };
         match got {
             Some(got) if got>0 => { PCM_READY=got; got },
             _ => { PCM_READY=0; LAST_ERROR=3; STATE=State::Error; 0 }
