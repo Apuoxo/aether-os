@@ -38,6 +38,7 @@ static mut MOUSE_CYCLE: u32 = 1;
 static mut MOUSE_REPORT: usize = 0;
 static mut MOUSE_SLOT: u8 = 0;
 static mut MOUSE_DB: usize = 0;
+static mut MOUSE_DCI: u32 = 3;
 static mut MOUSE_EVENTS: u32 = 0; // internal events delivered to input
 
 pub fn diag_mouse_events() -> u32 { unsafe { MOUSE_EVENTS } }
@@ -1131,7 +1132,7 @@ fn hid_boot_mouse(
     let mut enq = 0usize;
     let mut cycle = 1u32;
     if !hid_queue_interrupt_in_len(
-        x, slot, ep_ring, &mut enq, &mut cycle, report_buf, report_len
+        x, slot, ep_ring, &mut enq, &mut cycle, report_buf, report_len, (((desc.ep_addr & 0x0F) as u32) * 2 + 1)
     ) {
         serial::write_str("[USB] mouse queue FAIL\n");
         return false;
@@ -1165,6 +1166,7 @@ fn hid_boot_mouse(
         MOUSE_REPORT = report_buf;
         MOUSE_SLOT = slot;
         MOUSE_DB = x.db();
+        MOUSE_DCI = ((desc.ep_addr & 0x0F) as u32) * 2 + 1;
         MOUSE_LIVE = true;
         DIAG_REPORTS = 0;
     }
@@ -1180,6 +1182,7 @@ fn hid_queue_interrupt_in_len(
     cycle: &mut u32,
     buf: usize,
     len: usize,
+    dci: u32,
 ) -> bool {
     if *enq >= 63 {
         *enq = 0;
@@ -1194,7 +1197,6 @@ fn hid_queue_interrupt_in_len(
         t.control = (TRB_NORMAL << 10) | TRB_IOC | *cycle;
         *enq += 1;
         DIAG_TRB_QUEUED = DIAG_TRB_QUEUED.wrapping_add(1);
-        let dci = 3u32;
         w32(x.db(), (slot as usize) * 4, dci);
     }
     true
@@ -1404,7 +1406,7 @@ pub fn poll_mouse_live() {
                 // doorbell EP1 (interrupt IN often DCI 2 = EP1 OUT? Boot mouse IN is EP1 → DCI 3)
                 // Use doorbell slot with target 3 (EP1 IN)
                 if MOUSE_DB != 0 && MOUSE_SLOT != 0 {
-                    core::ptr::write_volatile((MOUSE_DB + (MOUSE_SLOT as usize) * 4) as *mut u32, 3);
+                    core::ptr::write_volatile((MOUSE_DB + (MOUSE_SLOT as usize) * 4) as *mut u32, MOUSE_DCI);
                 }
             }
             spins += 1;
