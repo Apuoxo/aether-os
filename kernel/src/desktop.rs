@@ -2299,14 +2299,19 @@ pub fn run() -> ! {
     unsafe {
         let sw = graphics::width() as i32;
         let sh = graphics::height() as i32;
+
+        // Keep the original normal terminal geometry as the restore target.
+        // The previous patch overwrote rx/ry/rw/rh with the maximized geometry,
+        // so clicking Restore simply restored the same fullscreen rectangle.
+        WINS[0].rx = 20;
+        WINS[0].ry = 36;
+        WINS[0].rw = 760;
+        WINS[0].rh = 340;
+
         WINS[0].x = 0;
         WINS[0].y = 30;
         WINS[0].w = sw;
         WINS[0].h = sh - 70;
-        WINS[0].rx = 0;
-        WINS[0].ry = 30;
-        WINS[0].rw = sw;
-        WINS[0].rh = sh - 70;
         WINS[0].maximized = true;
     }
     serial::write_str("\n======== Aether Desktop v1.1 XP ========\n");
