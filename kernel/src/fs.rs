@@ -13,7 +13,7 @@ pub const MAGIC: u32 = 0xAE74_E5F5; // AetherFS
 pub const VERSION: u32 = 1;
 pub const MAX_NAME: usize = 28;
 pub const MAX_DIR_ENTRIES: usize = 16;
-pub const MAX_FILE_SECTORS: usize = 16; // 8 KiB per file
+pub const MAX_FILE_SECTORS: usize = 4096; // 2 MiB per file; bounded by current AetherFS bitmap/backend
 pub const ROOT_LBA: u32 = 2;
 pub const BITMAP_LBA: u32 = 1;
 pub const SUPER_LBA: u32 = 0;
@@ -333,9 +333,20 @@ fn name_eq(e: &DirEntry, name: &str) -> bool {
     true
 }
 
-fn strip_slash(path: &str) -> &str {
-    path
+fn strip_slash(path: &str) -> &str { path }
+
+fn resolve_parent(path:&str)->Option<(u32,[u8;MAX_NAME],usize)>{
+    let b=path.as_bytes(); if b.is_empty(){return None;} let mut cur=ROOT_LBA; let mut i=0usize;
+    while i<b.len()&&b[i]==b'/'{i+=1;} if i>=b.len(){return None;}
+    loop{let start=i;while i<b.len()&&b[i]!=b'/'{i+=1;}let last=i>=b.len();let len=i-start;if len==0||len>MAX_NAME{return None;}
+        if last{let mut name=[0u8;MAX_NAME];let mut j=0;while j<len{name[j]=b[start+j];j+=1;}return Some((cur,name,len));}
+        while i<b.len()&&b[i]==b'/'{i+=1;}if i>=b.len(){return None;}
+        let mut e=[DirEntry{name:[0;MAX_NAME],name_len:0,flags:0,start_lba:0,size:0};MAX_DIR_ENTRIES];if !load_dir_entries_ex(cur,&mut e){return None;}
+        let mut hit=None;let mut n=0;while n<MAX_DIR_ENTRIES{if e[n].flags&FLAG_USED!=0&&e[n].flags&FLAG_DIR!=0&&e[n].name_len as usize==len{let mut ok=true;let mut j=0;while j<len{if e[n].name[j]!=b[start+j]{ok=false;break;}j+=1;}if ok{hit=Some(e[n].start_lba);break;}}n+=1;}cur=match hit{Some(v)=>v,None=>return None;};
+    }
 }
+fn load_entry(parent:u32,name:&[u8],nlen:usize)->Option<DirEntry>{let mut e=[DirEntry{name:[0;MAX_NAME],name_len:0,flags:0,start_lba:0,size:0};MAX_DIR_ENTRIES];if !load_dir_entries_ex(parent,&mut e){return None;}let mut i=0;while i<MAX_DIR_ENTRIES{if e[i].flags&FLAG_USED!=0&&e[i].name_len as usize==nlen{let mut ok=true;let mut j=0;while j<nlen{if e[i].name[j]!=name[j]{ok=false;break;}j+=1;}if ok{return Some(e[i]);}}i+=1;}None}
+
 
 // ─── VFS API ──────────────────────────────────────────────────
 
@@ -627,6 +638,11 @@ pub fn init_storage() -> bool {
     }
     let _ = ata::flush();
     serial::write_str("[STORAGE] wrote /test.txt via RAM block backend\n");
+    if !mkdir("/MEDIA") { serial::write_str("[MEDIA] mkdir FAIL\n"); return false; }
+    if !write_large("/MEDIA/TEST.WAV", crate::media_builtin::TEST_WAV) { serial::write_str("[MEDIA] TEST.WAV FAIL\n"); return false; }
+    if !write_large("/MEDIA/TEST.MP3", crate::media_builtin::TEST_MP3) { serial::write_str("[MEDIA] TEST.MP3 FAIL\n"); return false; }
+    if !write_large("/MEDIA/TEST.OGG", crate::media_builtin::TEST_OGG) { serial::write_str("[MEDIA] TEST.OGG FAIL\n"); return false; }
+    serial::write_str("[MEDIA] seeded real AetherFS files under /MEDIA\n");
 
     // Always try read
     let mut buf = [0u8; 64];
@@ -708,158 +724,20 @@ fn alloc_contiguous(count: u32) -> Option<u32> {
 }
 
 /// Write file larger than 1 sector (chain consecutive LBAs, update size)
-pub fn write_large(path: &str, data: &[u8]) -> bool {
-    if !is_mounted() { return false; }
-    let name = strip_slash(path);
-    // create if needed
-    let mut entries = [DirEntry { name: [0; MAX_NAME], name_len: 0, flags: 0, start_lba: 0, size: 0 }; MAX_DIR_ENTRIES];
-    if !load_root(&mut entries) { return false; }
-    let mut slot = None;
-    let mut i = 0usize;
-    while i < MAX_DIR_ENTRIES {
-        if entries[i].flags & 1 != 0 && name_eq(&entries[i], name) {
-            slot = Some(i);
-            break;
-        }
-        if entries[i].flags & 1 == 0 && slot.is_none() {
-            slot = Some(i);
-        }
-        i += 1;
-    }
-    let slot = match slot { Some(s) => s, None => return false };
-    let sectors = (data.len() + 511) / 512;
-    if sectors == 0 || sectors > MAX_FILE_SECTORS { return false; }
-    // allocate first LBA if new
-    let mut start = entries[slot].start_lba;
-    if entries[slot].flags & 1 == 0 || start == 0 {
-        // allocate `sectors` consecutive blocks
-        start = match alloc_contiguous(sectors as u32) {
-            Some(l) => l,
-            None => {
-                serial::write_str("  [VFS] contiguous alloc FAIL\n");
-                return false;
-            }
-        };
-        let nb = name.as_bytes();
-        let mut off = 0usize;
-        if !nb.is_empty() && nb[0] == b'/' { off = 1; }
-        let mut e = DirEntry { name: [0; MAX_NAME], name_len: (nb.len() - off) as u8, flags: 1, start_lba: start, size: 0 };
-        let mut j = 0usize;
-        while off + j < nb.len() && j < 22 { e.name[j] = nb[off + j]; j += 1; }
-        entries[slot] = e;
-    }
-    let mut sec = 0usize;
-    while sec < sectors {
-        let mut buf = [0u8; 512];
-        let off = sec * 512;
-        let mut j = 0usize;
-        while j < 512 && off + j < data.len() {
-            buf[j] = data[off + j];
-            j += 1;
-        }
-        if !ata::write_sectors(start + sec as u32, 1, &buf) { return false; }
-        sec += 1;
-    }
-    entries[slot].size = data.len() as u32;
-    entries[slot].flags = 1;
-    if !save_root(&entries) { return false; }
-    let _ = ata::flush();
-    serial::write_str("  [VFS] write_large /");
-    serial::write_str(name);
-    serial::write_str(" bytes=");
-    serial::write_usize(data.len());
-    serial::write_str(" sectors=");
-    serial::write_usize(sectors);
-    serial::write_str("\n");
-    true
+pub fn write_large(path:&str,data:&[u8])->bool{
+    if !is_mounted(){return false;}let (parent,name,nlen)=match resolve_parent(path){Some(v)=>v,None=>return false};
+    let sectors=(data.len()+511)/512;if sectors==0||sectors>MAX_FILE_SECTORS{return false;}
+    let mut e=[DirEntry{name:[0;MAX_NAME],name_len:0,flags:0,start_lba:0,size:0};MAX_DIR_ENTRIES];if !load_dir_entries_ex(parent,&mut e){return false;}
+    let mut slot=None;let mut i=0;while i<MAX_DIR_ENTRIES{if e[i].flags&FLAG_USED!=0&&e[i].name_len as usize==nlen{let mut ok=true;let mut j=0;while j<nlen{if e[i].name[j]!=name[j]{ok=false;break;}j+=1;}if ok{slot=Some(i);break;}}if e[i].flags&FLAG_USED==0&&slot.is_none(){slot=Some(i);}i+=1;}
+    let slot=match slot{Some(v)=>v,None=>return false};let start=if e[slot].flags&FLAG_USED!=0{e[slot].start_lba}else{match alloc_contiguous(sectors as u32){Some(v)=>v,None=>return false}};
+    if e[slot].flags&FLAG_USED==0{let mut x=DirEntry{name:[0;MAX_NAME],name_len:nlen as u8,flags:FLAG_USED,start_lba:start,size:0};let mut j=0;while j<nlen{x.name[j]=name[j];j+=1;}e[slot]=x;}
+    let mut sec=0;while sec<sectors{let mut buf=[0u8;512];let off=sec*512;let mut j=0;while j<512&&off+j<data.len(){buf[j]=data[off+j];j+=1;}if !ata::write_sectors(start+sec as u32,1,&buf){return false;}sec+=1;}
+    e[slot].size=data.len() as u32;if !save_dir_entries_ex(parent,&e){return false;}let _=ata::flush();serial::write_str("  [VFS] write_large ");serial::write_str(path);serial::write_str(" bytes=");serial::write_usize(data.len());serial::write_str(" sectors=");serial::write_usize(sectors);serial::write_str("\n");true
 }
 
-pub fn read_large(path: &str, out: &mut [u8]) -> Option<usize> {
-    if !is_mounted() { return None; }
-    let name = strip_slash(path);
-    let mut entries = [DirEntry { name: [0; MAX_NAME], name_len: 0, flags: 0, start_lba: 0, size: 0 }; MAX_DIR_ENTRIES];
-    if !load_root(&mut entries) { return None; }
-    let mut i = 0usize;
-    while i < MAX_DIR_ENTRIES {
-        if entries[i].flags & 1 != 0 && name_eq(&entries[i], name) {
-            let total = entries[i].size as usize;
-            let total = if total > out.len() { out.len() } else { total };
-            let sectors = (total + 511) / 512;
-            let mut sec = 0usize;
-            while sec < sectors {
-                let mut buf = [0u8; 512];
-                if !ata::read_sectors(entries[i].start_lba + sec as u32, 1, &mut buf) { return None; }
-                let off = sec * 512;
-                let mut j = 0usize;
-                while j < 512 && off + j < total {
-                    out[off + j] = buf[j];
-                    j += 1;
-                }
-                sec += 1;
-            }
-            serial::write_str("  [VFS] read_large /");
-            serial::write_str(name);
-            serial::write_str(" bytes=");
-            serial::write_usize(total);
-            serial::write_str("\n");
-            return Some(total);
-        }
-        i += 1;
-    }
-    None
-}
-
-pub fn file_size(path: &str) -> Option<usize> {
-    if !is_mounted() { return None; }
-    let name = strip_slash(path);
-    let mut entries = [DirEntry { name: [0; MAX_NAME], name_len: 0, flags: 0, start_lba: 0, size: 0 }; MAX_DIR_ENTRIES];
-    if !load_root(&mut entries) { return None; }
-    let mut i=0usize;
-    while i<MAX_DIR_ENTRIES {
-        if entries[i].flags & 1 != 0 && name_eq(&entries[i], name) {
-            return Some(entries[i].size as usize);
-        }
-        i+=1;
-    }
-    None
-}
-
-/// Bounded random-access read used by streaming native applications.
-pub fn read_range(path: &str, offset: usize, out: &mut [u8]) -> Option<usize> {
-    if !is_mounted() { return None; }
-    let name = strip_slash(path);
-    let mut entries = [DirEntry { name: [0; MAX_NAME], name_len: 0, flags: 0, start_lba: 0, size: 0 }; MAX_DIR_ENTRIES];
-    if !load_root(&mut entries) { return None; }
-    let mut eidx=None;
-    let mut i=0usize;
-    while i<MAX_DIR_ENTRIES {
-        if entries[i].flags & 1 != 0 && name_eq(&entries[i], name) { eidx=Some(i); break; }
-        i+=1;
-    }
-    let e=match eidx { Some(i)=>entries[i], None=>return None };
-    let total=e.size as usize;
-    if offset>=total || out.is_empty() { return Some(0); }
-    let want=out.len().min(total-offset);
-    let first=offset/512;
-    let last=(offset+want+511)/512;
-    let mut sec=first;
-    let mut copied=0usize;
-    while sec<last {
-        let mut buf=[0u8;512];
-        if !ata::read_sectors(e.start_lba+sec as u32,1,&mut buf) { return None; }
-        let sec_base=sec*512;
-        let from=if offset>sec_base { offset-sec_base } else { 0 };
-        let to=(512usize).min(offset+want-sec_base);
-        if to>from {
-            let n=to-from;
-            let mut j=0usize;
-            while j<n { out[copied+j]=buf[from+j]; j+=1; }
-            copied+=n;
-        }
-        sec+=1;
-    }
-    Some(copied)
-}
+pub fn read_large(path:&str,out:&mut [u8])->Option<usize>{if !is_mounted(){return None;}let(parent,name,nlen)=resolve_parent(path)?;let e=load_entry(parent,&name,nlen)?;if e.flags&FLAG_DIR!=0{return None;}let total=(e.size as usize).min(out.len());let sectors=(total+511)/512;let mut sec=0;while sec<sectors{let mut buf=[0u8;512];if !ata::read_sectors(e.start_lba+sec as u32,1,&mut buf){return None;}let off=sec*512;let mut j=0;while j<512&&off+j<total{out[off+j]=buf[j];j+=1;}sec+=1;}Some(total)}
+pub fn file_size(path:&str)->Option<usize>{if !is_mounted(){return None;}let(parent,name,nlen)=resolve_parent(path)?;let e=load_entry(parent,&name,nlen)?;if e.flags&FLAG_DIR!=0{None}else{Some(e.size as usize)}}
+pub fn read_range(path:&str,offset:usize,out:&mut [u8])->Option<usize>{if !is_mounted(){return None;}let(parent,name,nlen)=resolve_parent(path)?;let e=load_entry(parent,&name,nlen)?;if e.flags&FLAG_DIR!=0{return None;}let total=e.size as usize;if offset>=total||out.is_empty(){return Some(0);}let want=out.len().min(total-offset);let first=offset/512;let last=(offset+want+511)/512;let mut sec=first;let mut copied=0;while sec<last{let mut buf=[0u8;512];if !ata::read_sectors(e.start_lba+sec as u32,1,&mut buf){return None;}let base=sec*512;let from=if offset>base{offset-base}else{0};let to=512usize.min(offset+want-base);if to>from{let n=to-from;let mut j=0;while j<n{out[copied+j]=buf[from+j];j+=1;}copied+=n;}sec+=1;}Some(copied)}
 
 // ---- File Manager support ----
 const FLAG_USED: u8 = 1;
@@ -1171,5 +1049,6 @@ pub fn delete_name(name: &[u8], name_len: usize) -> bool {
 
 // ---- Explorer directory traversal ----
 fn load_dir_entries_ex(lba:u32,e:&mut [DirEntry;MAX_DIR_ENTRIES])->bool{let mut b=[0u8;512];if !ata::read_sectors(lba,1,&mut b){return false;}let mut i=0;while i<MAX_DIR_ENTRIES{let o=i*32;let mut x=DirEntry{name:[0;MAX_NAME],name_len:0,flags:0,start_lba:0,size:0};let mut j=0;while j<22{x.name[j]=b[o+j];j+=1;}x.name_len=b[o+22];x.flags=b[o+23];x.start_lba=u32::from_le_bytes([b[o+24],b[o+25],b[o+26],b[o+27]]);x.size=u32::from_le_bytes([b[o+28],b[o+29],b[o+30],b[o+31]]);e[i]=x;i+=1;}true}
+fn save_dir_entries_ex(lba:u32,e:&[DirEntry;MAX_DIR_ENTRIES])->bool{let mut b=[0u8;512];let mut i=0;while i<MAX_DIR_ENTRIES{let o=i*32;let mut j=0;while j<22{b[o+j]=e[i].name[j];j+=1;}b[o+22]=e[i].name_len;b[o+23]=e[i].flags;let st=e[i].start_lba.to_le_bytes();let sz=e[i].size.to_le_bytes();b[o+24]=st[0];b[o+25]=st[1];b[o+26]=st[2];b[o+27]=st[3];b[o+28]=sz[0];b[o+29]=sz[1];b[o+30]=sz[2];b[o+31]=sz[3];i+=1;}ata::write_sectors(lba,1,&b)&&ata::flush()}
 fn find_dir_ex(path:&[u8])->Option<u32>{if path.len()==0||(path.len()==1&&path[0]==b'/'){return Some(ROOT_LBA);}let mut cur=ROOT_LBA;let mut i=0;while i<path.len(){while i<path.len()&&path[i]==b'/'{i+=1;}if i>=path.len(){break;}let s=i;while i<path.len()&&path[i]!=b'/'{i+=1;}let part=&path[s..i];let mut e=[DirEntry{name:[0;MAX_NAME],name_len:0,flags:0,start_lba:0,size:0};MAX_DIR_ENTRIES];if !load_dir_entries_ex(cur,&mut e){return None;}let mut hit=None;let mut n=0;while n<MAX_DIR_ENTRIES{if e[n].flags&FLAG_USED!=0&&e[n].flags&FLAG_DIR!=0&&e[n].name_len as usize==part.len(){let mut j=0;let mut ok=true;while j<part.len(){if e[n].name[j]!=part[j]{ok=false;break;}j+=1;}if ok{hit=Some(e[n].start_lba);break;}}n+=1;}cur=hit?;}Some(cur)}
 pub fn list_ex_path(path:&str,out:&mut [ListItem;16])->usize{if !is_mounted(){return 0;}let Some(lba)=find_dir_ex(path.as_bytes())else{return 0;};let mut e=[DirEntry{name:[0;MAX_NAME],name_len:0,flags:0,start_lba:0,size:0};MAX_DIR_ENTRIES];if !load_dir_entries_ex(lba,&mut e){return 0;}let mut n=0;let mut i=0;while i<MAX_DIR_ENTRIES&&n<16{if e[i].flags&FLAG_USED!=0{let nl=if e[i].name_len as usize>24{24}else{e[i].name_len as usize};let mut j=0;while j<24{out[n].name[j]=0;j+=1;}j=0;while j<nl{out[n].name[j]=e[i].name[j];j+=1;}out[n].name_len=nl;out[n].size=e[i].size;out[n].is_dir=e[i].flags&FLAG_DIR!=0;n+=1;}i+=1;}n}
