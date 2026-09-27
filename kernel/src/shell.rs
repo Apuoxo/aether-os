@@ -340,6 +340,38 @@ fn cmd_aud_readback() {
         aud_readback(codec, pin, "PIN_EAPD", 0xF0Cu32 << 8);
         aud_readback(codec, pin, "PIN_AMP_L", 0xB0000 | 0xA000);
         aud_readback(codec, pin, "PIN_AMP_R", 0xB0000 | 0x8000);
+
+        // HDA topology evidence: connection-list length, entries, and
+        // currently selected connection. F02 returns packed entries.
+        let lp = crate::drivers::audio::hda_raw_verb(codec, pin, (0xF00u32 << 8) | 0x0E);
+        if lp.ok {
+            let raw = lp.response;
+            let count = (raw & 0x7F).min(16) as usize;
+            let long_form = (raw & 0x80) != 0;
+            write_str("PIN_CONN_COUNT="); write_usize(count);
+            write_str(" FORM="); write_str(if long_form { "LONG" } else { "SHORT" }); write_str("\n");
+
+            let mut ci = 0usize;
+            while ci < count {
+                let base = if long_form { ci & !1 } else { ci & !3 };
+                let d = crate::drivers::audio::hda_raw_verb(
+                    codec, pin, (0xF02u32 << 8) | (base as u32)
+                );
+                if d.ok {
+                    let nid = if long_form {
+                        if ci & 1 == 0 { d.response & 0x7FFF } else { (d.response >> 16) & 0x7FFF }
+                    } else {
+                        (d.response >> ((ci - base) * 8)) & 0x7F
+                    };
+                    write_str("PIN_CONN["); write_usize(ci); write_str("]=");
+                    write_hex(nid as usize); write_str("\n");
+                }
+                ci += 1;
+            }
+            aud_readback(codec, pin, "PIN_CONN_SEL", 0xF01u32 << 8);
+        } else {
+            write_str("PIN_CONN=READ_ERROR\n");
+        }
     }
 
     write_str("======== AUD READBACK END ========\n");
