@@ -3,4 +3,3 @@
 
 pub static TEST_WAV: &[u8] = include_bytes!("../build/media/TEST.WAV");
 pub static TEST_MP3: &[u8] = include_bytes!("../build/media/TEST.MP3");
-pub static TEST_OGG: &[u8] = include_bytes!("../build/media/TEST.OGG");
