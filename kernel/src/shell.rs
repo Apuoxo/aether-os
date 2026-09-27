@@ -469,6 +469,22 @@ fn run_line(line: &[u8], len: usize) {
         cmd_wf();
     } else if eq(line, s, clen, b"AUD") || eq(line, s, clen, b"aud") {
         cmd_aud();
+    } else if eq(line, s, clen, b"AUDPLAY") || eq(line, s, clen, b"audplay") {
+        write_str("======== AUD PCM PLAYBACK ========\\n");
+        let ok = crate::media_player::state() != crate::media_player::State::Empty
+            && crate::media_player::state() != crate::media_player::State::Error;
+        if ok {
+            crate::media_player::play();
+            write_str("PLAY_REQUEST=YES\\n");
+            write_str("STREAM_RUNNING=");
+            write_str(if crate::drivers::audio::hda_stream_running() { "YES" } else { "NO" });
+            write_str("\\nLPIB="); write_hex(crate::drivers::audio::hda_lpib() as usize);
+            write_str(" CTL="); write_hex(crate::drivers::audio::hda_stream_control() as usize);
+            write_str(" STAT="); write_hex(crate::drivers::audio::hda_stream_status() as usize); write_str("\\n");
+        } else {
+            write_str("PLAY_REQUEST=NO_MEDIA_SELECTED\\n");
+        }
+        write_str("======== AUD PCM END ========\\n");
     } else {
         write_str("unknown — commands: AUD, WF\n");
     }
