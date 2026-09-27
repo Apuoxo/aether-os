@@ -803,10 +803,10 @@ fn probe_hda() {
                          let _ = send_verb(pin_cmd | (0x70Cu32<<8) | 0x02); // EAPD on
                         // Explicitly select the converter exposed by the pin connection list.
                         // HDA connection-select (0x701) is zero-based; do not assume index 0.
-                        let pin_lp = send_verb(pin_cmd | (0xF02u32<<8));
+                        let pin_lp = send_verb(pin_cmd | 0x000F000Eu32);
                         let mut pin_sel = 0xFFu8;
                         if let Some(lp) = pin_lp {
-                            let n = (lp & 0x7F).min(16) as u8;
+                            let n = (lp & 0xFF).min(16) as u8;
                             let mut ci = 0u8;
                             while ci < n {
                                 let ent = send_verb(pin_cmd | (0xF02u32<<8) | ci as u32).unwrap_or(0);
