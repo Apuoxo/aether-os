@@ -727,8 +727,15 @@ fn handle_terminal_scroll_click(mx: i32, my: i32) -> bool {
             } else {
                 track_top + (travel * TERM_VIEW as i32) / max_view as i32
             };
-            if my >= thumb_y && my < thumb_y + thumb_h {
+            // Grab the thumb with a small hit tolerance.  Clicking anywhere
+            // inside the thumb must start a continuous drag, not a page jump.
+            let hit_top = thumb_y - 4;
+            let hit_bottom = thumb_y + thumb_h + 4;
+            if hit_top < track_top { hit_top = track_top; }
+            if hit_bottom > track_bottom { hit_bottom = track_bottom; }
+            if my >= hit_top && my < hit_bottom {
                 TERM_SCROLL_DRAG = true;
+                term_scroll_set_from_mouse(my);
             } else if my < track_top + track_h / 2 {
                 term_scroll_down();
             } else {
@@ -752,6 +759,17 @@ fn redraw_input_window(idx: usize) {
 fn handle_mouse_buttons(buttons: u8) {
     unsafe {
         let left = buttons & 1;
+
+        // Terminal scrollbar drag has priority over every other mouse handler.
+        // Without this early path, a held button can be consumed by window
+        // handling before the thumb receives the next mouse position.
+        if TERM_SCROLL_DRAG && left != 0 {
+            term_scroll_set_from_mouse(MY);
+            PREV_MB = buttons;
+            MB = buttons;
+            DIRTY_FULL = true;
+            return;
+        }
         let prev_left = PREV_MB & 1;
         let mx = MX;
         let my = MY;
