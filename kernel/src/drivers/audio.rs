@@ -928,16 +928,18 @@ pub fn playback_start(rate:u32,ch:u16,bits:u16)->bool {
         if !HDA_STREAM_READY { serial::write_str("[AUDIO] PLAYBACK_NO_STREAM\n"); return false; }
         let fmt=match stream_format(rate,ch,bits){Some(v)=>v,None=>{serial::write_str("[AUDIO] PLAYBACK_FORMAT_UNSUPPORTED\n");return false;}};
         if HDA_STREAM_RUNNING { playback_stop(); }
-        let total_pages=5usize;
+        // Keep a larger cyclic DMA cushion. The desktop is polled rather than
+        // interrupt-driven, so a 16 KiB ring can underrun during a redraw.
+        let total_pages=9usize;
         let phys=match crate::mm::alloc_pages(total_pages){Some(p)=>p,None=>{serial::write_str("[AUDIO] PLAYBACK_DMA_ALLOC_FAIL\n");return false;}};
         if !dma_map(phys,total_pages) {
             serial::write_str("[AUDIO] PLAYBACK_DMA_MAP_FAIL\n"); return false;
         }
         crate::mm::zero_pages(phys, total_pages);
         HDA_DMA_PHYS=phys;
-        HDA_BDL_PHYS=phys+4*0x1000;
+        HDA_BDL_PHYS=phys+8*0x1000;
         HDA_DMA_PERIOD=4096;
-        HDA_DMA_PERIODS=4;
+        HDA_DMA_PERIODS=8;
         HDA_DMA_NEXT=0;
         HDA_DMA_TOTAL=0;
         HDA_DMA_LAST_LPIB=0;
@@ -957,7 +959,7 @@ pub fn playback_start(rate:u32,ch:u16,bits:u16)->bool {
         hda_w16(HDA_BAR0 as usize,sd+0x0C,3);
 
         let mut i=0usize;
-        while i<4 {
+        while i<8 {
             let got=crate::media_player::pcm_buffer(
                 core::slice::from_raw_parts_mut((HDA_DMA_PHYS+i*4096) as *mut u8,4096));
             if got==0 { break; }
@@ -967,7 +969,7 @@ pub fn playback_start(rate:u32,ch:u16,bits:u16)->bool {
         }
         if i==0 { serial::write_str("[AUDIO] PLAYBACK_NO_PCM\n"); return false; }
         let mut j=0usize;
-        while j<4 {
+        while j<8 {
             let e=HDA_BDL_PHYS+j*16;
             core::ptr::write_volatile(e as *mut u64,(HDA_DMA_PHYS+j*4096) as u64);
             core::ptr::write_volatile((e+8) as *mut u32,4096u32);
@@ -977,8 +979,8 @@ pub fn playback_start(rate:u32,ch:u16,bits:u16)->bool {
         hda_w32(HDA_BAR0 as usize,sd+0x18,HDA_BDL_PHYS as u32);
         hda_w32(HDA_BAR0 as usize,sd+0x1C,(HDA_BDL_PHYS>>32) as u32);
         hda_w8(HDA_BAR0 as usize,sd+0x03,0x1C); // clear BCIS/FIFOE/DESE
-        hda_w32(HDA_BAR0 as usize,sd+0x04,(4096*4) as u32);
-        hda_w16(HDA_BAR0 as usize,sd+0x0C,3);
+        hda_w32(HDA_BAR0 as usize,sd+0x04,(4096*8) as u32);
+        hda_w16(HDA_BAR0 as usize,sd+0x0C,7);
         let ctl=(HDA_STREAM_TAG as u32)<<20;
         hda_w32(HDA_BAR0 as usize,sd,ctl | 0x00000002); // RUN=1
         HDA_STREAM_RUNNING=true;
