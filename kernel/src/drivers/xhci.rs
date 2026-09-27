@@ -17,6 +17,8 @@ static mut DIAG_FOUND: u32 = 0;
 static mut DIAG_PORTS: u8 = 0;
 static mut DIAG_CCS_MASK: u32 = 0;
 static mut DIAG_PORTSC_LAST: u32 = 0;
+static mut DIAG_PRE_CCS_MASK: u32 = 0;
+static mut DIAG_PRE_PORTSC_LAST: u32 = 0;
 
 pub fn diag_xhci_ok() -> bool { unsafe { DIAG_XHCI } }
 pub fn diag_dev_found() -> bool { unsafe { DIAG_DEV } }
@@ -30,6 +32,8 @@ pub fn diag_found_count() -> u32 { unsafe { DIAG_FOUND } }
 pub fn diag_ports() -> u8 { unsafe { DIAG_PORTS } }
 pub fn diag_ccs_mask() -> u32 { unsafe { DIAG_CCS_MASK } }
 pub fn diag_portsc_last() -> u32 { unsafe { DIAG_PORTSC_LAST } }
+pub fn diag_pre_ccs_mask() -> u32 { unsafe { DIAG_PRE_CCS_MASK } }
+pub fn diag_pre_portsc_last() -> u32 { unsafe { DIAG_PRE_PORTSC_LAST } }
 
 // Persistent HID mouse interrupt path for desktop loop
 static mut MOUSE_LIVE: bool = false;
@@ -1364,6 +1368,31 @@ fn init_one(bus: u8, dev: u8, func: u8) -> bool {
     let ports = ((hcs1 >> 24) & 0xFF) as u8;
     let dboff = unsafe { r32(mmio, 0x14) };
     let rtsoff = unsafe { r32(mmio, 0x18) };
+
+    // Capture physical port connection state before HC reset. This is
+    // deliberately non-destructive: a repeated MOUS probe currently resets
+    // the controller, so we must distinguish "no device on the wire" from
+    // a device state lost during reset/initialization.
+    unsafe {
+        DIAG_PRE_CCS_MASK = 0;
+        DIAG_PRE_PORTSC_LAST = 0;
+        let mut pp = 1u8;
+        while pp <= ports {
+            let ps = r32(mmio + cap as usize + 0x400 + 0x10 * (pp as usize - 1), 0);
+            if ps & PORTSC_CCS != 0 {
+                DIAG_PRE_CCS_MASK |= 1u32 << ((pp - 1) as u32);
+            }
+            DIAG_PRE_PORTSC_LAST = ps;
+            serial::write_str("  [PRE-PORT] ");
+            serial::write_usize(pp as usize);
+            serial::write_str(" PORTSC=");
+            h32(ps);
+            serial::write_str(" CCS=");
+            serial::write_usize(if ps & PORTSC_CCS != 0 { 1 } else { 0 });
+            serial::write_str("\n");
+            pp += 1;
+        }
+    }
 
     serial::write_str("  CAP=");
     serial::write_usize(cap as usize);
