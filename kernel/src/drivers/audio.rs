@@ -569,7 +569,7 @@ fn probe_hda() {
                         serial::write_hex(vendor as usize);
                         serial::write_str("\n");
 
-                        let root_nodes = match send_verb(((ca as u32) << 28) | (0xF04u32 << 8)) {
+                        let root_nodes = match send_verb(((ca as u32) << 28) | 0x000F0004u32) {
                             Some(v) => v,
                             None => {
                                 serial::write_str("[AUDIO] HDA CODEC_ROOT_TIMEOUT=");
@@ -596,7 +596,7 @@ fn probe_hda() {
                         while scanned < scan_count {
                             let nid = node as u8;
                             if let Some(fg) = send_verb(
-                                ((ca as u32) << 28) | ((nid as u32) << 20) | (0xF05u32 << 8)
+                                ((ca as u32) << 28) | ((nid as u32) << 20) | 0x000F0005u32
                             ) {
                                 let fg_type = (fg & 0xFF) as u8;
                                 serial::write_str("[AUDIO] HDA CODEC=");
@@ -672,7 +672,7 @@ fn probe_hda() {
                         let caps = match send_verb(
                             ((codec as u32) << 28) |
                             ((nid as u32) << 20) |
-                            ((0xF00u32 << 8) | 0x09u32)
+                            0x000F0009u32
                         ) {
                             Some(v) => v,
                             None => { i += 1; continue; }
@@ -695,7 +695,7 @@ fn probe_hda() {
                             let pin_caps = match send_verb(
                                 ((codec as u32) << 28) |
                                 ((nid as u32) << 20) |
-                                ((0xF00u32 << 8) | 0x0Cu32)
+                                0x000F000Cu32
                             ) { Some(v) => v, None => 0 };
                             let output_capable = (pin_caps & (1 << 4)) != 0;
                             if output_capable {
