@@ -286,13 +286,14 @@ fn cmd_wf() {
     crate::drivers::wifi::set_wf_gui_output(false);
 }
 fn aud_probe_one(codec: u8, node: u8, param: u16) -> crate::drivers::audio::HdaVerbDiag {
-    // GET_PARAMETER is encoded as F00 | parameter (Intel HDA spec).
-    let verb12 = 0x0F00u16 | (param & 0x00FF);
-    let d = crate::drivers::audio::hda_raw_verb(codec, node, verb12);
+    // GET_PARAMETER is a 12-bit verb ID (F00h) plus an 8-bit payload.
+    // The complete 20-bit verb field is therefore F00 | parameter.
+    let verb20 = 0x000F_00u32 | (param as u32 & 0xFF);
+    let d = crate::drivers::audio::hda_raw_verb(codec, node, verb20);
     write_str("C="); write_hex(codec as usize);
     write_str(" N="); write_hex(node as usize);
     write_str(" P="); write_hex(param as usize);
-    write_str(" V="); write_hex(verb12 as usize);
+    write_str(" V="); write_hex(verb20 as usize);
     write_str(" OK="); write_str(if d.ok { "Y" } else { "N" });
     write_str(" RESP="); write_hex(d.response as usize);
     write_str("\n");
