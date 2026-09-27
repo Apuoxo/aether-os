@@ -76,6 +76,7 @@ const CSR_INT_BIT_FH_TX: u32 = 1 << 27;
 const CSR_FH_INT_TX_MASK: u32 = 0x0000_0003;
 const CSR_INT_BIT_FH_RX: u32 = 1 << 31;
 const CSR_INT_BIT_ALIVE: u32 = 1 << 0;
+const CSR_FH_INT_RX: usize = CSR_FH_INT_STATUS;
 const CSR_FH_INT_RX_MASK: u32 = (1 << 17) | (1 << 16);
 const FH_RSCSR_CHNL0: usize = FH_MEM_LOWER_BOUND + 0xBC0;
 const FH_RSCSR_STTS_WPTR: usize = FH_RSCSR_CHNL0 + 0x0;
@@ -515,7 +516,8 @@ pub fn init_command_queue() -> bool {
         CMD_SEQ = 0;
         CMD_QUEUE_READY = true;
         diag_write_str("[WIFI] CMDQ READY QUEUE=4 FIFO=7 SCD5000=YES STATUS=");
-        diag_write_hex(prph_read(SCD_QUEUE_STATUS_BITS) as usize);\n        diag_write_str(" TFD=256\\n");
+        diag_write_hex(prph_read(SCD_QUEUE_STATUS_BITS) as usize);
+        diag_write_str(" TFD=256\n");
         true
     }
 }
