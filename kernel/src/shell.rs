@@ -285,6 +285,31 @@ fn cmd_wf() {
     write_str("======== WF END ========\n");
     crate::drivers::wifi::set_wf_gui_output(false);
 }
+fn cmd_aud() {
+    write_str("======== AUD HDA/PCM DIAGNOSTIC ========\n");
+    write_str("HDA_FOUND=");
+    write_str(if crate::drivers::audio::hda_found() { "YES" } else { "NO" });
+    write_str(" MMIO=");
+    write_str(if crate::drivers::audio::hda_mmio_ready() { "READY" } else { "NO" });
+    write_str(" BAR0="); write_hex(crate::drivers::audio::hda_bar0() as usize); write_str("\n");
+    write_str("STREAM_READY=");
+    write_str(if crate::drivers::audio::hda_stream_ready() { "YES" } else { "NO" });
+    write_str(" RUNNING=");
+    write_str(if crate::drivers::audio::hda_stream_running() { "YES" } else { "NO" });
+    write_str(" BASE="); write_hex(crate::drivers::audio::hda_stream_base()); write_str("\n");
+    write_str("FMT="); write_hex(crate::drivers::audio::hda_stream_format() as usize);
+    write_str(" CTL="); write_hex(crate::drivers::audio::hda_stream_control() as usize);
+    write_str(" STAT="); write_hex(crate::drivers::audio::hda_stream_status() as usize); write_str("\n");
+    write_str("LPIB="); write_hex(crate::drivers::audio::hda_lpib() as usize);
+    write_str(" CBL="); write_hex(crate::drivers::audio::hda_stream_cbl() as usize);
+    write_str(" LVI="); write_hex(crate::drivers::audio::hda_stream_lvi() as usize); write_str("\n");
+    write_str("DMA="); write_hex(crate::drivers::audio::hda_dma_phys());
+    write_str(" BDL="); write_hex(crate::drivers::audio::hda_bdl_phys());
+    write_str(" TOTAL="); write_usize(crate::drivers::audio::hda_dma_total());
+    write_str(" NEXT="); write_usize(crate::drivers::audio::hda_dma_next()); write_str("\n");
+    write_str("======== AUD END ========\n");
+}
+
 fn run_line(line: &[u8], len: usize) {
     let mut s = 0usize;
     while s < len && line[s] == b' ' { s += 1; }
@@ -293,8 +318,10 @@ fn run_line(line: &[u8], len: usize) {
     let clen = e.saturating_sub(s);
     if eq(line, s, clen, b"WF") || eq(line, s, clen, b"wf") {
         cmd_wf();
+    } else if eq(line, s, clen, b"AUD") || eq(line, s, clen, b"aud") {
+        cmd_aud();
     } else {
-        write_str("unknown — WF only (WiFi implementation test)\n");
+        write_str("unknown — commands: AUD, WF\n");
     }
 }
 
