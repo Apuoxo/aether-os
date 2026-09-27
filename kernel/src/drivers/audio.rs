@@ -405,7 +405,7 @@ fn probe_hda() {
                 // exposes an Audio Function Group instead of assuming the lowest
                 // set bit is the playback codec.
                 let mut codec = 0u8;
-                let mut selected_next = 0u8;
+                let mut selected_next = 0u16;
                 let mut selected_root_start = 0u16;
                 let mut selected_root_count = 0u16;
                 let mut selected_afg = 0u8;
