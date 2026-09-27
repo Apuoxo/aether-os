@@ -1186,9 +1186,7 @@ fn handle_mouse_buttons(buttons: u8) {
                         let row=((my-(cy+240))/16) as usize;
                         if row < crate::media_player::builtin_count() && mx >= bx+18 && mx < bx+300 {
                             let _=crate::media_player::select_builtin(row);
-                            if row==0 {
-                                let _=crate::media_player::open_builtin(0);
-                            }
+                            let _=crate::media_player::open_builtin(row);
                             DIRTY_FULL=true;
                         }
                     } else if my >= py && my < py+28 {
@@ -1196,14 +1194,10 @@ fn handle_mouse_buttons(buttons: u8) {
                             crate::media_player::stop();
                         } else if mx >= bx+108 && mx < bx+190 {
                             let selected=crate::media_player::selected_builtin();
-                            if selected==0 {
-                                if crate::media_player::data_bytes()==0 {
-                                    let _=crate::media_player::open_builtin(selected);
-                                }
-                                crate::media_player::toggle_play();
-                            } else {
+                            if crate::media_player::data_bytes()==0 {
                                 let _=crate::media_player::open_builtin(selected);
                             }
+                            crate::media_player::toggle_play();
                         } else if mx >= bx+202 && mx < bx+284 {
                             crate::media_player::stop();
                         } else if mx >= bx+296 && mx < bx+378 {
@@ -1536,7 +1530,7 @@ fn draw_window(idx: usize) {
                     bi+=1;
                 }
                 graphics::draw_str(wx+330,cy+248,"Select a track, then Play",COL_TEXT_DIM);
-                graphics::draw_str(wx+330,cy+264,"MP3/OGG: decoder pending",COL_TEXT_DIM);
+                graphics::draw_str(wx+330,cy+264,"MP3: native decoder",COL_TEXT_DIM);
             }
             WinKind::About => {
                                 graphics::fill_rect(
