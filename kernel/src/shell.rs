@@ -285,6 +285,113 @@ fn cmd_wf() {
     write_str("======== WF END ========\n");
     crate::drivers::wifi::set_wf_gui_output(false);
 }
+fn aud_probe_one(codec: u8, node: u8, param: u16) -> crate::drivers::audio::HdaVerbDiag {
+    let d = crate::drivers::audio::hda_raw_verb(codec, node, param);
+    write_str("C="); write_hex(codec as usize);
+    write_str(" N="); write_hex(node as usize);
+    write_str(" P="); write_hex(param as usize);
+    write_str(" CMD="); write_hex(crate::drivers::audio::hda_verb_last() as usize);
+    write_str(" OK="); write_str(if d.ok { "Y" } else { "N" });
+    write_str(" RESP="); write_hex(d.response as usize);
+    write_str(" META="); write_hex(d.meta as usize);
+    write_str(" CRP="); write_hex(d.corb_rp_before as usize);
+    write_str(" CWP="); write_hex(d.corb_wp_before as usize);
+    write_str(">"); write_hex(d.corb_wp_after as usize);
+    write_str(" RWP="); write_hex(d.rirb_wp_before as usize);
+    write_str(">"); write_hex(d.rirb_wp_after as usize);
+    write_str(" RSTS="); write_hex(d.rirb_status as usize);
+    write_str(" INT="); write_hex(d.intsts as usize);
+    write_str("\n");
+    d
+}
+
+fn cmd_aud_extended() {
+    write_str("======== AUD HDA RAW TOPOLOGY/TRANSPORT ========\n");
+    if !crate::drivers::audio::hda_mmio_ready() {
+        write_str("EXT_CAUSE=MMIO_NOT_READY\n======== AUD EXT END ========\n");
+        return;
+    }
+    let codecs = [0u8, 3u8];
+    let params = [0x00u16, 0x02u16, 0x04u16, 0x05u16, 0x08u16, 0x09u16, 0x0Cu16, 0x0Eu16];
+    let mut ci = 0usize;
+    while ci < codecs.len() {
+        let codec = codecs[ci];
+        if (crate::drivers::audio::hda_statests() & (1u16 << codec)) == 0 {
+            write_str("CODEC="); write_hex(codec as usize); write_str(" STATE=ABSENT\n");
+            ci += 1;
+            continue;
+        }
+        write_str("---- CODEC "); write_hex(codec as usize); write_str(" ROOT ----\n");
+        let mut root_count = 0u32;
+        let mut pi = 0usize;
+        while pi < params.len() {
+            let d = aud_probe_one(codec, 0, params[pi]);
+            if params[pi] == 0x04 && d.ok { root_count = d.response; }
+            pi += 1;
+        }
+        let start = ((root_count >> 16) & 0xFFFF) as u8;
+        let count = (root_count & 0xFFFF) as usize;
+        write_str("ROOT_DECODE START="); write_hex(start as usize);
+        write_str(" COUNT="); write_usize(count); write_str("\n");
+
+        if count == 0 || count > 64 {
+            write_str("ROOT_COUNT_INVALID; bounded fallback NODE_SCAN=0..31\n");
+        }
+        let scan = if count > 0 && count <= 64 { count.min(64) } else { 32 };
+        let scan_start = if count > 0 && count <= 64 { start } else { 0 };
+        let mut afg = 0u8;
+        let mut n = 0usize;
+        while n < scan {
+            let node = scan_start.wrapping_add(n as u8);
+            let d = aud_probe_one(codec, node, 0x05);
+            if d.ok && (d.response & 0xFF) == 1 && afg == 0 {
+                afg = node;
+                write_str("AFG_CANDIDATE NODE="); write_hex(node as usize);
+                write_str(" TYPE="); write_hex((d.response & 0xFF) as usize); write_str("\n");
+            }
+            n += 1;
+        }
+        if afg == 0 {
+            write_str("AFG_RESULT=NONE\n");
+            ci += 1;
+            continue;
+        }
+
+        write_str("---- CODEC "); write_hex(codec as usize); write_str(" AFG="); write_hex(afg as usize); write_str(" ----\n");
+        let afg_nodes = aud_probe_one(codec, afg, 0x04);
+        let ws = ((afg_nodes.response >> 16) & 0xFFFF) as usize;
+        let wc = (afg_nodes.response & 0xFFFF) as usize;
+        write_str("WIDGET_RANGE START="); write_hex(ws);
+        write_str(" COUNT="); write_usize(wc); write_str("\n");
+        let wscan = wc.min(32);
+        let mut wi = 0usize;
+        while wi < wscan {
+            let node = (ws + wi) as u8;
+            let d = aud_probe_one(codec, node, 0x09);
+            if d.ok {
+                let typ = ((d.response >> 20) & 0xF) as u8;
+                write_str("WIDGET N="); write_hex(node as usize);
+                write_str(" TYPE="); write_hex(typ as usize);
+                if typ == 4 {
+                    let pc = aud_probe_one(codec, node, 0x0C);
+                    let cfg = aud_probe_one(codec, node, 0x1C);
+                    write_str(" PINCAP="); write_hex(pc.response as usize);
+                    write_str(" CFG="); write_hex(cfg.response as usize);
+                }
+                write_str("\n");
+            }
+            wi += 1;
+        }
+        ci += 1;
+    }
+    write_str("EXT_FINAL RINGS CORB_RP="); write_hex(crate::drivers::audio::hda_corb_rp() as usize);
+    write_str(" CORB_WP="); write_hex(crate::drivers::audio::hda_corb_wp() as usize);
+    write_str(" RIRB_WP="); write_hex(crate::drivers::audio::hda_rirb_wp() as usize);
+    write_str(" RIRB_STS="); write_hex(crate::drivers::audio::hda_rirb_sts() as usize);
+    write_str(" INTSTS="); write_hex(crate::drivers::audio::hda_intsts() as usize); write_str("\n");
+    write_str("======== AUD EXT END ========\n");
+}
+
 fn cmd_aud() {
     write_str("======== AUD HDA/PCM DIAGNOSTIC ========\n");
     write_str("HDA_FOUND=");
@@ -373,6 +480,7 @@ fn cmd_aud() {
     }
     write_str("\n");
     write_str("======== AUD END ========\n");
+    cmd_aud_extended();
 }
 fn run_line(line: &[u8], len: usize) {
     let mut s = 0usize;
