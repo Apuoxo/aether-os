@@ -1206,7 +1206,7 @@ fn handle_mouse_buttons(buttons: u8) {
                         }
                     } else if my >= py && my < py+28 {
                         if mx >= bx+24 && mx < bx+96 {
-                            crate::media_player::stop();
+                            let _=crate::media_player::previous();
                         } else if mx >= bx+108 && mx < bx+190 {
                             let selected=crate::media_player::selected_builtin();
                             if crate::media_player::data_bytes()==0 {
