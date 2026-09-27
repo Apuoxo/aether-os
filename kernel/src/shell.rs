@@ -403,6 +403,38 @@ fn cmd_aud_readback() {
                         j += 1;
                     }
                     aud_readback(codec, nid, "UPSTREAM_CONN_SEL", 0xF01u32 << 8);
+
+                    // Mixer input/output amplifier state; read-only.
+                    let mut ai = 0usize;
+                    while ai < count {
+                        let left = crate::drivers::audio::hda_raw_verb(
+                            codec, nid, (0xBu32 << 16) | 0x2000 | ai as u32
+                        );
+                        let right = crate::drivers::audio::hda_raw_verb(
+                            codec, nid, (0xBu32 << 16) | ai as u32
+                        );
+                        if left.ok {
+                            write_str("UPSTREAM_AMP_IN_L["); write_usize(ai); write_str("]=");
+                            write_hex(left.response as usize); write_str("\n");
+                        }
+                        if right.ok {
+                            write_str("UPSTREAM_AMP_IN_R["); write_usize(ai); write_str("]=");
+                            write_hex(right.response as usize); write_str("\n");
+                        }
+                        ai += 1;
+                    }
+                    let out_l = crate::drivers::audio::hda_raw_verb(
+                        codec, nid, (0xBu32 << 16) | 0x8000 | 0x2000
+                    );
+                    let out_r = crate::drivers::audio::hda_raw_verb(
+                        codec, nid, (0xBu32 << 16) | 0x8000
+                    );
+                    if out_l.ok {
+                        write_str("UPSTREAM_AMP_OUT_L="); write_hex(out_l.response as usize); write_str("\n");
+                    }
+                    if out_r.ok {
+                        write_str("UPSTREAM_AMP_OUT_R="); write_hex(out_r.response as usize); write_str("\n");
+                    }
                 }
                 ci += 1;
             }
