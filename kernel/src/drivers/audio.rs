@@ -638,8 +638,12 @@ pub fn playback_start(rate:u32,ch:u16,bits:u16)->bool {
         HDA_STREAM_FMT=fmt;
 
         let sd=HDA_STREAM_BASE;
-        hda_w8(HDA_BAR0 as usize,sd+0x02,0);
-        let mut t=0u32; while t<10000 && (hda_r8(HDA_BAR0 as usize,sd+0x02)&1)!=0 {t+=1;core::hint::spin_loop();}
+        // Stream reset is bit 0; RUN is bit 1.  Reset before programming
+        // CBL/LVI/FMT/BDL, then verify the reset clears.
+        hda_w32(HDA_BAR0 as usize,sd,1);
+        let mut t=0u32; while t<10000 && (hda_r32(HDA_BAR0 as usize,sd)&1)==0 {t+=1;core::hint::spin_loop();}
+        hda_w32(HDA_BAR0 as usize,sd,0);
+        t=0; while t<10000 && (hda_r32(HDA_BAR0 as usize,sd)&1)!=0 {t+=1;core::hint::spin_loop();}
         hda_w32(HDA_BAR0 as usize,sd+0x08,0);
         hda_w16(HDA_BAR0 as usize,sd+0x0C,3);
         hda_w16(HDA_BAR0 as usize,sd+0x12,fmt);
@@ -665,12 +669,11 @@ pub fn playback_start(rate:u32,ch:u16,bits:u16)->bool {
         }
         hda_w32(HDA_BAR0 as usize,sd+0x18,HDA_BDL_PHYS as u32);
         hda_w32(HDA_BAR0 as usize,sd+0x1C,(HDA_BDL_PHYS>>32) as u32);
-        hda_w8(HDA_BAR0 as usize,sd+0x02,0x04);
+        hda_w8(HDA_BAR0 as usize,sd+0x03,0x1C); // clear BCIS/FIFOE/DESE
         hda_w32(HDA_BAR0 as usize,sd+0x04,(4096*4) as u32);
         hda_w16(HDA_BAR0 as usize,sd+0x0C,3);
-        hda_w8(HDA_BAR0 as usize,sd+0x02,0x01);
-        let ctl=hda_r32(HDA_BAR0 as usize,sd);
-        hda_w32(HDA_BAR0 as usize,sd,(ctl & 0x000F0000) | 0x00100001);
+        let ctl=(HDA_STREAM_TAG as u32)<<20;
+        hda_w32(HDA_BAR0 as usize,sd,ctl | 0x00000002); // RUN=1
         HDA_STREAM_RUNNING=true;
         serial::write_str("[AUDIO] HDA PLAY START FMT=");
         serial::write_hex(fmt as usize); serial::write_str(" BDL="); serial::write_hex(HDA_BDL_PHYS);
@@ -684,8 +687,8 @@ pub fn playback_stop() {
         if !HDA_STREAM_RUNNING { return; }
         let sd=HDA_STREAM_BASE;
         let base=HDA_BAR0 as usize;
-        hda_w32(base,sd, hda_r32(base,sd) & !1);
-        let mut t=0u32; while t<10000 && (hda_r32(base,sd)&1)!=0 {t+=1;core::hint::spin_loop();}
+        hda_w32(base,sd, hda_r32(base,sd) & !0x2);
+        let mut t=0u32; while t<10000 && (hda_r32(base,sd)&0x2)!=0 {t+=1;core::hint::spin_loop();}
         HDA_STREAM_RUNNING=false;
         serial::write_str("[AUDIO] HDA PLAY STOP LPIB=");
         serial::write_hex(hda_r32(base,sd+0x04) as usize); serial::write_str("\n");
