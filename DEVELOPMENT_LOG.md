@@ -225,3 +225,10 @@ Every significant change should be followed by:
 ### 2026-09-28 — Multiboot2 RAM discovery / RAM command
 - Added Multiboot2 memory-map discovery and the RAM terminal diagnostic.
 - PMM remains unchanged at 64 MiB until runtime RAM output is verified on real hardware.
+
+
+### 2026-09-28 — Range-based PMM from Multiboot2 map
+- Replaced the fixed 64 MiB PMM bitmap with a range-based physical page allocator driven by Multiboot2 type-1 usable ranges.
+- Keeps non-usable ranges out of the allocator and reserves the Multiboot information block and Multiboot module payloads.
+- Preserves contiguous allocation for existing page users while allowing physical RAM above 4 GiB.
+- Commit requested as `diag: Ram`; CI must pass before further PMM changes or hardware testing.

@@ -837,7 +837,7 @@ fn cmd_ram() {
     write_str("MBI=0x"); write_hex(crate::mm::multiboot_addr()); write_str("\n");
     write_str("MAP_ENTRIES="); write_usize(crate::mm::memory_map_count()); write_str(" USABLE_RAM="); write_usize(crate::mm::usable_ram_bytes() / (1024 * 1024)); write_str(" MiB\n");
     write_str("HIGHEST_PHYS=0x"); write_hex(crate::mm::highest_phys_addr()); write_str("\n");
-    write_str("PMM_CONFIGURED=64 MiB (DISCOVERY ONLY)\nRANGES:\n");
+    write_str("PMM_CONFIGURED=RANGE_BASED\nPMM_TOTAL="); write_usize(crate::mm::total_bytes() / (1024 * 1024)); write_str(" MiB FREE="); write_usize(crate::mm::free_bytes() / (1024 * 1024)); write_str(" MiB\nRANGES:\n");
     let n = crate::mm::memory_map_count(); let mut i = 0usize;
     while i < n { if let Some((base, len, kind)) = crate::mm::memory_range(i) { write_str("#"); write_usize(i); write_str(" B="); write_hex(base as usize); write_str(" L="); write_hex(len as usize); write_str(" T="); if kind == 1 { write_str("USABLE"); } else if kind == 3 { write_str("ACPI"); } else if kind == 4 { write_str("NVS"); } else if kind == 5 { write_str("BAD"); } else { write_str("RESERVED"); } write_str("\n"); } i += 1; }
     write_str("======== RAM MAP END ========\n");
