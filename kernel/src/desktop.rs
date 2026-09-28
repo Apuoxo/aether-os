@@ -994,6 +994,7 @@ fn toggle_maximize(idx: usize) {
             WINS[idx].maximized = true;
             WINS[idx].minimized = false;
         }
+        BACKGROUND_DRAWN = false;
         DIRTY_FULL = true;
     }
 }
@@ -1017,6 +1018,7 @@ fn toggle_minimize(idx: usize) {
                 i += 1;
             }
         }
+        BACKGROUND_DRAWN = false;
         DIRTY_FULL = true;
     }
 }
@@ -1752,6 +1754,7 @@ fn handle_mouse_buttons(buttons: u8) {
                 if in_close(idx, mx, my) {
                     WINS[idx].visible = false;
                     WINS[idx].minimized = false;
+                    BACKGROUND_DRAWN = false;
                     let mut i = 0usize;
                     while i < MAX_WIN {
                         if WINS[i].visible {
