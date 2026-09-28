@@ -679,7 +679,7 @@ fn term_history_next() {
     }
 }
 
-pub pub fn term_search_set(query:&[u8],len:usize){
+pub fn term_search_set(query:&[u8],len:usize){
     unsafe{
         TERM_SEARCH_LEN=len.min(TERM_SEARCH.len());let mut i=0;while i<TERM_SEARCH_LEN{TERM_SEARCH[i]=query[i];i+=1;}
         TERM_SEARCH_HIT_COUNT=0;TERM_SEARCH_ACTIVE=TERM_SEARCH_LEN>0;if !TERM_SEARCH_ACTIVE{DIRTY_FULL=true;return;}
