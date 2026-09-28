@@ -173,7 +173,12 @@ const TERM_ROWS: usize = 512;
 const TERM_COLS: usize = 128;
 const TERM_VIEW_ROWS_MAX: usize = 48; // safety cap; actual viewport follows terminal window height
 static mut TERM_LINES: [[u8; TERM_COLS]; TERM_ROWS] = [[0; TERM_COLS]; TERM_ROWS];
+static mut TERM_COLOR: [[u8; TERM_COLS]; TERM_ROWS] = [[7; TERM_COLS]; TERM_ROWS];
 static mut TERM_LEN: [usize; TERM_ROWS] = [0; TERM_ROWS];
+static mut TERM_ANSI_STATE: u8 = 0;
+static mut TERM_ANSI_PARAMS: [u16; 4] = [0; 4];
+static mut TERM_ANSI_PARAM_COUNT: usize = 0;
+static mut TERM_ANSI_CURRENT: u8 = 7;
 static mut TERM_ROW: usize = 0;
 static mut TERM_VIEW: usize = 0; // 0 = live bottom, larger = scrolled up
 static mut TERM_SCROLL_DRAG: bool = false;
@@ -395,12 +400,17 @@ fn term_clear() {
             let mut c = 0usize;
             while c < TERM_COLS {
                 TERM_LINES[r][c] = 0;
+                TERM_COLOR[r][c] = 7;
                 c += 1;
             }
             r += 1;
         }
         TERM_ROW = 0;
         TERM_VIEW = 0;
+        TERM_ANSI_STATE = 0;
+        TERM_ANSI_PARAM_COUNT = 0;
+        TERM_ANSI_PARAMS = [0; 4];
+        TERM_ANSI_CURRENT = 7;
     }
 }
 
@@ -662,6 +672,74 @@ pub fn terminal_clear() {
     }
 }
 
+fn term_ansi_color(code: u8) -> u32 {
+    match code {
+        0 => 0x00000000, 1 => 0x00E81123, 2 => 0x00107C10, 3 => 0x00FFB900,
+        4 => 0x000078D7, 5 => 0x005C2D91, 6 => 0x0000B7C3, 7 => 0x00C0C0C0,
+        8 => 0x00808080, 9 => 0x00FF5C5C, 10 => 0x0066D966, 11 => 0x00FFD966,
+        12 => 0x005CA8FF, 13 => 0x00B07CFF, 14 => 0x005CE1E6, 15 => 0x00FFFFFF,
+        _ => 0x00C0C0C0,
+    }
+}
+
+fn term_ansi_apply(final_byte: u8) {
+    unsafe {
+        let p0 = if TERM_ANSI_PARAM_COUNT > 0 { TERM_ANSI_PARAMS[0] } else { 0 };
+        if final_byte == b'm' {
+            if TERM_ANSI_PARAM_COUNT == 0 { TERM_ANSI_CURRENT = 7; }
+            let mut i = 0usize;
+            while i < TERM_ANSI_PARAM_COUNT {
+                let p = TERM_ANSI_PARAMS[i];
+                if p == 0 || p == 39 { TERM_ANSI_CURRENT = 7; }
+                else if p == 1 { if TERM_ANSI_CURRENT < 8 { TERM_ANSI_CURRENT += 8; } }
+                else if p >= 30 && p <= 37 { TERM_ANSI_CURRENT = (p - 30) as u8; }
+                else if p >= 90 && p <= 97 { TERM_ANSI_CURRENT = (p - 90 + 8) as u8; }
+                i += 1;
+            }
+        } else if final_byte == b'J' && p0 == 2 {
+            let mut r = 0usize;
+            while r < TERM_ROWS { TERM_LEN[r] = 0; r += 1; }
+            TERM_ROW = 0; TERM_VIEW = 0;
+        } else if final_byte == b'K' {
+            TERM_LEN[TERM_ROW] = 0;
+        }
+        TERM_ANSI_STATE = 0;
+        TERM_ANSI_PARAM_COUNT = 0;
+        TERM_ANSI_PARAMS = [0; 4];
+    }
+}
+
+fn term_ansi_byte(ch: u8) {
+    unsafe {
+        if TERM_ANSI_STATE == 1 {
+            if ch == b'[' {
+                TERM_ANSI_STATE = 2;
+                TERM_ANSI_PARAM_COUNT = 0;
+                TERM_ANSI_PARAMS = [0; 4];
+            } else { TERM_ANSI_STATE = 0; }
+            return;
+        }
+        if TERM_ANSI_STATE == 2 {
+            if ch >= b'0' && ch <= b'9' {
+                if TERM_ANSI_PARAM_COUNT == 0 { TERM_ANSI_PARAM_COUNT = 1; }
+                let n = TERM_ANSI_PARAM_COUNT - 1;
+                TERM_ANSI_PARAMS[n] = TERM_ANSI_PARAMS[n].saturating_mul(10).saturating_add((ch - b'0') as u16);
+                return;
+            }
+            if ch == b';' {
+                if TERM_ANSI_PARAM_COUNT < 4 { TERM_ANSI_PARAM_COUNT += 1; }
+                return;
+            }
+            if ch >= 0x40 && ch <= 0x7E { term_ansi_apply(ch); return; }
+            TERM_ANSI_STATE = 0;
+            TERM_ANSI_PARAM_COUNT = 0;
+            return;
+        }
+        if ch == 0x1B { TERM_ANSI_STATE = 1; return; }
+        term_putc(ch);
+    }
+}
+
 fn term_newline() {
     unsafe {
         if TERM_ROW + 1 < TERM_ROWS {
@@ -676,12 +754,15 @@ fn term_newline() {
                     c += 1;
                 }
                 TERM_LEN[r] = TERM_LEN[r + 1];
+                let mut c2 = 0usize;
+                while c2 < TERM_COLS { TERM_COLOR[r][c2] = TERM_COLOR[r + 1][c2]; c2 += 1; }
                 r += 1;
             }
             TERM_LEN[TERM_ROWS - 1] = 0;
             let mut c = 0usize;
             while c < TERM_COLS {
                 TERM_LINES[TERM_ROWS - 1][c] = 0;
+                TERM_COLOR[TERM_ROWS - 1][c] = TERM_ANSI_CURRENT;
                 c += 1;
             }
         }
@@ -701,6 +782,7 @@ fn term_putc(ch: u8) {
         if TERM_LEN[TERM_ROW] < TERM_COLS {
             let c = TERM_LEN[TERM_ROW];
             TERM_LINES[TERM_ROW][c] = ch;
+            TERM_COLOR[TERM_ROW][c] = TERM_ANSI_CURRENT;
             TERM_LEN[TERM_ROW] = c + 1;
         }
     }
@@ -728,7 +810,7 @@ fn term_write_hex(mut v: usize) {
 
 pub fn terminal_write(s: &str) {
     for b in s.bytes() {
-        term_putc(b);
+        term_ansi_byte(b);
     }
     unsafe {
         DIRTY_FULL = true;
@@ -737,7 +819,7 @@ pub fn terminal_write(s: &str) {
 }
 /// Single-character output bridge for the unified kernel command executor.
 pub fn terminal_write_char(ch: u8) {
-    term_putc(ch);
+    term_ansi_byte(ch);
     unsafe { DIRTY_FULL = true; }
 }
 
@@ -2021,7 +2103,7 @@ fn draw_window(idx: usize) {
                                     graphics::fill_rect(wx + 10 + k * 8, y, 8, 10, 0x0000B7C3);
                                     graphics::draw_char(wx + 10 + k * 8, y, TERM_LINES[idx][k], 0x00FFFFFF);
                                 } else {
-                                    graphics::draw_char(wx + 10 + k * 8, y, TERM_LINES[idx][k], COL_TERM_FG);
+                                    graphics::draw_char(wx + 10 + k * 8, y, TERM_LINES[idx][k], term_ansi_color(TERM_COLOR[idx][k]));
                                 }
                                 k += 1;
                             }

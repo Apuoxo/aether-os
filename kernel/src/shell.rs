@@ -834,7 +834,7 @@ fn cmd_video_mode(w: u16, h: u16) {
 
 fn cmd_help() {
     write_str("Aether Terminal — native command interface\n");
-    write_str("Core: HELP  CLS  VER\n");
+    write_str("Core: HELP  CLS  VER  TANSI\n");
     write_str("Hardware: KMS5  VINFO  V800  V1366  AUD  AUD2  AUD3  MOUS  USB  WF\n");
     write_str("Tip: Up/Down recalls command history; arrow keys scroll long output.\n");
 }
@@ -842,6 +842,13 @@ fn cmd_help() {
 fn cmd_ver() {
     write_str("Aether OS terminal 1.0\n");
     write_str("Native x86_64 shell; GUI terminal backend active\n");
+}
+
+fn cmd_tansi() {
+    write_str("ANSI SGR test: ");
+    write_str("\x1b[31mRED \x1b[32mGREEN \x1b[34mBLUE \x1b[93mBRIGHT-YELLOW \x1b[0mDEFAULT\n");
+    write_str("\x1b[35mMAGENTA\x1b[0m / \x1b[36mCYAN\x1b[0m / \x1b[97mWHITE\x1b[0m\n");
+    write_str("Parser: SGR 0, 1, 30-37, 90-97; CSI 2J/K\n");
 }
 
 fn run_line(line: &[u8], len: usize) {
@@ -856,6 +863,8 @@ fn run_line(line: &[u8], len: usize) {
         crate::desktop::terminal_clear();
     } else if eq(line, s, clen, b"VER") || eq(line, s, clen, b"ver") {
         cmd_ver();
+    } else if eq(line, s, clen, b"TANSI") || eq(line, s, clen, b"tansi") {
+        cmd_tansi();
     } else if eq(line, s, clen, b"KMS5") || eq(line, s, clen, b"kms5") {
         cmd_kms5();
     } else if eq(line, s, clen, b"VINFO") || eq(line, s, clen, b"vinfo") {
