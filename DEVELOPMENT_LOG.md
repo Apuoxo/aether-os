@@ -205,3 +205,18 @@ Every significant change should be followed by:
 - Replaced that lossy ASCII conversion with bounded UTF-8 encoding, including surrogate-pair handling, while keeping the existing fixed-size NtfsEntry ABI.
 - Explorer, Media Player, filesystem reads, and HDA code were not changed in this step.
 - Acceptance: Cyrillic and other Unicode NTFS filenames must reach the Explorer renderer intact instead of appearing as '?'.
+
+
+### 2026-09-28 — Media/Explorer stabilization plan: RAM first, then audio/UI
+- User test after the HDA buffer increase still reports a short CD-like playback stutter when actively navigating/clicking in Explorer. The previous harsher digital `bebe` artifact is reduced, but the interruption remains.
+- Before changing the audio architecture, the next controlled step is RAM/memory diagnostics: establish what physical memory Aether detects, what portion is usable by the kernel, and current heap/allocator usage.
+- Planned `MEM` diagnostic should report, within the existing GUI terminal's 16-row/52-column constraints where applicable: total RAM, usable RAM, kernel/heap totals and usage, free memory, and relevant DMA/PCM allocations.
+- Do not assume the machine's physical 16 GiB is fully available to Aether until runtime evidence confirms the memory map and allocator state.
+- After RAM evidence, planned fixes remain:
+  1. diagnose and fix the `Artist - Song.mp3` NTFS Explorer open failure (with spaces around the hyphen);
+  2. show current playing filename in Media Player;
+  3. add real playback elapsed/total timing;
+  4. add a visible playback progress indicator;
+  5. decouple audio refill/service from the desktop/Explorer polling path so filesystem/UI activity cannot starve PCM playback;
+  6. replace the temporary Explorer→Media Player synthetic-path coupling with a proper Open/FileObject/application-association layer.
+- Rule for this sequence: one focused commit at a time, green CI before AH532 testing, and no speculative audio/GUI refactor before the RAM evidence is collected.
