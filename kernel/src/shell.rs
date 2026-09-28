@@ -688,7 +688,7 @@ fn cmd_usbtop() {
         let prog = (cl >> 8) & 0xFF;
         write_str("USB["); write_usize(i); write_str("] BDF=");
         write_usize(bus as usize); write_str(":"); write_usize(dev as usize); write_str(".");
-        write_usize(func as usize); write_str(" VID:DID="); write_hex(id);
+        write_usize(func as usize); write_str(" VID:DID="); write_hex(id as usize);
         write_str(" IF="); write_hex(prog as usize);
         write_str(" BAR0="); write_hex(bar as usize);
         write_str(" TYPE=");
