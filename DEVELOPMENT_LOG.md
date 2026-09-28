@@ -190,3 +190,11 @@ Every significant change should be followed by:
 - Root cause: NTFS Explorer double-click stopped at `NTFS file preview not implemented`; AetherFS already used the media-player handoff.
 - Added bounded NTFS file-data reads, an NTFS MP3 source in the native player, and NTFS `.mp3` double-click routing through the existing media-player handoff.
 - No graphics, HDA, partition mounting, or decoder changes.
+
+
+### 2026-09-28 — HDA playback cushion for Explorer UI load
+- User observed a short digital `bebe`/glitch in ongoing MP3 playback when opening Explorer or clicking inside it.
+- Source inspection found the HDA PCM ring is serviced from the desktop polling loop; the previous 8-period / 32 KiB ring could be exhausted during a synchronous Explorer redraw or filesystem operation.
+- Increased the cyclic PCM DMA ring from 8 to 16 periods (64 KiB), with matching 16-entry BDL, CBL and LVI configuration.
+- MP3 decoding, NTFS routing, Explorer behavior, graphics, and codec setup are unchanged.
+- Acceptance: continuous MP3 playback while opening/clicking Explorer must remain clean.
