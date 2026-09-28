@@ -582,6 +582,7 @@ pub fn open_media_path(path:&str)->bool {
 
 fn open_win(slot: usize) {
     unsafe {
+        if slot == 11 && FOCUS < MAX_WIN && WINS[FOCUS].visible { KEYBOARD_TARGET=FOCUS; }
         if slot == 99 {
             return; // Recycle Bin: empty / not implemented
         }
@@ -2426,6 +2427,26 @@ fn hit_start_menu(mx: i32, my: i32) -> Option<usize> {
     }
 }
 
+fn draw_media_open_dialog(){
+    unsafe{
+        if !MEDIA_OPEN_DIALOG{return;}
+        let sw=graphics::width();let sh=graphics::height();let dw=556usize;let dh=292usize;
+        let dx=(sw.saturating_sub(dw))/2;let dy=(sh.saturating_sub(dh))/2;
+        graphics::fill_rect(dx+4,dy+4,dw,dh,0x00404040);graphics::fill_rect(dx,dy,dw,dh,0x00ECE9D8);
+        graphics::fill_rect(dx,dy,dw,26,0x000A246A);graphics::draw_str(dx+10,dy+9,"Open Media File",0x00FFFFFF);
+        graphics::fill_rect(dx+10,dy+30,76,26,COL_BTN_FACE);graphics::border_rect(dx+10,dy+30,76,26,0x00606060);graphics::draw_str(dx+30,dy+39,"Up",COL_TEXT);
+        graphics::fill_rect(dx+dw-90,dy+30,80,26,COL_BTN_FACE);graphics::border_rect(dx+dw-90,dy+30,80,26,0x00606060);graphics::draw_str(dx+dw-70,dy+39,"Cancel",COL_TEXT);
+        graphics::fill_rect(dx+96,dy+30,dw-196,26,0x00FFFFFF);graphics::border_rect(dx+96,dy+30,dw-196,26,0x00808080);
+        if let Ok(d)=core::str::from_utf8(&MEDIA_DIR[..MEDIA_DIR_LEN]){graphics::draw_str(dx+102,dy+39,d,COL_TEXT);}
+        let mut items=[fs::ListItem{name:[0;24],name_len:0,size:0,is_dir:false};16];let count=fs::list_ex_path(media_dir_string(),&mut items);
+        let ly=dy+92;graphics::fill_rect(dx+10,dy+62,dw-20,dh-72,0x00FFFFFF);graphics::border_rect(dx+10,dy+62,dw-20,dh-72,0x00808080);
+        let mut i=0usize;while i<count&&i<16{let yy=ly+i*14;let mut name=[0u8;24];let mut j=0usize;
+            while j<items[i].name_len&&j<24{name[j]=items[i].name[j];j+=1;}
+            if let Ok(ns)=core::str::from_utf8(&name[..j]){if items[i].is_dir{graphics::draw_str(dx+20,yy,"[DIR]",0x00000080);}graphics::draw_str(dx+68,yy,ns,COL_TEXT);}i+=1;}
+        graphics::draw_str(dx+18,dy+dh-18,"Supported: MP3, WAV | select a file to open",COL_TEXT_DIM);
+    }
+}
+
 fn render() {
     let w = graphics::width();
     let h = graphics::height();
@@ -2474,9 +2495,8 @@ fn render() {
             draw_window(order[i]);
             i += 1;
         }
-        if START_MENU {
-            draw_start_menu();
-        }
+        if MEDIA_OPEN_DIALOG { draw_media_open_dialog(); }
+        if START_MENU { draw_start_menu(); }
         if CTX_MENU {
             draw_ctx_menu();
         }
@@ -2583,6 +2603,8 @@ pub fn run() -> ! {
         WINS[0].w = sw;
         WINS[0].h = sh - 70;
         WINS[0].maximized = true;
+        MEDIA_DIR_LEN=1; MEDIA_DIR[0]=b'/'; MEDIA_OPEN_DIALOG=false;
+        KEYBOARD_TARGET=0; KEYBOARD_SHIFT=false; KEYBOARD_CAPS=false; KEYBOARD_CTRL=false; KEYBOARD_ALT=false;
     }
     serial::write_str("\n======== Aether Desktop v1.1 XP ========\n");
     crate::drivers::audio::init();
@@ -3508,6 +3530,28 @@ fn draw_window(idx: usize) {
                 }
                 graphics::draw_str(wx+330,cy+248,"Select a track, then Play",COL_TEXT_DIM);
                 graphics::draw_str(wx+330,cy+264,"MP3: native decoder",COL_TEXT_DIM);
+            }
+            WinKind::Keyboard => {
+                let ky=wy+TITLE_H as usize+42;let kx=wx+10;
+                graphics::fill_rect(wx+3,wy+TITLE_H as usize,ww-6,wh-TITLE_H as usize-3,0x00ECE9D8);
+                graphics::draw_str(wx+14,wy+32,"Click keys to type into the previously focused window",COL_TEXT_DIM);
+                let rows:[&[&str];5]=[&["ESC","F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"],&["1","2","3","4","5","6","7","8","9","0","-","=","BACK"],&["TAB","q","w","e","r","t","y","u","i","o","p","[","]"],&["CAPS","a","s","d","f","g","h","j","k","l",";","'","ENTER"],&["SHIFT","z","x","c","v","b","n","m",",",".","/","UP","DOWN"]];
+                let widths:[i32;13]=[46,50,50,50,50,50,50,50,50,50,50,50,92];
+                let mut r=0usize;
+                while r<rows.len(){let mut x=kx;let y=ky+r*36;let mut c=0usize;
+                    while c<rows[r].len(){let label=rows[r][c];let w=widths[c] as usize;
+                        let active=unsafe{(label=="SHIFT"&&KEYBOARD_SHIFT)||(label=="CAPS"&&KEYBOARD_CAPS)||(label=="CTRL"&&KEYBOARD_CTRL)||(label=="ALT"&&KEYBOARD_ALT)};
+                        graphics::fill_rect(x as usize,y,w,30,if active{0x00B8D4FF}else{COL_BTN_FACE});
+                        graphics::border_rect(x as usize,y,w,30,0x00606060);
+                        graphics::draw_str(x as usize+(w.saturating_sub(label.len()*8))/2,y+10,label,COL_TEXT);
+                        x+=widths[c]+3;c+=1;}r+=1;}
+                let y=ky+180;let bottom:[(&str,i32);8]=[("CTRL",66),("ALT",66),("SPACE",270),("LEFT",60),("RIGHT",60),("HOME",60),("END",60),("DEL",60)];
+                let mut x=kx;let mut i=0usize;
+                while i<bottom.len(){let(label,w)=bottom[i];let active=unsafe{(label=="CTRL"&&KEYBOARD_CTRL)||(label=="ALT"&&KEYBOARD_ALT)};
+                    graphics::fill_rect(x as usize,y,w as usize,30,if active{0x00B8D4FF}else{COL_BTN_FACE});
+                    graphics::border_rect(x as usize,y,w as usize,30,0x00606060);
+                    graphics::draw_str(x as usize+((w as usize).saturating_sub(label.len()*8))/2,y+10,label,COL_TEXT);
+                    x+=w+3;i+=1;}
             }
             WinKind::About => {
                                 graphics::fill_rect(
