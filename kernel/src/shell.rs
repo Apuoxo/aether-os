@@ -779,13 +779,40 @@ fn cmd_mous() {
     write_str("======== MOUS END ========\n");
 }
 
+fn cmd_video_info() {
+    write_str("======== VIDEO GEN6 ========\n");
+    write_str("GEN="); write_usize(crate::drivers::video::gen() as usize);
+    write_str(" MMIO="); write_hex(crate::drivers::video::mmio_base());
+    write_str(" APER="); write_hex(crate::drivers::video::aperture());
+    write_str(" FB="); write_hex(crate::fb::address());
+    write_str(" W="); write_usize(crate::graphics::width());
+    write_str(" H="); write_usize(crate::graphics::height());
+    write_str(" SCANOUT="); write_str(if crate::drivers::video::scanout_ready() { "YES" } else { "NO" });
+    write_str("\n");
+}
+fn cmd_video_mode(w: u16, h: u16) {
+    write_str("VIDEO MODESET ");
+    write_usize(w as usize); write_str("x"); write_usize(h as usize); write_str("\n");
+    let ok = crate::drivers::video::modeset_to(w, h);
+    write_str("RESULT="); write_str(if ok { "PASS" } else { "FAIL" }); write_str("\n");
+    write_str("FB="); write_hex(crate::fb::address());
+    write_str(" W="); write_usize(crate::graphics::width());
+    write_str(" H="); write_usize(crate::graphics::height()); write_str("\n");
+}
+
 fn run_line(line: &[u8], len: usize) {
     let mut s = 0usize;
     while s < len && line[s] == b' ' { s += 1; }
     let mut e = len;
     while e > s && (line[e - 1] == b' ' || line[e - 1] == b'\r') { e -= 1; }
     let clen = e.saturating_sub(s);
-    if eq(line, s, clen, b"WF") || eq(line, s, clen, b"wf") {
+    if eq(line, s, clen, b"VINFO") || eq(line, s, clen, b"vinfo") {
+        cmd_video_info();
+    } else if eq(line, s, clen, b"V1366") || eq(line, s, clen, b"v1366") {
+        cmd_video_mode(1366, 768);
+    } else if eq(line, s, clen, b"V800") || eq(line, s, clen, b"v800") {
+        cmd_video_mode(800, 600);
+    } else if eq(line, s, clen, b"WF") || eq(line, s, clen, b"wf") {
         cmd_wf();
     } else if eq(line, s, clen, b"MOUS") || eq(line, s, clen, b"mous") {
         cmd_mous();
@@ -838,7 +865,7 @@ fn run_line(line: &[u8], len: usize) {
         }
         write_str("======== AUD PCM END ========\n");
     } else {
-        write_str("unknown — commands: AUD, MOUS, WF\n");
+        write_str("unknown — commands: VINFO, V1366, V800, AUD, MOUS, WF\n");
     }
 }
 
