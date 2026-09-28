@@ -157,3 +157,10 @@ Every significant change should be followed by:
 - Desktop uses the photographic wallpaper only at 1366x768; 800x600 retains the existing procedural fallback.
 - The wallpaper is rendered through the existing framebuffer path; no Intel KMS/GGTT/GSM behavior is changed.
 - Required validation: green GitHub Actions build, then boot the new ISO on AH532 at 1366x768 and visually inspect image sharpness, full-screen coverage, color conversion, and stability during window movement.
+
+
+### 2026-09-28 — Wallpaper CI correction
+- First wallpaper commit 900d147078ff215ddb42594550c111ea493d48ea downloaded the source and converted it successfully, but the Makefile size check was malformed by Make variable expansion (`test "" -eq 2098176`).
+- No ISO was published from that failed run.
+- Corrected only the shell/Makefile size validation; wallpaper source, rendering path, resolution, and graphics driver code are unchanged.
+- Next required evidence: green build run and AH532 visual test at 1366x768.
