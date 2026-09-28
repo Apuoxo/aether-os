@@ -69,7 +69,7 @@ struct Gpu {
 }
 
 static mut GPU: Gpu = Gpu {
-    bus: 0, dev: 0, func: 0, bar0: Bar::empty(), mmio: 0,
+    bus: 0, dev: 0, func: 0, bar0: Bar::empty(), mmio: 0, aperture: 0, did: 0,
 };
 
 static mut GPU_READY: bool = false;
