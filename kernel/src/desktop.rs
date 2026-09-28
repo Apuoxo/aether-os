@@ -3322,15 +3322,15 @@ fn handle_special_key(hid_code: u8) -> bool {
                 0x52 => { term_history_prev(); true }
                 0x51 => { term_history_next(); true }
                 0x50 => {
-                    if INPUT_CURSOR > 0 { INPUT_CURSOR -= 1; DIRTY_FULL = true; }
+                    if INPUT_CURSOR > 0 { INPUT_CURSOR -= 1; DIRTY_WINDOW = FOCUS as i16; }
                     true
                 }
                 0x4F => {
-                    if INPUT_CURSOR < INPUT_LEN { INPUT_CURSOR += 1; DIRTY_FULL = true; }
+                    if INPUT_CURSOR < INPUT_LEN { INPUT_CURSOR += 1; DIRTY_WINDOW = FOCUS as i16; }
                     true
                 }
-                0x4A => { INPUT_CURSOR = 0; DIRTY_FULL = true; true }
-                0x4D => { INPUT_CURSOR = INPUT_LEN; DIRTY_FULL = true; true }
+                0x4A => { INPUT_CURSOR = 0; DIRTY_WINDOW = FOCUS as i16; true }
+                0x4D => { INPUT_CURSOR = INPUT_LEN; DIRTY_WINDOW = FOCUS as i16; true }
                 0x4C => {
                     if INPUT_CURSOR < INPUT_LEN {
                         let mut i = INPUT_CURSOR;
@@ -3340,7 +3340,7 @@ fn handle_special_key(hid_code: u8) -> bool {
                         }
                         INPUT_LEN -= 1;
                         INPUT[INPUT_LEN] = 0;
-                        DIRTY_FULL = true;
+                        DIRTY_WINDOW = FOCUS as i16;
                     }
                     true
                 }
@@ -3421,7 +3421,7 @@ fn handle_key(ch: u8) {
                 INPUT_LEN -= 1;
                 INPUT_CURSOR -= 1;
                 INPUT[INPUT_LEN] = 0;
-                DIRTY_FULL = true;
+                DIRTY_WINDOW = FOCUS as i16;
             }
         } else if ch >= 32 && ch < 127 && INPUT_LEN < 63 {
             TERM_PAGE_MODE = false;
@@ -3434,7 +3434,7 @@ fn handle_key(ch: u8) {
             INPUT[INPUT_CURSOR] = ch;
             INPUT_LEN += 1;
             INPUT_CURSOR += 1;
-            DIRTY_FULL = true;
+            DIRTY_WINDOW = FOCUS as i16;
         }
     }
 }
