@@ -17,6 +17,8 @@ const PIPEASRC: usize = 0x6001C;
 const PIPEACONF: usize = 0x70008;
 const PIPEASTAT: usize = 0x70024;
 const PIPEADSL: usize = 0x70000;
+const PIPESTAT_VBLANK: u32 = 1 << 1;
+const VBLANK_WAIT_ITERS: usize = 2_000_000;
 
 static mut MMIO_BASE: usize = 0;
 static mut MMIO_READY: bool = false;
@@ -146,6 +148,48 @@ pub fn forcewake_get() -> bool {
     }
 }
 
+/// Wait for a bounded Pipe A vertical-blank status transition.
+/// A stale status event is cleared first; no interrupt is enabled.
+pub fn wait_vblank() -> bool {
+    unsafe {
+        if !MMIO_READY {
+            return false;
+        }
+        if !FORCEWAKE_READY && !forcewake_get() {
+            return false;
+        }
+
+        mmio_write32(PIPEASTAT, PIPESTAT_VBLANK);
+
+        let mut last_dsl = mmio_read32(PIPEADSL);
+        let mut moved = false;
+        let mut i = 0usize;
+        while i < VBLANK_WAIT_ITERS {
+            let stat = mmio_read32(PIPEASTAT);
+            if stat & PIPESTAT_VBLANK != 0 {
+                serial::write_str("[KMS] VBLANK=OK DSL=");
+                serial::write_hex(mmio_read32(PIPEADSL) as usize);
+                serial::write_str("\n");
+                return true;
+            }
+            if (i & 0x3FF) == 0 {
+                let dsl = mmio_read32(PIPEADSL);
+                if dsl != last_dsl {
+                    moved = true;
+                    last_dsl = dsl;
+                }
+            }
+            core::hint::spin_loop();
+            i += 1;
+        }
+
+        serial::write_str("[KMS] VBLANK=TIMEOUT DSL=");
+        serial::write_hex(last_dsl as usize);
+        serial::write_str(if moved { " DSL_MOVED\n" } else { " DSL_STATIC\n" });
+        false
+    }
+}
+
 pub fn forcewake_put() {
     unsafe {
         if !MMIO_READY {
@@ -196,8 +240,13 @@ pub fn init() -> bool {
         log_reg("PIPEASTAT", PIPEASTAT, mmio_read32(PIPEASTAT));
         log_reg("PIPEADSL", PIPEADSL, mmio_read32(PIPEADSL));
 
+        let vb = wait_vblank();
         forcewake_put();
-        serial::write_str("[KMS] STAGE3=READY\n");
+        if vb {
+            serial::write_str("[KMS] STAGE4=READY\n");
+        } else {
+            serial::write_str("[KMS] STAGE4=TIMEOUT (LFB path preserved)\n");
+        }
         true
     }
 }
