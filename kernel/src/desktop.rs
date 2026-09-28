@@ -3204,16 +3204,25 @@ fn hit_start_menu(mx: i32, my: i32) -> Option<usize> {
     }
 }
 
+static mut BACKGROUND_DRAWN: bool = false;
+
 fn render() {
     let w = graphics::width();
     let h = graphics::height();
     if w == 0 || h == 0 {
         return;
     }
-    // Use the real 1366x768 nature image for the exercised AH532 mode.
-    // Other modes keep the procedural fallback.
-    if !wallpaper::draw(w, h) {
-        draw_xp_wallpaper(w, h);
+    // The framebuffer already contains the desktop background after the
+    // initial render. Redrawing the full wallpaper on every ordinary mouse
+    // click causes a visible flash on the real LFB. Keep it stable and only
+    // paint it once here; localized redraw paths handle moving/closing UI.
+    unsafe {
+        if !BACKGROUND_DRAWN {
+            if !wallpaper::draw(w, h) {
+                draw_xp_wallpaper(w, h);
+            }
+            BACKGROUND_DRAWN = true;
+        }
     }
     draw_desktop_icons();
     // XP blue taskbar bottom
