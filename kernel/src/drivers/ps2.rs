@@ -1,6 +1,7 @@
 //! PS/2 i8042 — keyboard + mouse (timeout-safe) + diagnostics
 
 use crate::serial;
+use crate::graphics;
 
 const DATA: u16 = 0x60;
 const STATUS: u16 = 0x64;
@@ -261,12 +262,10 @@ pub fn poll() {
                     if MY < 0 {
                         MY = 0;
                     }
-                    if MX > 1365 {
-                        MX = 1365;
-                    }
-                    if MY > 767 {
-                        MY = 767;
-                    }
+                    let max_x = graphics::width().saturating_sub(1) as i32;
+                    let max_y = graphics::height().saturating_sub(1) as i32;
+                    if MX > max_x { MX = max_x; }
+                    if MY > max_y { MY = max_y; }
                 }
             } else {
                 if data == 0xE0 {
@@ -277,6 +276,17 @@ pub fn poll() {
             }
             n += 1;
         }
+    }
+}
+
+pub fn clamp_to_screen() {
+    unsafe {
+        let max_x = graphics::width().saturating_sub(1) as i32;
+        let max_y = graphics::height().saturating_sub(1) as i32;
+        if MX < 0 { MX = 0; }
+        if MY < 0 { MY = 0; }
+        if MX > max_x { MX = max_x; }
+        if MY > max_y { MY = max_y; }
     }
 }
 
