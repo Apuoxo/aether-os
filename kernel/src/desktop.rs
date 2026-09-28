@@ -3600,3 +3600,189 @@ pub fn run() -> ! {
     serial::write_str(if crate::drivers::ps2::diag_stream_ok() { "[PS2] streaming OK\n" } else { "[PS2] streaming FAIL\n" });
     serial::write_str("[PS2] packets=");
     serial::write_usize(crate::drivers::ps2::diag_packets() as usize);
+    serial::write_str("\n");
+    serial::write_str(if crate::drivers::xhci::diag_xhci_ok() { "[USB] xHCI OK\n" } else { "[USB] xHCI FAIL\n" });
+    serial::write_str(if crate::drivers::xhci::diag_dev_found() || crate::drivers::xhci::diag_mouse_if() {
+        "[USB] mouse FOUND\n"
+    } else {
+        "[USB] mouse NOT FOUND\n"
+    });
+    serial::write_str(if crate::drivers::xhci::diag_hid_ok() { "[USB] HID OK\n" } else { "[USB] HID FAIL\n" });
+    serial::write_str("[USB] reports=");
+    serial::write_usize(crate::drivers::xhci::diag_reports() as usize);
+    serial::write_str("\n");
+    term_clear();
+    terminal_write("Aether Desktop v1.1 XP\n");
+    terminal_write("AUTOSTART: PCI/USB diag on serial\n");
+    terminal_write("Re-run: type 1  then plug mouse\n");
+    terminal_write(if startup_wav_ok {
+        "AUDIO: HDA startup WAV playback requested\n"
+    } else {
+        "AUDIO: HDA startup WAV open failed\n"
+    });
+    terminal_write("\x1b[32maether>\x1b[0m ");
+    unsafe {
+        DIRTY_FULL = true;
+        MX = (graphics::width() / 2) as i32;
+        MY = (graphics::height() / 2) as i32;
+    }
+    render();
+
+    loop {
+        ps2::poll();
+        let (pmx, pmy) = ps2::mouse_pos();
+        let pbtn = ps2::mouse_buttons();
+        unsafe {
+            if pmx != MX || pmy != MY {
+                MX = pmx;
+                MY = pmy;
+                let sw = graphics::width() as i32;
+                let sh = graphics::height() as i32;
+                if MX < 0 { MX = 0; }
+                if MY < 0 { MY = 0; }
+                if MX >= sw { MX = sw - 1; }
+                if MY >= sh { MY = sh - 1; }
+                if DRAGGING && (MB & 1) != 0 {
+                    WINS[DRAG_WIN].x = MX - DRAG_OX;
+                    WINS[DRAG_WIN].y = MY - DRAG_OY;
+                    clamp_win(DRAG_WIN);
+                    render_drag_step(); // dirty region, not full fill
+                } else {
+                    if FOCUS < MAX_WIN && WINS[FOCUS].visible && WINS[FOCUS].kind == WinKind::Alarm {
+                        let _ = crate::alarm::alarm_mouse_move(
+                            MX - WINS[FOCUS].x - 3,
+                            MY - WINS[FOCUS].y - TITLE_H,
+                        );
+                    }
+                    DIRTY_CURSOR = true;
+                }
+            }
+            if pbtn != MB {
+                handle_mouse_buttons(pbtn);
+            }
+        }
+
+        while let Some(ev) = input::poll_mouse() {
+            apply_mouse_delta(ev.dx as i32, ev.dy as i32);
+            unsafe {
+                if DRAGGING && (ev.buttons & 1) != 0 {
+                    WINS[DRAG_WIN].x = MX - DRAG_OX;
+                    WINS[DRAG_WIN].y = MY - DRAG_OY;
+                    clamp_win(DRAG_WIN);
+                }
+            }
+            handle_mouse_buttons(ev.buttons);
+        }
+
+        let sc = ps2::last_scancode();
+        if sc != 0 {
+            let ext = ps2::last_scancode_extended();
+            if ext {
+                let files_focused = unsafe {
+                    FOCUS < MAX_WIN && WINS[FOCUS].visible && WINS[FOCUS].kind == WinKind::Files
+                };
+                let terminal_focused = unsafe {
+                    FOCUS < MAX_WIN && WINS[FOCUS].visible && WINS[FOCUS].kind == WinKind::Terminal
+                };
+                if files_focused && (sc == 0x48 || sc == 0x50) {
+                    crate::files_mgr::on_nav_key(sc);
+                } else if terminal_focused {
+                    match sc {
+                        0x48 => { handle_special_key(0x52); }
+                        0x50 => { handle_special_key(0x51); }
+                        0x4B => { handle_special_key(0x50); }
+                        0x4D => { handle_special_key(0x4F); }
+                        _ => {
+                            match sc {
+                                0x49 => { term_scroll_up(); }
+                                0x51 => { term_scroll_down(); }
+                                _ => {
+                                    ps2::scancode_to_ascii(0xE0);
+                                    if let Some(ch) = ps2::scancode_to_ascii(sc) {
+                                        handle_key(ch);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    match sc {
+                        0x48 | 0x49 => { term_scroll_up(); }
+                        0x50 | 0x51 => { term_scroll_down(); }
+                        _ => {
+                            ps2::scancode_to_ascii(0xE0);
+                            if let Some(ch) = ps2::scancode_to_ascii(sc) {
+                                handle_key(ch);
+                            }
+                        }
+                    }
+                }
+            } else if let Some(ch) = ps2::scancode_to_ascii(sc) {
+                handle_key(ch);
+            }
+        }
+        while let Some(ev) = input::poll() {
+            if ev.pressed {
+                if handle_special_key(ev.hid_code) {
+                    continue;
+                }
+                if ev.key != 0 {
+                    handle_key(ev.key);
+                }
+            }
+        }
+
+        unsafe {
+            if WIFI_UI_SCAN_REQUESTED {
+                WIFI_UI_SCAN_REQUESTED = false;
+                if crate::drivers::wifi::alive_seen() && crate::drivers::wifi::command_queue_ready() {
+                    WIFI_UI_STATUS = if crate::drivers::wifi::scan_24ghz() { 1 } else { 3 };
+                } else {
+                    WIFI_UI_STATUS = 3;
+                }
+                DIRTY_FULL = true;
+            }
+        }
+
+        crate::drivers::xhci::poll_mouse_live();
+        crate::drivers::audio::playback_poll();
+        if crate::alarm::alarm_tick(crate::time::uptime()) {
+            unsafe { DIRTY_FULL = true; }
+        }
+
+        static mut CLOCK_TICK: u32 = 0;
+        unsafe {
+            CLOCK_TICK += 1;
+            // Clock strip only when second changes — no full-screen fill
+            if CLOCK_TICK >= 800 {
+                CLOCK_TICK = 0;
+                let (_y, _mo, _d, _h, _mi, s) = crate::time::rtc_read();
+                if s != LAST_SEC {
+                    LAST_SEC = s;
+                    cursor_restore();
+                    redraw_status_strip();
+                    cursor_save_and_draw(MX, MY);
+                }
+            }
+            if DIRTY_FULL {
+                CURSOR_SAVED = false;
+                render();
+                DIRTY_FULL = false;
+                DIRTY_WINDOW = -1;
+                DIRTY_CURSOR = false;
+            } else if DIRTY_WINDOW >= 0 {
+                let idx = DIRTY_WINDOW as usize;
+                DIRTY_WINDOW = -1;
+                redraw_single_window(idx);
+                DIRTY_CURSOR = false;
+            } else if DIRTY_CURSOR {
+                cursor_save_and_draw(MX, MY);
+                DIRTY_CURSOR = false;
+            }
+        }
+        let mut d = 0u32;
+        while d < 200 {
+            d += 1;
+        }
+    }
+}
