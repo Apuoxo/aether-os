@@ -29,6 +29,7 @@ const COL_TEXT: u32 = 0x00000000;
 const COL_TEXT_DIM: u32 = 0x00404040;
 const COL_TERM_BG: u32 = 0x00000000;
 const COL_TERM_FG: u32 = 0x00C0C0C0;
+const COL_TERM_PROMPT: u32 = 0x0000E676;
 const COL_WIN_BORDER: u32 = 0x000A246A;
 const COL_FOCUS: u32 = 0x000A246A;
 const COL_INACTIVE: u32 = 0x007A96DF;
@@ -2128,7 +2129,7 @@ fn draw_window(idx: usize) {
                 }
                 let y = wy + TITLE_H as usize + 34 + (view_rows.saturating_sub(1)) * 10;
                 if y + 8 < wy + wh && focused && !TERM_PAGE_MODE {
-                    graphics::draw_str(wx + 10, y, "aether> ", 0x0000D7FF);
+                    graphics::draw_str(wx + 10, y, "aether> ", COL_TERM_PROMPT);
                     let mut k = 0usize;
                     while k < INPUT_LEN {
                         graphics::draw_char(wx + 10 + 64 + k * 8, y, INPUT[k], COL_TERM_FG);
@@ -3231,7 +3232,7 @@ fn handle_key(ch: u8) {
             // is directly observable during hardware diagnostics.
             TERM_PAGE_MODE = false;
             TERM_VIEW = 0;
-            terminal_write("aether> CMD-IN=[");
+            terminal_write("\x1b[32maether>\x1b[0m CMD-IN=[");
             let mut k = 0usize;
             while k < INPUT_LEN {
                 term_putc(INPUT[k]);
@@ -3333,7 +3334,7 @@ pub fn run() -> ! {
     } else {
         "AUDIO: HDA startup WAV open failed\n"
     });
-    terminal_write("aether> ");
+    terminal_write("\x1b[32maether>\x1b[0m ");
     unsafe {
         DIRTY_FULL = true;
         MX = (graphics::width() / 2) as i32;
@@ -3388,8 +3389,30 @@ pub fn run() -> ! {
                 let files_focused = unsafe {
                     FOCUS < MAX_WIN && WINS[FOCUS].visible && WINS[FOCUS].kind == WinKind::Files
                 };
+                let terminal_focused = unsafe {
+                    FOCUS < MAX_WIN && WINS[FOCUS].visible && WINS[FOCUS].kind == WinKind::Terminal
+                };
                 if files_focused && (sc == 0x48 || sc == 0x50) {
                     crate::files_mgr::on_nav_key(sc);
+                } else if terminal_focused {
+                    match sc {
+                        0x48 => { handle_special_key(0x52); }
+                        0x50 => { handle_special_key(0x51); }
+                        0x4B => { handle_special_key(0x50); }
+                        0x4D => { handle_special_key(0x4F); }
+                        _ => {
+                            match sc {
+                                0x49 => { term_scroll_up(); }
+                                0x51 => { term_scroll_down(); }
+                                _ => {
+                                    ps2::scancode_to_ascii(0xE0);
+                                    if let Some(ch) = ps2::scancode_to_ascii(sc) {
+                                        handle_key(ch);
+                                    }
+                                }
+                            }
+                        }
+                    }
                 } else {
                     match sc {
                         0x48 | 0x49 => { term_scroll_up(); }
