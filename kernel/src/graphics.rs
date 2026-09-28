@@ -39,6 +39,11 @@ pub fn height() -> usize {
     unsafe { FB.height }
 }
 
+pub fn pitch() -> usize { unsafe { FB.pitch } }
+pub fn fb_addr() -> usize { unsafe { FB.addr } }
+pub fn bpp() -> u8 { unsafe { FB.bpp } }
+pub fn software() -> bool { unsafe { FB.software } }
+
 pub fn put_pixel(x: usize, y: usize, color: u32) {
     unsafe {
         if FB.addr == 0 || x >= FB.width || y >= FB.height {

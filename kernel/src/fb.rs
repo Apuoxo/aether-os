@@ -121,7 +121,7 @@ pub fn init_from_mbi(mbi: usize) -> bool {
         if tag_type == MB2_TAG_END {
             break;
         }
-        if tag_type == MB2_TAG_FB && tag_size >= 28 {
+        if tag_type == MB2_TAG_FB && tag_size >= 32 {
             let addr = read_u64(mbi + off + 8) as usize;
             let pitch = read_u32(mbi + off + 16) as usize;
             let width = read_u32(mbi + off + 20) as usize;
@@ -147,7 +147,6 @@ pub fn init_from_mbi(mbi: usize) -> bool {
                 || height < 200
                 || height > 2160
                 || pitch < width
-                || pitch > width * 8
                 || (bpp != 32 && bpp != 24)
             {
                 serial::write_str("[FBX] parameters invalid\n");
@@ -274,7 +273,7 @@ pub fn draw_test_pattern() -> bool {
         16,
         0x00FF_FFFF,
     );
-    serial::write_str("[FB3] test pattern rendered\n");
+    serial::write_str("[FB] test pattern rendered\n");
     vga_fb_mark(0, b'F', b'3');
     true
 }
