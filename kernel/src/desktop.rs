@@ -3653,6 +3653,8 @@ pub fn run() -> ! {
             d += 1;
         }
     }
+}
+
 fn draw_cursor(x: i32, y: i32) {
     let x = if x < 0 { 0usize } else { x as usize };
     let y = if y < 0 { 0usize } else { y as usize };
