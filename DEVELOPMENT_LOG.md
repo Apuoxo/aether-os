@@ -258,3 +258,7 @@ Every significant change should be followed by:
 - Hardware test found Memory could not be minimized, closed, or moved.
 - Increased caption hit targets for close/minimize/maximize to tolerate physical mouse positioning; painted controls remain unchanged.
 - No Memory/PMM/AMM logic changed.
+## 2026-09-28 — Fix desktop repaint after window drag
+- Root cause: drag redraw restored only the wallpaper region, then redrew windows; desktop icons and taskbar content underneath the old window footprint were not restored.
+- Fixed the common drag repaint path so covered desktop-owned UI is restored before windows are redrawn.
+- Applies to all desktop windows; no Memory/PMM/AMM logic changed.

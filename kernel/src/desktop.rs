@@ -3136,6 +3136,17 @@ fn render_drag_step() {
         if !wallpaper::draw_region(ox, oy, ow, oh) {
             graphics::fill_rect(ox, oy, ow, oh, COL_BG);
         }
+        // Restore desktop-owned content that was covered by the moving window.
+        // Windows are redrawn below, but desktop icons and taskbar content are not
+        // part of draw_window(), so without this they remain erased after a drag.
+        draw_desktop_icons();
+        if oy + oh > h.saturating_sub(TASKBAR_H) {
+            graphics::fill_rect(0, h.saturating_sub(TASKBAR_H), w, TASKBAR_H, COL_TASKBAR);
+            graphics::fill_rect(0, h.saturating_sub(TASKBAR_H), w, 2, COL_TASKBAR_TOP);
+            draw_taskbar_buttons(w, h);
+            draw_status_icons_and_clock(w, h);
+            draw_start_button(w, h);
+        }
         // 2) If old rect hit panel/dock, restore strips
         if oy < 30 {
             graphics::fill_rect(0, 0, w, 28, COL_PANEL);
