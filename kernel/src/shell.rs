@@ -779,6 +779,38 @@ fn cmd_mous() {
     write_str("======== MOUS END ========\n");
 }
 
+fn cmd_kms5() {
+    write_str("======== KMS STAGE5 ========\n");
+    write_str("TARGET=Intel Gen6 primary plane\n");
+    write_str("GEN="); write_usize(crate::drivers::intel_igpu::gen() as usize);
+    write_str(" DID="); write_hex(crate::drivers::intel_igpu::did() as usize);
+    write_str(" MMIO_READY="); write_str(if crate::drivers::intel_kms::ready() { "YES" } else { "NO" });
+    write_str(" FORCEWAKE="); write_str(if crate::drivers::intel_kms::forcewake_ready() { "YES" } else { "NO" });
+    write_str("\n");
+    write_str("MMIO="); write_hex(crate::drivers::intel_kms::mmio_base());
+    write_str(" GMADR="); write_hex(crate::drivers::intel_igpu::aperture_bar() as usize);
+    write_str("\n");
+    write_str("LFB="); write_hex(crate::fb::address());
+    write_str(" W="); write_usize(crate::fb::width());
+    write_str(" H="); write_usize(crate::fb::height());
+    write_str(" PITCH="); write_usize(crate::fb::pitch());
+    write_str(" BPP="); write_usize(crate::fb::bpp() as usize);
+    write_str("\n");
+    if crate::fb::address() != crate::drivers::intel_igpu::aperture_bar() as usize {
+        write_str("RESULT=REFUSE LFB!=GMADR\n");
+        write_str("SAFE=YES (no plane write)\n");
+        write_str("======== KMS5 END ========\n");
+        return;
+    }
+    let w = crate::fb::width() as u16;
+    let h = crate::fb::height() as u16;
+    write_str("ACTION=MODESET_CURRENT\n");
+    let ok = crate::drivers::intel_kms::modeset_to(w, h);
+    write_str("RESULT="); write_str(if ok { "PASS" } else { "FAIL" }); write_str("\n");
+    write_str("SCANOUT="); write_str(if ok { "PRIMARY-PLANE" } else { "LFB-UNCHANGED" }); write_str("\n");
+    write_str("======== KMS5 END ========\n");
+}
+
 fn cmd_video_info() {
     write_str("======== VIDEO GEN6 ========\n");
     write_str("GEN="); write_usize(crate::drivers::video::gen() as usize);
@@ -806,7 +838,7 @@ fn run_line(line: &[u8], len: usize) {
     let mut e = len;
     while e > s && (line[e - 1] == b' ' || line[e - 1] == b'\r') { e -= 1; }
     let clen = e.saturating_sub(s);
-    if eq(line, s, clen, b"VINFO") || eq(line, s, clen, b"vinfo") {
+    if eq(line, s, clen, b"KMS5") || eq(line, s, clen, b"kms5") {\n        cmd_kms5();\n    } else eq(line, s, clen, b"VINFO") || eq(line, s, clen, b"vinfo") {
         cmd_video_info();
     } else if eq(line, s, clen, b"V1366") || eq(line, s, clen, b"v1366") {
         cmd_video_mode(1366, 768);
@@ -865,7 +897,7 @@ fn run_line(line: &[u8], len: usize) {
         }
         write_str("======== AUD PCM END ========\n");
     } else {
-        write_str("unknown — commands: VINFO, V1366, V800, AUD, MOUS, WF\n");
+        write_str("unknown — commands: KMS5, VINFO, V1366, V800, AUD, MOUS, WF\n");
     }
 }
 
