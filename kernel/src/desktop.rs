@@ -182,6 +182,10 @@ static mut TERM_SCROLL_DRAG: bool = false;
 static mut TERM_PAGE_MODE: bool = false;
 static mut INPUT: [u8; 64] = [0; 64];
 static mut INPUT_LEN: usize = 0;
+static mut TERM_HISTORY: [[u8; 64]; 16] = [[0; 64]; 16];
+static mut TERM_HISTORY_LEN: [usize; 16] = [0; 16];
+static mut TERM_HISTORY_COUNT: usize = 0;
+static mut TERM_HISTORY_POS: usize = 0;
 
 fn term_clear() {
     unsafe {
@@ -215,7 +219,11 @@ fn term_text_cols() -> usize {
 fn term_visible_rows() -> usize {
     unsafe {
         if FOCUS < MAX_WIN && WINS[FOCUS].kind == WinKind::Terminal && WINS[FOCUS].visible {
-            let usable = (WINS[FOCUS].h - TITLE_H - 14) as usize;
+            let usable = if WINS[FOCUS].h > TITLE_H + 31 + 22 {
+                (WINS[FOCUS].h - TITLE_H - 31 - 22) as usize
+            } else {
+                1
+            };
             let rows = usable / 10;
             if rows < 2 { 2 } else if rows > TERM_VIEW_ROWS_MAX { TERM_VIEW_ROWS_MAX } else { rows }
         } else {
@@ -339,6 +347,114 @@ fn term_scroll_set_from_mouse(my: i32) {
         if y < 0 { y = 0; }
         if y > travel { y = travel; }
         TERM_VIEW = ((y as usize) * max_view) / (travel as usize);
+        DIRTY_FULL = true;
+    }
+}
+
+fn term_history_save() {
+    unsafe {
+        if INPUT_LEN == 0 { return; }
+        let mut same = false;
+        if TERM_HISTORY_COUNT > 0 {
+            let last = if TERM_HISTORY_COUNT < 16 { TERM_HISTORY_COUNT - 1 } else { 15 };
+            if TERM_HISTORY_LEN[last] == INPUT_LEN {
+                same = true;
+                let mut i = 0usize;
+                while i < INPUT_LEN {
+                    if TERM_HISTORY[last][i] != INPUT[i] { same = false; break; }
+                    i += 1;
+                }
+            }
+        }
+        if same { TERM_HISTORY_POS = TERM_HISTORY_COUNT; return; }
+        let slot = if TERM_HISTORY_COUNT < 16 {
+            let s = TERM_HISTORY_COUNT;
+            TERM_HISTORY_COUNT += 1;
+            s
+        } else {
+            let mut r = 1usize;
+            while r < 16 {
+                TERM_HISTORY[r - 1] = TERM_HISTORY[r];
+                TERM_HISTORY_LEN[r - 1] = TERM_HISTORY_LEN[r];
+                r += 1;
+            }
+            15
+        };
+        let mut i = 0usize;
+        while i < 64 {
+            TERM_HISTORY[slot][i] = 0;
+            i += 1;
+        }
+        i = 0;
+        while i < INPUT_LEN {
+            TERM_HISTORY[slot][i] = INPUT[i];
+            i += 1;
+        }
+        TERM_HISTORY_LEN[slot] = INPUT_LEN;
+        TERM_HISTORY_POS = TERM_HISTORY_COUNT;
+    }
+}
+
+fn term_history_load(pos: usize) {
+    unsafe {
+        if pos >= TERM_HISTORY_COUNT { return; }
+        INPUT_LEN = TERM_HISTORY_LEN[pos];
+        let mut i = 0usize;
+        while i < INPUT_LEN {
+            INPUT[i] = TERM_HISTORY[pos][i];
+            i += 1;
+        }
+        while i < 64 {
+            INPUT[i] = 0;
+            i += 1;
+        }
+        TERM_HISTORY_POS = pos;
+        TERM_PAGE_MODE = false;
+        TERM_VIEW = 0;
+        DIRTY_FULL = true;
+    }
+}
+
+fn term_history_prev() {
+    unsafe {
+        if TERM_HISTORY_COUNT == 0 { return; }
+        if TERM_HISTORY_POS > TERM_HISTORY_COUNT {
+            TERM_HISTORY_POS = TERM_HISTORY_COUNT;
+        }
+        if TERM_HISTORY_POS > 0 {
+            TERM_HISTORY_POS -= 1;
+            term_history_load(TERM_HISTORY_POS);
+        }
+    }
+}
+
+fn term_history_next() {
+    unsafe {
+        if TERM_HISTORY_COUNT == 0 { return; }
+        if TERM_HISTORY_POS + 1 < TERM_HISTORY_COUNT {
+            TERM_HISTORY_POS += 1;
+            term_history_load(TERM_HISTORY_POS);
+        } else {
+            TERM_HISTORY_POS = TERM_HISTORY_COUNT;
+            INPUT_LEN = 0;
+            let mut i = 0usize;
+            while i < 64 {
+                INPUT[i] = 0;
+                i += 1;
+            }
+            TERM_PAGE_MODE = false;
+            TERM_VIEW = 0;
+            DIRTY_FULL = true;
+        }
+    }
+}
+
+pub fn terminal_clear() {
+    term_clear();
+    unsafe {
+        INPUT_LEN = 0;
+        TERM_PAGE_MODE = false;
+        TERM_VIEW = 0;
         DIRTY_FULL = true;
     }
 }
@@ -1616,13 +1732,17 @@ fn draw_window(idx: usize) {
 
         match w.kind {
             WinKind::Terminal => {
-                graphics::fill_rect(
-                    wx + 3,
-                    wy + TITLE_H as usize,
-                    ww - 6,
-                    wh - TITLE_H as usize - 3,
-                    COL_TERM_BG,
-                );
+                let body_y = wy + TITLE_H as usize;
+                let body_h = wh.saturating_sub(TITLE_H as usize + 3);
+                graphics::fill_rect(wx + 3, body_y, ww - 6, body_h, 0x0013161B);
+                // Modern terminal tab strip: one real shell session today,
+                // with room reserved for future tabs without pretending they exist.
+                graphics::fill_rect(wx + 4, body_y + 2, ww - 8, 25, 0x001D2229);
+                graphics::fill_rect(wx + 5, body_y + 3, 142, 22, 0x00282F38);
+                graphics::fill_rect(wx + 5, body_y + 24, 142, 1, 0x0000B7C3);
+                graphics::draw_str(wx + 14, body_y + 10, "Aether Shell", 0x00F2F2F2);
+                graphics::draw_str(wx + 158, body_y + 10, "+", 0x00A0A8B0);
+                graphics::draw_str(wx + ww - 58, body_y + 10, "LOCAL", 0x007D8791);
                 let total = TERM_ROW + 1;
                 let view_rows = term_visible_rows();
                 let output_rows = view_rows.saturating_sub(1).max(1);
@@ -1634,12 +1754,12 @@ fn draw_window(idx: usize) {
                 while r < view_rows {
                     let idx = start + r;
                     if idx < total {
-                        let y = wy + TITLE_H as usize + 6 + r * 10;
+                        let y = wy + TITLE_H as usize + 34 + r * 10;
                         if y + 8 < wy + wh {
                             let len = TERM_LEN[idx];
                             let mut k = 0usize;
                             while k < len {
-                                graphics::draw_char(wx + 8 + k * 8, y, TERM_LINES[idx][k], COL_TERM_FG);
+                                graphics::draw_char(wx + 10 + k * 8, y, TERM_LINES[idx][k], COL_TERM_FG);
                                 k += 1;
                             }
                         }
@@ -1648,7 +1768,7 @@ fn draw_window(idx: usize) {
                 }
                 // Visible terminal scrollbar: up/down buttons + proportional thumb.
                 let bar_x = wx + ww - 18;
-                let bar_top = wy + TITLE_H as usize + 4;
+                let bar_top = wy + TITLE_H as usize + 31;
                 let bar_bottom = wy + wh - 6;
                 if bar_bottom > bar_top + 24 {
                     graphics::fill_rect(bar_x, bar_top, 14, bar_bottom - bar_top, 0x00303030);
@@ -1673,22 +1793,22 @@ fn draw_window(idx: usize) {
                         graphics::fill_rect(bar_x + 2, thumb_y, 10, thumb_h, COL_ACCENT);
                     }
                 }
-                let y = wy + TITLE_H as usize + 6 + (view_rows.saturating_sub(1)) * 10;
+                let y = wy + TITLE_H as usize + 34 + (view_rows.saturating_sub(1)) * 10;
                 if y + 8 < wy + wh && focused && !TERM_PAGE_MODE {
-                    graphics::draw_str(wx + 8, y, "aether> ", 0x0000FF00);
+                    graphics::draw_str(wx + 10, y, "aether> ", 0x0000D7FF);
                     let mut k = 0usize;
                     while k < INPUT_LEN {
-                        graphics::draw_char(wx + 8 + 64 + k * 8, y, INPUT[k], COL_TERM_FG);
+                        graphics::draw_char(wx + 10 + 64 + k * 8, y, INPUT[k], COL_TERM_FG);
                         k += 1;
                     }
-                    graphics::fill_rect(wx + 8 + 64 + INPUT_LEN * 8, y, 6, 8, COL_ACCENT);
+                    graphics::fill_rect(wx + 10 + 64 + INPUT_LEN * 8, y, 6, 8, 0x0000D7FF);
                 }
                 let footer_y = wy + wh - 22;
-                graphics::fill_rect(wx + 4, footer_y, ww - 8, 18, 0x00202020);
+                graphics::fill_rect(wx + 4, footer_y, ww - 8, 18, 0x001D2229);
                 graphics::border_rect(wx + 4, footer_y, ww - 8, 18, 0x00505050);
                 graphics::draw_str(wx + 10, footer_y + 5,
-                    "SPACE: NEXT SCREEN  BACKSPACE: PREVIOUS SCREEN",
-                    if TERM_PAGE_MODE { 0x00FFFF00 } else { 0x00A0A0A0 });
+                    if TERM_PAGE_MODE { "PAGE MODE  SPACE: NEXT  BACKSPACE: PREVIOUS" } else { "UTF-8  |  UP/DOWN: HISTORY  |  PAGE: ARROWS" },
+                    if TERM_PAGE_MODE { 0x00FFD24A } else { 0x007D8791 });
             }
             WinKind::MediaPlayer => {
                 let cy = wy + TITLE_H as usize;
@@ -2713,8 +2833,14 @@ fn handle_special_key(hid_code: u8) -> bool {
             }
         } else if WINS[FOCUS].kind == WinKind::Terminal {
             match hid_code {
-                0x52 | 0x4B => { term_scroll_up(); true }
-                0x51 | 0x4E => { term_scroll_down(); true }
+                0x52 | 0x4B => {
+                    if TERM_VIEW > 0 || TERM_PAGE_MODE { term_scroll_up(); } else { term_history_prev(); }
+                    true
+                }
+                0x51 | 0x4E => {
+                    if TERM_VIEW > 0 || TERM_PAGE_MODE { term_scroll_down(); } else { term_history_next(); }
+                    true
+                }
                 _ => false,
             }
         } else {
@@ -2754,6 +2880,7 @@ fn handle_key(ch: u8) {
             }
             terminal_write("]\n");
             let output_start = TERM_ROW;
+            term_history_save();
             crate::shell::run_command_from_gui(&INPUT, INPUT_LEN);
             INPUT_LEN = 0;
             term_page_begin(output_start);

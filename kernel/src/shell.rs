@@ -832,13 +832,31 @@ fn cmd_video_mode(w: u16, h: u16) {
     write_str(" H="); write_usize(crate::graphics::height()); write_str("\n");
 }
 
+fn cmd_help() {
+    write_str("Aether Terminal — native command interface\n");
+    write_str("Core: HELP  CLS  VER\n");
+    write_str("Hardware: KMS5  VINFO  V800  V1366  AUD  AUD2  AUD3  MOUS  USB  WF\n");
+    write_str("Tip: Up/Down recalls command history; arrow keys scroll long output.\n");
+}
+
+fn cmd_ver() {
+    write_str("Aether OS terminal 1.0\n");
+    write_str("Native x86_64 shell; GUI terminal backend active\n");
+}
+
 fn run_line(line: &[u8], len: usize) {
     let mut s = 0usize;
     while s < len && line[s] == b' ' { s += 1; }
     let mut e = len;
     while e > s && (line[e - 1] == b' ' || line[e - 1] == b'\r') { e -= 1; }
     let clen = e.saturating_sub(s);
-    if eq(line, s, clen, b"KMS5") || eq(line, s, clen, b"kms5") {
+    if eq(line, s, clen, b"HELP") || eq(line, s, clen, b"help") {
+        cmd_help();
+    } else if eq(line, s, clen, b"CLS") || eq(line, s, clen, b"cls") {
+        crate::desktop::terminal_clear();
+    } else if eq(line, s, clen, b"VER") || eq(line, s, clen, b"ver") {
+        cmd_ver();
+    } else if eq(line, s, clen, b"KMS5") || eq(line, s, clen, b"kms5") {
         cmd_kms5();
     } else if eq(line, s, clen, b"VINFO") || eq(line, s, clen, b"vinfo") {
         cmd_video_info();
@@ -899,7 +917,7 @@ fn run_line(line: &[u8], len: usize) {
         }
         write_str("======== AUD PCM END ========\n");
     } else {
-        write_str("unknown — commands: KMS5, VINFO, V1366, V800, AUD, MOUS, WF\n");
+        write_str("Unknown command. Type HELP for commands.\n");
     }
 }
 
@@ -922,7 +940,7 @@ pub fn run() -> ! {
     }
 
     write_str("======== Aether Shell ========\n");
-    write_str("SHELL BUILD MARKER = NO-COMMANDS-NULL-TEST\n");
+    write_str("Aether Terminal 1.0 — native shell\n");
     write_str("aether> ");
 
     let mut line = [0u8; 128];
