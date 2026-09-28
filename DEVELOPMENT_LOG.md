@@ -236,3 +236,5 @@ Every significant change should be followed by:
 - Added RAMTEST PMM regression command: alloc_page/write-read/free, alloc_pages(4)/write-read/free, and free-count restoration checks.
 
 - CI #688 failed because RAMTEST source was emitted with literal escape characters; corrected in the next commit without changing PMM logic.
+
+- 2026-09-28: переименован диагностический тест PMM `RAMTEST` в `RAM2`, без изменения логики теста.

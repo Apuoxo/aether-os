@@ -832,7 +832,7 @@ fn cmd_video_mode(w: u16, h: u16) {
     write_str(" H="); write_usize(crate::graphics::height()); write_str("\n");
 }
 
-fn cmd_ramtest() {
+fn cmd_ram2() {
     write_str("======== RAM PMM ALLOC TEST ========\n");
     let before = crate::mm::free_count();
     let total = crate::mm::total_count();
@@ -909,7 +909,7 @@ fn cmd_ram() {
 fn cmd_help() {
     write_str("Aether Terminal - native command interface\n");
     write_str("Core: HELP  CLS  VER  TANSI  SEARCH <text>\n");
-    write_str("Hardware: KMS5  VINFO  V800  V1366  RAM  RAMTEST  AUD  AUD2  AUD3  MOUS  USB  WF\n");
+    write_str("Hardware: KMS5  VINFO  V800  V1366  RAM  RAM2  AUD  AUD2  AUD3  MOUS  USB  WF\n");
     write_str("Tip: Up/Down recalls command history; arrow keys scroll long output.\n");
 }
 
@@ -949,8 +949,8 @@ fn run_line(line: &[u8], len: usize) {
         cmd_video_mode(1366, 768);
     } else if eq(line, s, clen, b"V800") || eq(line, s, clen, b"v800") {
         cmd_video_mode(800, 600);
-    } else if eq(line, s, clen, b"RAMTEST") || eq(line, s, clen, b"ramtest") {
-        cmd_ramtest();
+    } else if eq(line, s, clen, b"RAM2") || eq(line, s, clen, b"ramtest") {
+        cmd_ram2();
     } else if eq(line, s, clen, b"RAM") || eq(line, s, clen, b"ram") {
         cmd_ram();
     } else if eq(line, s, clen, b"WF") || eq(line, s, clen, b"wf") {
