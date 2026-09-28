@@ -58,6 +58,7 @@ enum WinKind {
     SysProps,
     Settings,
     MediaPlayer,
+    Keyboard,
 }
 
 struct Window {
@@ -99,8 +100,8 @@ static mut WINS: [Window; MAX_WIN] = [
         minimized: false, maximized: false, rx: 120, ry: 60, rw: 500, rh: 360 },
     Window { x: 70, y: 70, w: 660, h: 390, kind: WinKind::MediaPlayer, visible: false, z: 11,
         minimized: false, maximized: false, rx: 70, ry: 70, rw: 660, rh: 390 },
-    Window { x: 0, y: 0, w: 0, h: 0, kind: WinKind::About, visible: false, z: 0,
-        minimized: false, maximized: false, rx: 0, ry: 0, rw: 0, rh: 0 },
+    Window { x: 30, y: 315, w: 740, h: 255, kind: WinKind::Keyboard, visible: false, z: 12,
+        minimized: false, maximized: false, rx: 30, ry: 315, rw: 740, rh: 255 },
 ];
 
 static mut FOCUS: usize = 0; // terminal
@@ -142,6 +143,16 @@ static mut Z_TOP: i32 = 3;
 static mut SETTINGS_VIEW: u8 = 0;
 static mut CURSOR_COLOR: u32 = COL_CURSOR;
 static mut CURSOR_PENDING: u8 = 0;
+
+static mut MEDIA_OPEN_DIALOG: bool = false;
+static mut MEDIA_DIR: [u8; 96] = [0; 96];
+static mut MEDIA_DIR_LEN: usize = 0;
+static mut KEYBOARD_TARGET: usize = 0;
+static mut KEYBOARD_SHIFT: bool = false;
+static mut KEYBOARD_CAPS: bool = false;
+static mut KEYBOARD_CTRL: bool = false;
+static mut KEYBOARD_ALT: bool = false;
+
 
 // Windows 7-style Wi-Fi UI state. The list is deliberately empty until the
 // native Intel 2230 scan backend returns real 802.11 results.
@@ -550,6 +561,7 @@ fn win_title(kind: WinKind) -> &'static str {
         WinKind::SysProps => "System Properties",
         WinKind::Settings => "Settings",
         WinKind::MediaPlayer => "Aether Media Player",
+        WinKind::Keyboard => "On-Screen Keyboard",
     }
 }
 
@@ -692,6 +704,7 @@ fn draw_taskbar_buttons(w: usize, h: usize) {
                     WinKind::About => "About",
                     WinKind::Settings => "Settings",
                     WinKind::MediaPlayer => "Media",
+                    WinKind::Keyboard => "Keyboard",
                 };
                 let bw = short.len() * 8 + 20;
                 if x + bw > w.saturating_sub(100) {
@@ -973,6 +986,8 @@ fn handle_mouse_buttons(buttons: u8) {
                         4 => open_win(9), // Settings
                         5 => open_win(10), // Media Player
                         6 => open_win(5), // Documents -> Files
+                        7 => open_win(11), // On-Screen Keyboard
+                        8 => open_win(99), // Recycle Bin
                         _ => {}
                     }
                 } else if my >= 28 {
@@ -2268,7 +2283,7 @@ fn draw_start_menu() {
     use crate::gui::icon::{self, IconId};
     let h = graphics::height();
     let tb = TASKBAR_H;
-    let menu_h = 308usize;
+    let menu_h = 336usize;
     let menu_w = 220usize;
     let mx = 2usize;
     let my = h.saturating_sub(tb + menu_h);
@@ -2280,7 +2295,7 @@ fn draw_start_menu() {
     graphics::fill_rect(mx, my, menu_w, 28, 0x00245EDC);
     graphics::draw_str(mx + 12, my + 10, "Aether User", 0x00FFFFFF);
     // items with icons
-    let items: [(IconId, &str, usize); 8] = [
+    let items: [(IconId, &str, usize); 9] = [
         (IconId::Terminal, "Terminal", 0),
         (IconId::Folder, "Files", 5),
         (IconId::MyComputer, "My Computer", 7),
@@ -2288,10 +2303,11 @@ fn draw_start_menu() {
         (IconId::Settings, "Settings", 8),
         (IconId::File, "Media Player", 10),
         (IconId::MyDocuments, "Documents", 5),
+        (IconId::File, "On-Screen Keyboard", 11),
         (IconId::RecycleBin, "Recycle Bin", 99),
     ];
     let mut i = 0usize;
-    while i < 8 {
+    while i < 9 {
         let (id, name, _) = items[i];
         let iy = my + 36 + i * 28;
         icon::blit(id, mx + 10, iy, false);
@@ -2309,7 +2325,7 @@ fn draw_start_menu() {
 fn hit_start_menu(mx: i32, my: i32) -> Option<usize> {
     let h = graphics::height() as i32;
     let tb = TASKBAR_H as i32;
-    let menu_h = 308i32;
+    let menu_h = 336i32;
     let menu_w = 220i32;
     let x0 = 2i32;
     let y0 = h - tb - menu_h;
@@ -2322,7 +2338,7 @@ fn hit_start_menu(mx: i32, my: i32) -> Option<usize> {
         return None;
     }
     let idx = (rel / 28) as usize;
-    if idx < 8 {
+    if idx < 9 {
         Some(idx)
     } else {
         None
