@@ -14,6 +14,19 @@ static mut FB_PITCH: usize = 0;
 static mut FB_BPP: u8 = 0;
 static mut FB_OK: bool = false;
 
+/// Synchronize the boot framebuffer snapshot after a successful display-plane modeset.
+/// The video driver owns the hardware transition; this keeps legacy fb::* readers coherent.
+pub fn sync_runtime(addr: usize, width: usize, height: usize, pitch: usize, bpp: u8) {
+    unsafe {
+        FB_ADDR = addr;
+        FB_W = width;
+        FB_H = height;
+        FB_PITCH = pitch;
+        FB_BPP = bpp;
+        FB_OK = addr != 0 && width != 0 && height != 0 && (bpp == 32 || bpp == 24);
+    }
+}
+
 pub fn is_ready() -> bool {
     unsafe { FB_OK }
 }
