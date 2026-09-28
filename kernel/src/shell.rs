@@ -865,7 +865,7 @@ fn run_line(line: &[u8], len: usize) {
         cmd_ver();
     } else if eq(line, s, clen, b"TANSI") || eq(line, s, clen, b"tansi") {
         cmd_tansi();
-    else if clen >= 7 && (line[s]==b'S'||line[s]==b's')&&(line[s+1]==b'E'||line[s+1]==b'e')&&(line[s+2]==b'A'||line[s+2]==b'a')&&(line[s+3]==b'R'||line[s+3]==b'r')&&(line[s+4]==b'C'||line[s+4]==b'c')&&(line[s+5]==b'H'||line[s+5]==b'h')&&line[s+6]==b' ' {
+    } else if clen >= 7 && (line[s]==b'S'||line[s]==b's')&&(line[s+1]==b'E'||line[s+1]==b'e')&&(line[s+2]==b'A'||line[s+2]==b'a')&&(line[s+3]==b'R'||line[s+3]==b'r')&&(line[s+4]==b'C'||line[s+4]==b'c')&&(line[s+5]==b'H'||line[s+5]==b'h')&&line[s+6]==b' ' {
         let mut q=s+7;while q<e&&line[q]==b' '{q+=1;}crate::desktop::terminal_search(&line[q..e]);
     } else if eq(line, s, clen, b"KMS5") || eq(line, s, clen, b"kms5") {
         cmd_kms5();
