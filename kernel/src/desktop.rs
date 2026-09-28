@@ -169,7 +169,7 @@ static mut WIFI_UI_PASSWORD: [u8; 64] = [0; 64];
 static mut WIFI_UI_STATUS: u8 = 0; // 0=idle, 1=scanning, 2=connected, 3=error
 
 // Terminal buffer
-const TERM_ROWS: usize = 128;
+const TERM_ROWS: usize = 512;
 const TERM_COLS: usize = 128;
 const TERM_VIEW_ROWS_MAX: usize = 48; // safety cap; actual viewport follows terminal window height
 static mut TERM_LINES: [[u8; TERM_COLS]; TERM_ROWS] = [[0; TERM_COLS]; TERM_ROWS];
@@ -180,6 +180,16 @@ static mut TERM_SCROLL_DRAG: bool = false;
 // Diagnostic output pager: long command output is shown page-by-page so each
 // page fits the terminal and can be captured in one screenshot.
 static mut TERM_PAGE_MODE: bool = false;
+static mut TERM_SELECTING: bool = false;
+static mut TERM_SEL_ANCHOR_ROW: usize = 0;
+static mut TERM_SEL_ANCHOR_COL: usize = 0;
+static mut TERM_SEL_ROW: usize = 0;
+static mut TERM_SEL_COL: usize = 0;
+static mut TERM_CLIPBOARD: [u8; 4096] = [0; 4096];
+static mut TERM_CLIPBOARD_LEN: usize = 0;
+static mut TERM_MENU: bool = false;
+static mut TERM_MENU_X: i32 = 0;
+static mut TERM_MENU_Y: i32 = 0;
 static mut INPUT: [u8; 64] = [0; 64];
 static mut INPUT_LEN: usize = 0;
 static mut INPUT_CURSOR: usize = 0;
@@ -187,6 +197,195 @@ static mut TERM_HISTORY: [[u8; 64]; 16] = [[0; 64]; 16];
 static mut TERM_HISTORY_LEN: [usize; 16] = [0; 16];
 static mut TERM_HISTORY_COUNT: usize = 0;
 static mut TERM_HISTORY_POS: usize = 0;
+
+fn term_selection_bounds() -> (usize, usize, usize, usize) {
+    unsafe {
+        if TERM_SEL_ANCHOR_ROW < TERM_SEL_ROW ||
+           (TERM_SEL_ANCHOR_ROW == TERM_SEL_ROW && TERM_SEL_ANCHOR_COL <= TERM_SEL_COL) {
+            (TERM_SEL_ANCHOR_ROW, TERM_SEL_ANCHOR_COL, TERM_SEL_ROW, TERM_SEL_COL)
+        } else {
+            (TERM_SEL_ROW, TERM_SEL_COL, TERM_SEL_ANCHOR_ROW, TERM_SEL_ANCHOR_COL)
+        }
+    }
+}
+
+fn term_selection_contains(row: usize, col: usize) -> bool {
+    unsafe {
+        if !TERM_SELECTING && TERM_SEL_ANCHOR_ROW == TERM_SEL_ROW &&
+           TERM_SEL_ANCHOR_COL == TERM_SEL_COL {
+            return false;
+        }
+        let (r0, c0, r1, c1) = term_selection_bounds();
+        if row < r0 || row > r1 { return false; }
+        if r0 == r1 {
+            return col >= c0 && col <= c1;
+        }
+        if row == r0 { return col >= c0; }
+        if row == r1 { return col <= c1; }
+        true
+    }
+}
+
+fn term_selection_clear() {
+    unsafe {
+        TERM_SELECTING = false;
+        TERM_SEL_ANCHOR_ROW = 0;
+        TERM_SEL_ANCHOR_COL = 0;
+        TERM_SEL_ROW = 0;
+        TERM_SEL_COL = 0;
+        DIRTY_FULL = true;
+    }
+}
+
+fn term_mouse_to_cell(mx: i32, my: i32) -> Option<(usize, usize)> {
+    unsafe {
+        let idx = match hit_window(mx, my) {
+            Some(i) if WINS[i].kind == WinKind::Terminal => i,
+            _ => return None,
+        };
+        let w = &WINS[idx];
+        let body_top = w.y + TITLE_H + 34;
+        let body_bottom = w.y + w.h - 24;
+        let bar_x = w.x + w.w - 20;
+        if mx < w.x + 5 || mx >= bar_x || my < body_top || my >= body_bottom {
+            return None;
+        }
+        let total = TERM_ROW + 1;
+        let view_rows = term_visible_rows();
+        let max_start = if total > view_rows { total - view_rows } else { 0 };
+        let mut view = TERM_VIEW;
+        if view > max_start { view = max_start; }
+        let start = max_start - view;
+        let row = start + ((my - body_top) as usize / 10);
+        if row >= total { return None; }
+        let mut col = ((mx - (w.x + 10)) as usize) / 8;
+        let cols = term_text_cols();
+        if col >= cols { col = cols.saturating_sub(1); }
+        Some((row, col))
+    }
+}
+
+fn term_selection_begin(mx: i32, my: i32) -> bool {
+    if let Some((row, col)) = term_mouse_to_cell(mx, my) {
+        unsafe {
+            TERM_SELECTING = true;
+            TERM_SEL_ANCHOR_ROW = row;
+            TERM_SEL_ANCHOR_COL = col;
+            TERM_SEL_ROW = row;
+            TERM_SEL_COL = col;
+            TERM_MENU = false;
+            DIRTY_FULL = true;
+        }
+        true
+    } else {
+        false
+    }
+}
+
+fn term_selection_update(mx: i32, my: i32) {
+    if let Some((row, col)) = term_mouse_to_cell(mx, my) {
+        unsafe {
+            TERM_SEL_ROW = row;
+            TERM_SEL_COL = col;
+            DIRTY_FULL = true;
+        }
+    }
+}
+
+fn term_copy_selection() {
+    unsafe {
+        let (r0, c0, r1, c1) = term_selection_bounds();
+        if r0 == r1 && c0 == c1 {
+            return;
+        }
+        let mut out = 0usize;
+        let mut r = r0;
+        while r <= r1 && r < TERM_ROWS {
+            let len = TERM_LEN[r];
+            let start = if r == r0 { c0.min(len) } else { 0 };
+            let end = if r == r1 { c1.min(len.saturating_sub(1)) + 1 } else { len };
+            let mut c = start;
+            while c < end && out < TERM_CLIPBOARD.len() {
+                TERM_CLIPBOARD[out] = TERM_LINES[r][c];
+                out += 1;
+                c += 1;
+            }
+            if r < r1 && out < TERM_CLIPBOARD.len() {
+                TERM_CLIPBOARD[out] = b'\n';
+                out += 1;
+            }
+            if r == r1 { break; }
+            r += 1;
+        }
+        TERM_CLIPBOARD_LEN = out;
+        TERM_MENU = false;
+        DIRTY_FULL = true;
+    }
+}
+
+fn term_paste_clipboard() {
+    unsafe {
+        if TERM_CLIPBOARD_LEN == 0 || FOCUS >= MAX_WIN ||
+           WINS[FOCUS].kind != WinKind::Terminal {
+            return;
+        }
+        let mut i = 0usize;
+        while i < TERM_CLIPBOARD_LEN && INPUT_LEN < 63 {
+            let mut ch = TERM_CLIPBOARD[i];
+            if ch == b'\n' || ch == b'\r' || ch == b'\t' { ch = b' '; }
+            if ch < 32 || ch >= 127 {
+                i += 1;
+                continue;
+            }
+            let mut p = INPUT_LEN;
+            while p > INPUT_CURSOR {
+                INPUT[p] = INPUT[p - 1];
+                p -= 1;
+            }
+            INPUT[INPUT_CURSOR] = ch;
+            INPUT_LEN += 1;
+            INPUT_CURSOR += 1;
+            i += 1;
+        }
+        TERM_MENU = false;
+        TERM_PAGE_MODE = false;
+        TERM_VIEW = 0;
+        DIRTY_FULL = true;
+    }
+}
+
+fn term_menu_hit(mx: i32, my: i32) -> Option<usize> {
+    unsafe {
+        if !TERM_MENU { return None; }
+        let x = TERM_MENU_X;
+        let y = TERM_MENU_Y;
+        let w = 150i32;
+        let h = 72i32;
+        if mx < x || mx >= x + w || my < y || my >= y + h {
+            return None;
+        }
+        let idx = ((my - y) / 24) as usize;
+        if idx < 3 { Some(idx) } else { None }
+    }
+}
+
+fn draw_term_menu() {
+    unsafe {
+        if !TERM_MENU { return; }
+        let sw = graphics::width() as i32;
+        let sh = graphics::height() as i32;
+        let w = 150i32;
+        let h = 72i32;
+        let x = if TERM_MENU_X + w > sw { sw - w } else { TERM_MENU_X };
+        let y = if TERM_MENU_Y + h > sh - 30 { sh - 30 - h } else { TERM_MENU_Y };
+        graphics::fill_rect((x + 2) as usize, (y + 2) as usize, w as usize, h as usize, 0x00404040);
+        graphics::fill_rect(x as usize, y as usize, w as usize, h as usize, 0x00FFFFFF);
+        graphics::border_rect(x as usize, y as usize, w as usize, h as usize, 0x00707070);
+        graphics::draw_str(x as usize + 12, y as usize + 7, "Copy", COL_TEXT);
+        graphics::draw_str(x as usize + 12, y as usize + 31, "Paste", COL_TEXT);
+        graphics::draw_str(x as usize + 12, y as usize + 55, "Clear Selection", COL_TEXT);
+    }
+}
 
 fn term_clear() {
     unsafe {
@@ -1164,6 +1363,63 @@ fn handle_mouse_buttons(buttons: u8) {
         let my = MY;
         FRAME_N = FRAME_N.wrapping_add(1);
 
+        // Native terminal selection: drag across rendered output, then use
+        // the terminal context menu for Copy/Paste. This is independent from
+        // desktop/Explorer context menus.
+        if TERM_SELECTING {
+            if left != 0 {
+                term_selection_update(mx, my);
+                PREV_MB = buttons;
+                MB = buttons;
+                return;
+            } else {
+                TERM_SELECTING = false;
+                DIRTY_FULL = true;
+            }
+        }
+
+        let terminal_under = match hit_window(mx, my) {
+            Some(i) if WINS[i].kind == WinKind::Terminal => true,
+            _ => false,
+        };
+
+        if right != 0 && prev_right == 0 && terminal_under {
+            TERM_MENU_X = mx;
+            TERM_MENU_Y = my;
+            TERM_MENU = true;
+            CTX_MENU = false;
+            START_MENU = false;
+            DIRTY_FULL = true;
+            PREV_MB = buttons;
+            MB = buttons;
+            return;
+        }
+
+        if TERM_MENU && left != 0 && prev_left == 0 {
+            if let Some(act) = term_menu_hit(mx, my) {
+                match act {
+                    0 => term_copy_selection(),
+                    1 => term_paste_clipboard(),
+                    2 => term_selection_clear(),
+                    _ => {}
+                }
+            } else {
+                TERM_MENU = false;
+                DIRTY_FULL = true;
+            }
+            PREV_MB = buttons;
+            MB = buttons;
+            return;
+        }
+
+        if left != 0 && prev_left == 0 && terminal_under {
+            if term_selection_begin(mx, my) {
+                PREV_MB = buttons;
+                MB = buttons;
+                return;
+            }
+        }
+
                 // Desktop context menu (right-click empty area)
         let right = buttons & 2;
         let prev_right = PREV_MB & 2;
@@ -1763,7 +2019,12 @@ fn draw_window(idx: usize) {
                             let len = TERM_LEN[idx];
                             let mut k = 0usize;
                             while k < len {
-                                graphics::draw_char(wx + 10 + k * 8, y, TERM_LINES[idx][k], COL_TERM_FG);
+                                if term_selection_contains(idx, k) {
+                                    graphics::fill_rect(wx + 10 + k * 8, y, 8, 10, 0x0000B7C3);
+                                    graphics::draw_char(wx + 10 + k * 8, y, TERM_LINES[idx][k], 0x00FFFFFF);
+                                } else {
+                                    graphics::draw_char(wx + 10 + k * 8, y, TERM_LINES[idx][k], COL_TERM_FG);
+                                }
                                 k += 1;
                             }
                         }
@@ -1811,7 +2072,7 @@ fn draw_window(idx: usize) {
                 graphics::fill_rect(wx + 4, footer_y, ww - 8, 18, 0x001D2229);
                 graphics::border_rect(wx + 4, footer_y, ww - 8, 18, 0x00505050);
                 graphics::draw_str(wx + 10, footer_y + 5,
-                    if TERM_PAGE_MODE { "PAGE MODE  SPACE: NEXT  BACKSPACE: PREVIOUS" } else { "UTF-8  |  UP/DOWN: HISTORY  |  PAGE: ARROWS" },
+                    if TERM_PAGE_MODE { "PAGE MODE  SPACE: NEXT  BACKSPACE: PREVIOUS" } else { "ASCII | UP/DOWN: HISTORY | DRAG: SELECT | RIGHT CLICK: MENU" },
                     if TERM_PAGE_MODE { 0x00FFD24A } else { 0x007D8791 });
             }
             WinKind::MediaPlayer => {
@@ -2818,6 +3079,9 @@ fn render() {
         if CTX_MENU {
             draw_ctx_menu();
         }
+        if TERM_MENU {
+            draw_term_menu();
+        }
         CURSOR_SAVED = false;
         cursor_save_and_draw(MX, MY);
     }
@@ -2886,6 +3150,8 @@ fn handle_key(ch: u8) {
             }
             START_MENU = false;
             CTX_MENU = false;
+            TERM_MENU = false;
+            TERM_SELECTING = false;
             DIRTY_FULL = true;
             return;
         }
