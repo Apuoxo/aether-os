@@ -919,6 +919,7 @@ fn media_open_dialog_click(mx:i32,my:i32,wx:i32,wy:i32)->bool {
                             if let Ok(p)=core::str::from_utf8(&path[..n]){
                                 if crate::media_player::open(p){
                                     let _=crate::media_player::add_to_playlist(p);
+                                    crate::media_player::play();
                                     MEDIA_OPEN_DIALOG=false;WINS[10].visible=true;WINS[10].minimized=false;
                                     bring_to_front(10);DIRTY_FULL=true;
                                 }
