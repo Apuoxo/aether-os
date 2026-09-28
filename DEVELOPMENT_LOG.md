@@ -172,3 +172,11 @@ Every significant change should be followed by:
 - Settings → Mouse → Cursor now presents a real 24-item preview/selection grid with Apply and Cancel.
 - Applying a selection changes the actual native desktop cursor renderer immediately.
 - KMS/GGTT/GSM and framebuffer paths are unchanged.
+
+
+### 2026-09-28 — Explorer MP3 double-click autoplay
+- Control baseline: build #672, commit 386110499f45fa4c8fc9aba8241c3adb206a5d06.
+- Explorer at this baseline already detects .mp3 files and routes them to desktop::open_media_path(), which opens the file and adds it to the Media Player playlist.
+- The missing step was playback start: open_media_path() did not call media_player::play().
+- Controlled change: call the existing media_player::play() after a successful open and playlist insertion. No decoder, HDA, storage, or graphics code changed.
+- Acceptance: double-clicking an MP3 in AetherFS Explorer brings the Media Player forward and immediately starts playback through the existing native MP3/HDA path.

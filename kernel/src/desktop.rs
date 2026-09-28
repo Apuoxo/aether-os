@@ -1061,6 +1061,7 @@ pub fn open_media_path(path:&str)->bool {
         return false;
     }
     let _=crate::media_player::add_to_playlist(path);
+    crate::media_player::play();
     // Media Player is window slot 10. Keep the Explorer in the background.
     unsafe {
         WINS[10].minimized=false;
