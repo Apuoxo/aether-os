@@ -86,8 +86,8 @@ static mut WINS: [Window; MAX_WIN] = [
         minimized: false, maximized: false, rx: 90, ry: 55, rw: 650, rh: 430 },
     Window { x: 100, y: 170, w: 280, h: 150, kind: WinKind::Sound, visible: false, z: 3,
         minimized: false, maximized: false, rx: 100, ry: 170, rw: 280, rh: 150 },
-    Window { x: 160, y: 190, w: 300, h: 160, kind: WinKind::Video, visible: false, z: 4,
-        minimized: false, maximized: false, rx: 160, ry: 190, rw: 300, rh: 160 },
+    Window { x: 145, y: 125, w: 430, h: 290, kind: WinKind::Video, visible: false, z: 4,
+        minimized: false, maximized: false, rx: 145, ry: 125, rw: 430, rh: 290 },
     Window { x: 180, y: 100, w: 340, h: 260, kind: WinKind::Files, visible: false, z: 6,
         minimized: false, maximized: false, rx: 180, ry: 100, rw: 340, rh: 260 },
     Window { x: 280, y: 200, w: 240, h: 140, kind: WinKind::DateTime, visible: false, z: 7,
@@ -141,6 +141,10 @@ static mut CTX_X: i32 = 0;
 static mut CTX_Y: i32 = 0;
 static mut Z_TOP: i32 = 3;
 static mut SETTINGS_VIEW: u8 = 0;
+// Display dialog state. Only modes with an implemented Aether hardware path are offered.
+static mut VIDEO_PENDING_W: u16 = 800;
+static mut VIDEO_PENDING_H: u16 = 600;
+static mut VIDEO_STATUS: u8 = 0; // 0=idle, 1=applied, 2=failed
 static mut CURSOR_COLOR: u32 = COL_CURSOR;
 static mut CURSOR_PENDING: u8 = 0;
 
@@ -592,6 +596,11 @@ fn open_win(slot: usize) {
         if WINS[slot].kind == WinKind::Settings {
             SETTINGS_VIEW = 0;
             CURSOR_PENDING = 0;
+        }
+        if WINS[slot].kind == WinKind::Video {
+            VIDEO_PENDING_W = graphics::width() as u16;
+            VIDEO_PENDING_H = graphics::height() as u16;
+            VIDEO_STATUS = 0;
         }
         if WINS[slot].kind == WinKind::Terminal {
             // A closed terminal is reopened at the live bottom. Do not leave
@@ -1356,6 +1365,59 @@ fn handle_mouse_buttons(buttons: u8) {
                             DIRTY_FULL = true;
                         }
                     }
+                } else if WINS[idx].kind == WinKind::Video
+                    && my >= WINS[idx].y + TITLE_H
+                {
+                    let vx = WINS[idx].x;
+                    let vy = WINS[idx].y;
+                    let vw = WINS[idx].w;
+                    let vh = WINS[idx].h;
+
+                    // Resolution rows.
+                    let mut i = 0usize;
+                    while i < 2 {
+                        let row_y = vy + 76 + (i as i32) * 32;
+                        if mx >= vx + 18 && mx < vx + vw - 18
+                            && my >= row_y && my < row_y + 26
+                        {
+                            if i == 0 {
+                                VIDEO_PENDING_W = 800;
+                                VIDEO_PENDING_H = 600;
+                            } else {
+                                VIDEO_PENDING_W = 1366;
+                                VIDEO_PENDING_H = 768;
+                            }
+                            VIDEO_STATUS = 0;
+                            DIRTY_FULL = true;
+                            break;
+                        }
+                        i += 1;
+                    }
+
+                    let by = vy + vh - 42;
+                    let apply_x = vx + vw - 184;
+                    let cancel_x = vx + vw - 94;
+                    if my >= by && my < by + 24 {
+                        if mx >= apply_x && mx < apply_x + 78 {
+                            let pw = VIDEO_PENDING_W;
+                            let ph = VIDEO_PENDING_H;
+                            // Use the existing guarded Sandy Bridge mode path.
+                            // No new register programming is introduced here.
+                            let ok = crate::drivers::video::modeset_to(pw, ph);
+                            VIDEO_STATUS = if ok { 1 } else { 2 };
+                            if ok {
+                                VIDEO_PENDING_W = graphics::width() as u16;
+                                VIDEO_PENDING_H = graphics::height() as u16;
+                                ps2::clamp_to_screen();
+                            }
+                            DIRTY_FULL = true;
+                        } else if mx >= cancel_x && mx < cancel_x + 78 {
+                            VIDEO_PENDING_W = graphics::width() as u16;
+                            VIDEO_PENDING_H = graphics::height() as u16;
+                            VIDEO_STATUS = 0;
+                            DIRTY_FULL = true;
+                        }
+                    }
                 } else if WINS[idx].kind == WinKind::MediaPlayer
                     && my >= WINS[idx].y + TITLE_H
                 {
@@ -1870,22 +1932,66 @@ fn draw_window(idx: usize) {
                 }
             }
             WinKind::Video => {
-                                graphics::fill_rect(wx + 3, wy + TITLE_H as usize, ww - 6, wh - TITLE_H as usize - 3, COL_CLIENT);
-                if crate::drivers::video::ready() {
-                    graphics::draw_str(wx + 12, wy + 40, "Framebuffer: OK", 0x00008000);
-                } else {
-                    graphics::draw_str(wx + 12, wy + 40, "Framebuffer: FAIL", 0x00800000);
+                graphics::fill_rect(wx + 3, wy + TITLE_H as usize, ww - 6, wh - TITLE_H as usize - 3, COL_CLIENT);
+
+                graphics::draw_str(wx + 18, wy + 42, "AETHER GRAPHICS", COL_TEXT);
+                graphics::draw_str(wx + 18, wy + 60, "Screen mode", COL_TEXT_DIM);
+
+                // The current Gen6 path has only been exercised for these two
+                // AH532 target modes. Do not advertise arbitrary EDID modes yet.
+                let modes: [(u16, u16, &str); 2] = [
+                    (800, 600, "800 x 600"),
+                    (1366, 768, "1366 x 768"),
+                ];
+                let mut i = 0usize;
+                while i < modes.len() {
+                    let (mw, mh, label) = modes[i];
+                    let row_y = wy + 76 + i * 32;
+                    let selected = unsafe { VIDEO_PENDING_W == mw && VIDEO_PENDING_H == mh };
+                    graphics::fill_rect(
+                        wx + 18, row_y, ww - 36, 26,
+                        if selected { 0x00DCEBFA } else { 0x00FFFFFF }
+                    );
+                    graphics::border_rect(
+                        wx + 18, row_y, ww - 36, 26,
+                        if selected { COL_ACCENT } else { 0x00808080 }
+                    );
+                    graphics::draw_str(wx + 30, row_y + 9, if selected { "o" } else { " " }, COL_TEXT);
+                    graphics::draw_str(wx + 52, row_y + 9, label, COL_TEXT);
+                    i += 1;
                 }
-                graphics::draw_str(wx + 12, wy + 56, "Resolution:", COL_TEXT_DIM);
-                // width x height from graphics
-                let mut x = wx + 108;
-                draw_u32(x, wy + 56, graphics::width() as u32, COL_TEXT);
-                x += 40;
-                graphics::draw_str(x, wy + 56, "x", COL_TEXT);
-                draw_u32(x + 12, wy + 56, graphics::height() as u32, COL_TEXT);
-                graphics::draw_str(wx + 12, wy + 76, "Color: 32bpp software", COL_TEXT_DIM);
-                graphics::draw_str(wx + 12, wy + 92, "GPU accel: none", COL_TEXT_DIM);
-                graphics::draw_str(wx + 12, wy + 108, "Source: Multiboot2 FB", COL_TEXT_DIM);
+
+                graphics::draw_str(wx + 18, wy + 150, "Graphics adapter:", COL_TEXT_DIM);
+                graphics::draw_str(wx + 150, wy + 150, "Intel HD Graphics 3000", COL_TEXT);
+                graphics::draw_str(wx + 18, wy + 168, "Generation:", COL_TEXT_DIM);
+                graphics::draw_str(wx + 150, wy + 168, "6", COL_TEXT);
+                graphics::draw_str(wx + 18, wy + 186, "Current:", COL_TEXT_DIM);
+                draw_u32(wx + 150, wy + 186, graphics::width() as u32, COL_TEXT);
+                graphics::draw_str(wx + 190, wy + 186, "x", COL_TEXT);
+                draw_u32(wx + 202, wy + 186, graphics::height() as u32, COL_TEXT);
+
+                let status = unsafe { VIDEO_STATUS };
+                if status == 1 {
+                    graphics::draw_str(wx + 18, wy + 208, "Mode applied.", 0x00008000);
+                } else if status == 2 {
+                    graphics::draw_str(wx + 18, wy + 208, "Mode change failed; current mode kept.", 0x00800000);
+                } else {
+                    graphics::draw_str(wx + 18, wy + 208, "Select a mode, then press Apply.", COL_TEXT_DIM);
+                }
+
+                let by = wy + wh - 42;
+                let apply_x = wx + ww - 184;
+                let cancel_x = wx + ww - 94;
+                graphics::fill_rect(apply_x, by, 78, 24, COL_BTN_FACE);
+                graphics::border_rect(apply_x, by, 78, 24, 0x00404040);
+                graphics::draw_str(apply_x + 22, by + 8, "Apply", COL_TEXT);
+                graphics::fill_rect(cancel_x, by, 78, 24, COL_BTN_FACE);
+                graphics::border_rect(cancel_x, by, 78, 24, 0x00404040);
+                graphics::draw_str(cancel_x + 20, by + 8, "Cancel", COL_TEXT);
+
+                if !crate::drivers::video::hardware_ready() {
+                    graphics::draw_str(wx + 18, wy + 226, "Hardware display path: not ready", 0x00800000);
+                }
             }
             WinKind::Files => {
                                 crate::files_mgr::draw(wx, wy, ww, wh, TITLE_H as usize);
