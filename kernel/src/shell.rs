@@ -838,7 +838,7 @@ fn run_line(line: &[u8], len: usize) {
     let mut e = len;
     while e > s && (line[e - 1] == b' ' || line[e - 1] == b'\r') { e -= 1; }
     let clen = e.saturating_sub(s);
-    if eq(line, s, clen, b"KMS5") || eq(line, s, clen, b"kms5") {\n        cmd_kms5();\n    } else eq(line, s, clen, b"VINFO") || eq(line, s, clen, b"vinfo") {
+    if eq(line, s, clen, b"KMS5") || eq(line, s, clen, b"kms5") {\n        cmd_kms5();\n    } else if eq(line, s, clen, b"VINFO") || eq(line, s, clen, b"vinfo") {
         cmd_video_info();
     } else if eq(line, s, clen, b"V1366") || eq(line, s, clen, b"v1366") {
         cmd_video_mode(1366, 768);
