@@ -1803,7 +1803,7 @@ fn handle_mouse_buttons(buttons: u8) {
                     {
                         WIFI_UI_SCAN_REQUESTED = true;
                         WIFI_UI_STATUS = 1;
-                        DIRTY_FULL = true;
+                        DIRTY_WINDOW = idx as i16;
                     }
                     // Connect only operates on a real selected scan result.
                     if mx >= list_x + 102 && mx < list_x + 206
@@ -1812,7 +1812,7 @@ fn handle_mouse_buttons(buttons: u8) {
                         if WIFI_UI_SELECTED >= 0 {
                             WIFI_UI_CONNECT_DIALOG = true;
                             WIFI_UI_PASSWORD_LEN = 0;
-                            DIRTY_FULL = true;
+                            DIRTY_WINDOW = idx as i16;
                         }
                     }
                     // Disconnect is deliberately a no-op until the native association
@@ -1821,7 +1821,7 @@ fn handle_mouse_buttons(buttons: u8) {
                         && my >= button_y && my < button_y + 26
                     {
                         WIFI_UI_STATUS = 0;
-                        DIRTY_FULL = true;
+                        DIRTY_WINDOW = idx as i16;
                     }
                 } else if WINS[idx].kind == WinKind::MyComputer
                     && my >= WINS[idx].y + TITLE_H
@@ -1879,7 +1879,7 @@ fn handle_mouse_buttons(buttons: u8) {
                                 if i == 0 {
                                     CURSOR_PENDING = CURSOR_ID;
                                 }
-                                DIRTY_FULL = true;
+                                DIRTY_WINDOW = idx as i16;
                                 break;
                             }
                             i += 1;
@@ -1890,7 +1890,7 @@ fn handle_mouse_buttons(buttons: u8) {
                             let col = i % 6; let row = i / 6;
                             let bx = sx + 18 + (col as i32) * 78; let by = sy + 96 + (row as i32) * 40;
                             if mx >= bx && mx < bx + 70 && my >= by && my < by + 34 {
-                                CURSOR_PENDING = i as u8; DIRTY_FULL = true; break;
+                                CURSOR_PENDING = i as u8; DIRTY_WINDOW = idx as i16; break;
                             }
                             i += 1;
                         }
@@ -1901,11 +1901,11 @@ fn handle_mouse_buttons(buttons: u8) {
                             if mx >= okx && mx < okx + 78 {
                                 CURSOR_ID = CURSOR_PENDING;
                                 SETTINGS_VIEW = 0;
-                                DIRTY_FULL = true;
+                                DIRTY_WINDOW = idx as i16;
                             } else if mx >= cancelx && mx < cancelx + 78 {
                                 SETTINGS_VIEW = 0;
                                 CURSOR_PENDING = 0;
-                                DIRTY_FULL = true;
+                                DIRTY_WINDOW = idx as i16;
                             }
                         }
                     } else {
@@ -1914,7 +1914,7 @@ fn handle_mouse_buttons(buttons: u8) {
                         let by = sy + sh - 42;
                         if mx >= bx && mx < bx + 78 && my >= by && my < by + 24 {
                             SETTINGS_VIEW = 0;
-                            DIRTY_FULL = true;
+                            DIRTY_WINDOW = idx as i16;
                         }
                     }
                 } else if WINS[idx].kind == WinKind::Video
@@ -1940,7 +1940,7 @@ fn handle_mouse_buttons(buttons: u8) {
                                 VIDEO_PENDING_H = 768;
                             }
                             VIDEO_STATUS = 0;
-                            DIRTY_FULL = true;
+                            DIRTY_WINDOW = idx as i16;
                             break;
                         }
                         i += 1;
@@ -1967,7 +1967,7 @@ fn handle_mouse_buttons(buttons: u8) {
                             VIDEO_PENDING_W = graphics::width() as u16;
                             VIDEO_PENDING_H = graphics::height() as u16;
                             VIDEO_STATUS = 0;
-                            DIRTY_FULL = true;
+                            DIRTY_WINDOW = idx as i16;
                         }
                     }
                 } else if WINS[idx].kind == WinKind::Alarm
@@ -1977,7 +1977,7 @@ fn handle_mouse_buttons(buttons: u8) {
                         mx - WINS[idx].x - 3,
                         my - WINS[idx].y - TITLE_H,
                     );
-                    if changed { DIRTY_FULL = true; }
+                    if changed { DIRTY_WINDOW = idx as i16; }
                 } else if WINS[idx].kind == WinKind::MediaPlayer
                     && my >= WINS[idx].y + TITLE_H
                 {
@@ -1989,7 +1989,7 @@ fn handle_mouse_buttons(buttons: u8) {
                         if row < crate::media_player::builtin_count() && mx >= bx+18 && mx < bx+300 {
                             let _=crate::media_player::select_builtin(row);
                             let _=crate::media_player::open_builtin(row);
-                            DIRTY_FULL=true;
+                            DIRTY_WINDOW=idx as i16;
                         }
                     } else if my >= py && my < py+28 {
                         if mx >= bx+24 && mx < bx+96 {
@@ -2013,13 +2013,13 @@ fn handle_mouse_buttons(buttons: u8) {
                                 crate::media_player::toggle_mute();
                             }
                         }
-                        DIRTY_FULL=true;
+                        DIRTY_WINDOW=idx as i16;
                     } else if my >= cy+126 && my < cy+142 {
                         let barw=(WINS[idx].w-36).max(1) as i32;
                         let rel=(mx-(bx+18)).max(0).min(barw) as u16;
                         let perm=((rel as u32)*1000/(barw as u32)) as u16;
                         crate::media_player::seek_permille(perm);
-                        DIRTY_FULL=true;
+                        DIRTY_WINDOW=idx as i16;
                     }
                 } else if WINS[idx].kind == WinKind::Sound
                     && my >= WINS[idx].y + TITLE_H
@@ -2037,7 +2037,7 @@ fn handle_mouse_buttons(buttons: u8) {
                     } else {
                         crate::drivers::audio::beep();
                     }
-                    DIRTY_FULL=true;
+                    DIRTY_WINDOW=idx as i16;
                 } else if in_title(idx, mx, my) {
                     // Double-click title → maximize
                     if LAST_CLICK_WIN == idx && FRAME_N.wrapping_sub(LAST_CLICK_FRAME) < 25 {
