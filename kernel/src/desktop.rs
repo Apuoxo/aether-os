@@ -182,6 +182,7 @@ static mut TERM_SCROLL_DRAG: bool = false;
 static mut TERM_PAGE_MODE: bool = false;
 static mut INPUT: [u8; 64] = [0; 64];
 static mut INPUT_LEN: usize = 0;
+static mut INPUT_CURSOR: usize = 0;
 static mut TERM_HISTORY: [[u8; 64]; 16] = [[0; 64]; 16];
 static mut TERM_HISTORY_LEN: [usize; 16] = [0; 16];
 static mut TERM_HISTORY_COUNT: usize = 0;
@@ -399,6 +400,7 @@ fn term_history_load(pos: usize) {
     unsafe {
         if pos >= TERM_HISTORY_COUNT { return; }
         INPUT_LEN = TERM_HISTORY_LEN[pos];
+        INPUT_CURSOR = INPUT_LEN;
         let mut i = 0usize;
         while i < INPUT_LEN {
             INPUT[i] = TERM_HISTORY[pos][i];
@@ -437,6 +439,7 @@ fn term_history_next() {
         } else {
             TERM_HISTORY_POS = TERM_HISTORY_COUNT;
             INPUT_LEN = 0;
+            INPUT_CURSOR = 0;
             let mut i = 0usize;
             while i < 64 {
                 INPUT[i] = 0;
@@ -453,6 +456,7 @@ pub fn terminal_clear() {
     term_clear();
     unsafe {
         INPUT_LEN = 0;
+        INPUT_CURSOR = 0;
         TERM_PAGE_MODE = false;
         TERM_VIEW = 0;
         DIRTY_FULL = true;
@@ -1801,7 +1805,7 @@ fn draw_window(idx: usize) {
                         graphics::draw_char(wx + 10 + 64 + k * 8, y, INPUT[k], COL_TERM_FG);
                         k += 1;
                     }
-                    graphics::fill_rect(wx + 10 + 64 + INPUT_LEN * 8, y, 6, 8, 0x0000D7FF);
+                    graphics::fill_rect(wx + 10 + 64 + INPUT_CURSOR * 8, y, 6, 8, 0x0000D7FF);
                 }
                 let footer_y = wy + wh - 22;
                 graphics::fill_rect(wx + 4, footer_y, ww - 8, 18, 0x001D2229);
@@ -2833,12 +2837,33 @@ fn handle_special_key(hid_code: u8) -> bool {
             }
         } else if WINS[FOCUS].kind == WinKind::Terminal {
             match hid_code {
-                0x52 | 0x4B => {
-                    if TERM_VIEW > 0 || TERM_PAGE_MODE { term_scroll_up(); } else { term_history_prev(); }
+                0x52 => { term_history_prev(); true }
+                0x51 => { term_history_next(); true }
+                0x50 => {
+                    if INPUT_CURSOR > 0 { INPUT_CURSOR -= 1; DIRTY_FULL = true; }
                     true
                 }
-                0x51 | 0x4E => {
-                    if TERM_VIEW > 0 || TERM_PAGE_MODE { term_scroll_down(); } else { term_history_next(); }
+                0x4F => {
+                    if INPUT_CURSOR < INPUT_LEN { INPUT_CURSOR += 1; DIRTY_FULL = true; }
+                    true
+                }
+                0x4A => { INPUT_CURSOR = 0; DIRTY_FULL = true; true }
+                0x4D => { INPUT_CURSOR = INPUT_LEN; DIRTY_FULL = true; true }
+                0x4C => {
+                    if INPUT_CURSOR < INPUT_LEN {
+                        let mut i = INPUT_CURSOR;
+                        while i + 1 < INPUT_LEN {
+                            INPUT[i] = INPUT[i + 1];
+                            i += 1;
+                        }
+                        INPUT_LEN -= 1;
+                        INPUT[INPUT_LEN] = 0;
+                        DIRTY_FULL = true;
+                    }
+                    true
+                }
+                0x4B | 0x4E => {
+                    if TERM_VIEW > 0 || TERM_PAGE_MODE { term_scroll_up(); }
                     true
                 }
                 _ => false,
@@ -2883,6 +2908,7 @@ fn handle_key(ch: u8) {
             term_history_save();
             crate::shell::run_command_from_gui(&INPUT, INPUT_LEN);
             INPUT_LEN = 0;
+            INPUT_CURSOR = 0;
             term_page_begin(output_start);
             DIRTY_FULL = true;
         } else if ch == b' ' && INPUT_LEN == 0 && (TERM_PAGE_MODE || TERM_VIEW > 0) {
@@ -2892,15 +2918,29 @@ fn handle_key(ch: u8) {
         } else if ch == 0x08 {
             TERM_PAGE_MODE = false;
             TERM_VIEW = 0;
-            if INPUT_LEN > 0 {
+            if INPUT_CURSOR > 0 {
+                let remove_at = INPUT_CURSOR - 1;
+                let mut i = remove_at;
+                while i + 1 < INPUT_LEN {
+                    INPUT[i] = INPUT[i + 1];
+                    i += 1;
+                }
                 INPUT_LEN -= 1;
+                INPUT_CURSOR -= 1;
+                INPUT[INPUT_LEN] = 0;
                 DIRTY_FULL = true;
             }
         } else if ch >= 32 && ch < 127 && INPUT_LEN < 63 {
             TERM_PAGE_MODE = false;
             TERM_VIEW = 0;
-            INPUT[INPUT_LEN] = ch;
+            let mut i = INPUT_LEN;
+            while i > INPUT_CURSOR {
+                INPUT[i] = INPUT[i - 1];
+                i -= 1;
+            }
+            INPUT[INPUT_CURSOR] = ch;
             INPUT_LEN += 1;
+            INPUT_CURSOR += 1;
             DIRTY_FULL = true;
         }
     }
