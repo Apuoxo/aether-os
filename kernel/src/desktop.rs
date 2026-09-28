@@ -2096,8 +2096,8 @@ fn draw_settings(wx: usize, wy: usize, ww: usize, wh: usize) {
             while i < crate::cursor_builtin::COUNT {
                 let col = i % 6;
                 let row = i / 6;
-                let bx = wx + 18 + (col as i32) * 78;
-                let by = wy + 96 + (row as i32) * 40;
+                let bx = wx + 18 + col * 78;
+                let by = wy + 96 + row * 40;
                 let selected = CURSOR_PENDING == i as u8;
 
                 graphics::fill_rect(
