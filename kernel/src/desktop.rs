@@ -679,7 +679,7 @@ fn term_history_next() {
     }
 }
 
-pub fn term_search_set(query:&[u8],len:usize){
+pub pub fn term_search_set(query:&[u8],len:usize){
     unsafe{
         TERM_SEARCH_LEN=len.min(TERM_SEARCH.len());let mut i=0;while i<TERM_SEARCH_LEN{TERM_SEARCH[i]=query[i];i+=1;}
         TERM_SEARCH_HIT_COUNT=0;TERM_SEARCH_ACTIVE=TERM_SEARCH_LEN>0;if !TERM_SEARCH_ACTIVE{DIRTY_FULL=true;return;}
@@ -691,7 +691,7 @@ fn term_search_contains(row:usize,col:usize)->bool{
     unsafe{if !TERM_SEARCH_ACTIVE||TERM_SEARCH_LEN==0{return false;}let mut c=0;while c+TERM_SEARCH_LEN<=TERM_LEN[row]{let mut ok=true;let mut j=0;while j<TERM_SEARCH_LEN{if TERM_LINES[row][c+j].to_ascii_lowercase()!=TERM_SEARCH[j].to_ascii_lowercase(){ok=false;break;}j+=1;}if ok&&col>=c&&col<c+TERM_SEARCH_LEN{return true;}c+=1;}false}
 }
 
-fn terminal_clear() {
+pub fn terminal_clear() {
     term_clear();
     unsafe {
         INPUT_LEN = 0;
