@@ -1010,7 +1010,7 @@ fn handle_keyboard_click(mx:i32,my:i32)->bool{
         }
         let y=ky+180;let bottom:[(&str,i32);8]=[("CTRL",66),("ALT",66),("SPACE",270),("LEFT",60),("RIGHT",60),("HOME",60),("END",60),("DEL",60)];
         let mut x=kx;let mut i=0usize;
-        while i<bottom.len(){let(label,w)=bottom[i];if mx>=x&&mx<x+w&&my>=y&&my<y+30{keyboard_emit(label);return true;}x+=w+3;i+=1;}
+        while i<bottom.len(){let(label,w)=bottom[i];if mx>=x&&mx<x+w&&my>=y&&my<y+30{keyboard_emit(label);return true;}x+=(w as usize)+3;i+=1;
         false
     }
 }
@@ -1725,7 +1725,7 @@ fn draw_window(idx: usize) {
                         graphics::fill_rect(x as usize,y,w,30,if active{0x00B8D4FF}else{COL_BTN_FACE});
                         graphics::border_rect(x as usize,y,w,30,0x00606060);
                         graphics::draw_str(x as usize+(w.saturating_sub(label.len()*8))/2,y+10,label,COL_TEXT);
-                        x+=widths[c]+3;c+=1;}r+=1;}
+                        x+=(widths[c] as usize)+3;c+=1;}r+=1;
                 let y=ky+180;let bottom:[(&str,i32);8]=[("CTRL",66),("ALT",66),("SPACE",270),("LEFT",60),("RIGHT",60),("HOME",60),("END",60),("DEL",60)];
                 let mut x=kx;let mut i=0usize;
                 while i<bottom.len(){let(label,w)=bottom[i];let active=unsafe{(label=="CTRL"&&KEYBOARD_CTRL)||(label=="ALT"&&KEYBOARD_ALT)};
