@@ -30,6 +30,7 @@ mod wallpaper;
 mod cursor_builtin;
 mod mp3_decoder;
 mod media_player;
+mod alarm;
 mod log;
 mod shell;
 mod userspace;
