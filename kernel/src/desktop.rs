@@ -43,7 +43,7 @@ const COL_BTN_FACE: u32 = 0x00D4D0C8;
 const COL_MENU_BG: u32 = 0x00FFFFFF;
 const COL_MENU_HDR: u32 = 0x001665CA;
 
-const MAX_WIN: usize = 12;
+const MAX_WIN: usize = 13;
 const TITLE_H: i32 = 26;
 const TASKBAR_H: usize = 30;
 
@@ -61,6 +61,7 @@ enum WinKind {
     Settings,
     MediaPlayer,
     Keyboard,
+    Alarm,
 }
 
 struct Window {
@@ -104,6 +105,8 @@ static mut WINS: [Window; MAX_WIN] = [
         minimized: false, maximized: false, rx: 70, ry: 70, rw: 660, rh: 390 },
     Window { x: 30, y: 275, w: 740, h: 295, kind: WinKind::Keyboard, visible: false, z: 12,
         minimized: false, maximized: false, rx: 30, ry: 275, rw: 740, rh: 295 },
+    Window { x: 120, y: 55, w: 470, h: 360, kind: WinKind::Alarm, visible: false, z: 13,
+        minimized: false, maximized: false, rx: 120, ry: 55, rw: 470, rh: 360 },
 ];
 
 static mut FOCUS: usize = 0; // terminal
@@ -1042,6 +1045,7 @@ fn win_title(kind: WinKind) -> &'static str {
         WinKind::Settings => "Settings",
         WinKind::MediaPlayer => "Aether Media Player",
         WinKind::Keyboard => "On-Screen Keyboard",
+        WinKind::Alarm => "Alarm Clock",
     }
 }
 
@@ -1191,6 +1195,7 @@ fn draw_taskbar_buttons(w: usize, h: usize) {
                     WinKind::Settings => "Settings",
                     WinKind::MediaPlayer => "Media",
                     WinKind::Keyboard => "Keyboard",
+                    WinKind::Alarm => "Alarm",
                 };
                 let bw = short.len() * 8 + 20;
                 if x + bw > w.saturating_sub(100) {
@@ -1282,6 +1287,12 @@ fn apply_mouse_delta(dx: i32, dy: i32) {
         }
         if MY >= sh {
             MY = sh - 1;
+        }
+        if FOCUS < MAX_WIN && WINS[FOCUS].visible && WINS[FOCUS].kind == WinKind::Alarm {
+            let _ = crate::alarm::alarm_mouse_move(
+                MX - WINS[FOCUS].x - 3,
+                MY - WINS[FOCUS].y - TITLE_H,
+            );
         }
         DIRTY_FULL = true;
     }
@@ -1677,7 +1688,8 @@ fn handle_mouse_buttons(buttons: u8) {
                         5 => open_win(10), // Media Player
                         6 => open_win(5), // Documents -> Files
                         7 => open_win(11), // On-Screen Keyboard
-                        8 => open_win(99), // Recycle Bin
+                        8 => open_win(12), // Alarm Clock
+                        9 => open_win(99), // Recycle Bin
                         _ => {}
                     }
                 } else if my >= 28 {
@@ -1942,6 +1954,14 @@ fn handle_mouse_buttons(buttons: u8) {
                             DIRTY_FULL = true;
                         }
                     }
+                } else if WINS[idx].kind == WinKind::Alarm
+                    && my >= WINS[idx].y + TITLE_H
+                {
+                    let changed = crate::alarm::alarm_click(
+                        mx - WINS[idx].x - 3,
+                        my - WINS[idx].y - TITLE_H,
+                    );
+                    if changed { DIRTY_FULL = true; }
                 } else if WINS[idx].kind == WinKind::MediaPlayer
                     && my >= WINS[idx].y + TITLE_H
                 {
@@ -2107,6 +2127,7 @@ fn draw_window(idx: usize) {
                 WinKind::Network => IconId::Network,
                 WinKind::Sound | WinKind::Video | WinKind::DateTime => IconId::Settings,
                 WinKind::MediaPlayer => IconId::File,
+                WinKind::Alarm => IconId::Settings,
                 _ => IconId::File,
             };
             let img = icon::generate(iid);
@@ -2303,6 +2324,9 @@ fn draw_window(idx: usize) {
                 }
                 graphics::draw_str(wx+330,cy+248,"Select a track, then Play",COL_TEXT_DIM);
                 graphics::draw_str(wx+330,cy+264,"MP3: native decoder",COL_TEXT_DIM);
+            }
+            WinKind::Alarm => {
+                crate::alarm::alarm_draw(wx as i32 + 3, wy as i32 + TITLE_H);
             }
             WinKind::Keyboard => {
                 let ky=wy+TITLE_H as usize+42;let kx=wx+10;
@@ -3117,7 +3141,7 @@ fn draw_start_menu() {
     use crate::gui::icon::{self, IconId};
     let h = graphics::height();
     let tb = TASKBAR_H;
-    let menu_h = 336usize;
+    let menu_h = 364usize;
     let menu_w = 220usize;
     let mx = 2usize;
     let my = h.saturating_sub(tb + menu_h);
@@ -3129,7 +3153,7 @@ fn draw_start_menu() {
     graphics::fill_rect(mx, my, menu_w, 28, 0x00245EDC);
     graphics::draw_str(mx + 12, my + 10, "Aether User", 0x00FFFFFF);
     // items with icons
-    let items: [(IconId, &str, usize); 9] = [
+    let items: [(IconId, &str, usize); 10] = [
         (IconId::Terminal, "Terminal", 0),
         (IconId::Folder, "Files", 5),
         (IconId::MyComputer, "My Computer", 7),
@@ -3138,10 +3162,11 @@ fn draw_start_menu() {
         (IconId::File, "Media Player", 10),
         (IconId::MyDocuments, "Documents", 5),
         (IconId::File, "On-Screen Keyboard", 11),
+        (IconId::Settings, "Alarm Clock", 12),
         (IconId::RecycleBin, "Recycle Bin", 99),
     ];
     let mut i = 0usize;
-    while i < 9 {
+    while i < 10 {
         let (id, name, _) = items[i];
         let iy = my + 36 + i * 28;
         icon::blit(id, mx + 10, iy, false);
@@ -3159,7 +3184,7 @@ fn draw_start_menu() {
 fn hit_start_menu(mx: i32, my: i32) -> Option<usize> {
     let h = graphics::height() as i32;
     let tb = TASKBAR_H as i32;
-    let menu_h = 336i32;
+    let menu_h = 364i32;
     let menu_w = 220i32;
     let x0 = 2i32;
     let y0 = h - tb - menu_h;
@@ -3172,7 +3197,7 @@ fn hit_start_menu(mx: i32, my: i32) -> Option<usize> {
         return None;
     }
     let idx = (rel / 28) as usize;
-    if idx < 9 {
+    if idx < 10 {
         Some(idx)
     } else {
         None
@@ -3256,6 +3281,12 @@ fn handle_special_key(hid_code: u8) -> bool {
                 0x51 => { crate::files_mgr::on_nav_key(0x50) }
                 _ => false,
             }
+        } else if WINS[FOCUS].kind == WinKind::Alarm {
+            match hid_code {
+                0x52 => crate::alarm::alarm_key(crate::alarm::KEY_UP),
+                0x51 => crate::alarm::alarm_key(crate::alarm::KEY_DOWN),
+                _ => false,
+            }
         } else if WINS[FOCUS].kind == WinKind::Terminal {
             match hid_code {
                 0x52 => { term_history_prev(); true }
@@ -3312,7 +3343,16 @@ fn handle_key(ch: u8) {
             DIRTY_FULL = true;
             return;
         }
-        if FOCUS >= MAX_WIN || !WINS[FOCUS].visible || WINS[FOCUS].kind != WinKind::Terminal {
+        if FOCUS >= MAX_WIN || !WINS[FOCUS].visible {
+            return;
+        }
+        if WINS[FOCUS].kind == WinKind::Alarm {
+            if crate::alarm::alarm_key(ch) {
+                DIRTY_FULL = true;
+            }
+            return;
+        }
+        if WINS[FOCUS].kind != WinKind::Terminal {
             return;
         }
         if ch == b'\n' {
@@ -3390,6 +3430,7 @@ pub fn run() -> ! {
     }
     serial::write_str("\n======== Aether Desktop v1.1 XP ========\n");
     crate::drivers::audio::init();
+    crate::alarm::alarm_init();
     // Real HDA PCM startup smoke test: use the embedded PCM WAV, not the
     // legacy PC-speaker beep. Playback is serviced by playback_poll() below.
     let startup_wav_ok = crate::media_player::open_embedded_wav();
@@ -3450,6 +3491,12 @@ pub fn run() -> ! {
                     clamp_win(DRAG_WIN);
                     render_drag_step(); // dirty region, not full fill
                 } else {
+                    if FOCUS < MAX_WIN && WINS[FOCUS].visible && WINS[FOCUS].kind == WinKind::Alarm {
+                        let _ = crate::alarm::alarm_mouse_move(
+                            MX - WINS[FOCUS].x - 3,
+                            MY - WINS[FOCUS].y - TITLE_H,
+                        );
+                    }
                     DIRTY_CURSOR = true;
                 }
             }
@@ -3542,6 +3589,9 @@ pub fn run() -> ! {
 
         crate::drivers::xhci::poll_mouse_live();
         crate::drivers::audio::playback_poll();
+        if crate::alarm::alarm_tick(crate::time::uptime()) {
+            unsafe { DIRTY_FULL = true; }
+        }
 
         static mut CLOCK_TICK: u32 = 0;
         unsafe {
