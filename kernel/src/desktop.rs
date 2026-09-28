@@ -5,6 +5,7 @@ use crate::drivers::ps2;
 use crate::fs;
 use crate::serial;
 use crate::input;
+use crate::wallpaper;
 
 // XP Luna-inspired colors (original Aether theme, not Microsoft assets)
 const COL_SKY_TOP: u32 = 0x003A6EA5;
@@ -2447,7 +2448,9 @@ fn render_drag_step() {
         let oy = if top < 0 { 0usize } else { top as usize };
         let ow = if right - left < 0 { 0 } else { (right - left) as usize + 6 };
         let oh = if bottom - top < 0 { 0 } else { (bottom - top) as usize + 6 };
-        graphics::fill_rect(ox, oy, ow, oh, COL_BG);
+        if !wallpaper::draw_region(ox, oy, ow, oh) {
+            graphics::fill_rect(ox, oy, ow, oh, COL_BG);
+        }
         // 2) If old rect hit panel/dock, restore strips
         if oy < 30 {
             graphics::fill_rect(0, 0, w, 28, COL_PANEL);
@@ -2631,8 +2634,11 @@ fn render() {
     if w == 0 || h == 0 {
         return;
     }
-    // XP-style bliss-like sky/hills (procedural, not MS wallpaper)
-    draw_xp_wallpaper(w, h);
+    // Use the real 1366x768 nature image for the exercised AH532 mode.
+    // Other modes keep the procedural fallback.
+    if !wallpaper::draw(w, h) {
+        draw_xp_wallpaper(w, h);
+    }
     draw_desktop_icons();
     // XP blue taskbar bottom
     let tb = TASKBAR_H;

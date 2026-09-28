@@ -4,6 +4,7 @@ MEDIA_WAV = $(MEDIA_DIR)/TEST.WAV
 MEDIA_MP3 = $(MEDIA_DIR)/TEST.MP3
 MEDIA_BEETHOVEN_SRC = $(MEDIA_DIR)/BEETHOVEN_SOURCE.OGG
 MEDIA_BUNDLE = $(BUILD_DIR)/media_builtin.rs
+WALLPAPER = $(BUILD_DIR)/wallpaper.rgb565
 
 $(MEDIA_DIR): | $(BUILD_DIR)
 	mkdir -p $(MEDIA_DIR)
@@ -53,7 +54,13 @@ $(BUILD_DIR)/iwlwifi-2030-6.ucode: | $(BUILD_DIR)
 $(BUILD_DIR)/calculator.elf: | $(BUILD_DIR)
 	@if [ ! -f $@ ]; then printf '%s\\n' 'calculator ELF not supplied; building kernel without bundled Calculator' >&2; printf '' > $@; fi
 
-$(KERNEL_LIB): $(RUST_SRCS) $(BUILD_DIR)/calculator_blob.rs $(BUILD_DIR)/iwlwifi-2030-6.ucode $(MEDIA_BUNDLE) | $(BUILD_DIR)
+$(WALLPAPER): | $(BUILD_DIR)
+	curl -L --fail --retry 5 --retry-delay 2 -A "AetherOS/1.0" "https://upload.wikimedia.org/wikipedia/commons/7/7b/Comeragh_Mountains_Lake.jpg" -o "$(BUILD_DIR)/wallpaper-source.jpg"
+	ffmpeg -hide_banner -loglevel error -i "$(BUILD_DIR)/wallpaper-source.jpg" -vf "scale=1366:768" -pix_fmt rgb565le -f rawvideo -y "$@"
+	test "$(wc -c < "$@")" -eq 2098176
+	rm -f "$(BUILD_DIR)/wallpaper-source.jpg"
+
+$(KERNEL_LIB): $(RUST_SRCS) $(BUILD_DIR)/calculator_blob.rs $(BUILD_DIR)/iwlwifi-2030-6.ucode $(MEDIA_BUNDLE) $(WALLPAPER) | $(BUILD_DIR)
 	rustc --edition 2021 \
 		-C opt-level=s -C panic=abort \
 		-C overflow-checks=off -C debug-assertions=off \

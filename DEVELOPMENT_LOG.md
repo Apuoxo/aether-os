@@ -148,3 +148,12 @@ Every significant change should be followed by:
 - The same rule applies to diagnostic commands such as `77` and `dsk`: verify the actual GUI dispatch path before changing command behavior.
 - Terminal-capacity finding: the GUI terminal keeps only 16 visible rows and scrolls older lines out of its buffer; it also limits each line to 52 columns. Long diagnostics must therefore be designed/validated with this constraint in mind.
 
+
+
+### 2026-09-28 — Native 1366x768 nature wallpaper graphics check
+- User-requested graphics validation: replace the procedural desktop background with a photographic nature image at exactly 1366x768.
+- Selected Wikimedia Commons image: “Comeragh Mountains Lake.jpg” by Mik Herman (Citarny), 1920x1080 source, licensed CC BY-SA 3.0.
+- CI downloads the source during the kernel build and converts it to exact 1366x768 RGB565 (2,098,176 bytes), then bundles it into the native kernel image.
+- Desktop uses the photographic wallpaper only at 1366x768; 800x600 retains the existing procedural fallback.
+- The wallpaper is rendered through the existing framebuffer path; no Intel KMS/GGTT/GSM behavior is changed.
+- Required validation: green GitHub Actions build, then boot the new ISO on AH532 at 1366x768 and visually inspect image sharpness, full-screen coverage, color conversion, and stability during window movement.
