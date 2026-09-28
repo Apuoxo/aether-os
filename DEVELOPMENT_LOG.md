@@ -172,3 +172,14 @@ Every significant change should be followed by:
 - Settings → Mouse → Cursor now presents a real 24-item preview/selection grid with Apply and Cancel.
 - Applying a selection changes the actual native desktop cursor renderer immediately.
 - KMS/GGTT/GSM and framebuffer paths are unchanged.
+
+
+### 2026-09-28 — Desktop click flicker: broken backbuffer experiment reverted
+- Investigated the remaining global desktop flicker where interactive button clicks could flash the entire screen while inert/empty clicks no longer did.
+- Source inspection showed the GUI is currently rendered directly into the visible framebuffer; there is no complete backbuffer/present pipeline. Existing Intel Gen6 vblank support is available, but that alone does not prove the flicker cause.
+- A software-backbuffer experiment was introduced in commit ed04e9d60e4fdfd0c6a74fb85cb8b0170bba740e. The experiment was incomplete because the rendering path was not coherently switched to render a complete frame and present it; on AH532 it broke desktop startup and showed the old initial desktop with colored lines/cubes.
+- The experiment is classified as FAILED/REJECTED and must not be repeated in its incomplete form.
+- Restored kernel/src/graphics.rs to the known-good content from 386110499f45fa4c8fc9aba8241c3adb206a5d06.
+- Revert commit: 28b4f0882a1c849544067abe98908fabdb8209c8; merged as 90196ab0daf5ef826ca9f63f23bd30758f3e9881.
+- No ISO is considered testable from this change until GitHub Actions verifies the merged state.
+- Next graphics investigation: inspect framebuffer allocation/mapping and boot-time memory setup, then design a complete rendering-target/present architecture rather than another partial backbuffer patch. Avoid static 8 MiB .bss framebuffer experiments.
