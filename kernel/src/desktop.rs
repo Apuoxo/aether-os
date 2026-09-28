@@ -1010,7 +1010,7 @@ fn handle_keyboard_click(mx:i32,my:i32)->bool{
         }
         let y=ky+180;let bottom:[(&str,i32);8]=[("CTRL",66),("ALT",66),("SPACE",270),("LEFT",60),("RIGHT",60),("HOME",60),("END",60),("DEL",60)];
         let mut x=kx;let mut i=0usize;
-        while i<bottom.len(){let(label,w)=bottom[i];if mx>=x&&mx<x+(w as usize)&&my>=y&&my<y+30{keyboard_emit(label);return true;}x+=(w as usize)+3;i+=1;}
+        while i<bottom.len(){let(label,w)=bottom[i];if mx>=x&&mx<x+w&&my>=y&&my<y+30{keyboard_emit(label);return true;}x+=w+3;i+=1;}
         false
     }
 }
