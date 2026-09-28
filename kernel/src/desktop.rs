@@ -3653,47 +3653,6 @@ pub fn run() -> ! {
             d += 1;
         }
     }
-        if left == 0 && prev_left != 0 {
-            if DRAGGING || RESIZING || TERM_SCROLL_DRAG {
-                DIRTY_FULL = true;
-            }
-            DRAGGING = false;
-            RESIZING = false;
-            TERM_SCROLL_DRAG = false;
-        }
-        if TERM_SCROLL_DRAG && left != 0 {
-            term_scroll_set_from_mouse(my);
-            PREV_MB = buttons;
-            MB = buttons;
-            return;
-        }
-        if DRAGGING && left != 0 {
-            WINS[DRAG_WIN].x = mx - DRAG_OX;
-            WINS[DRAG_WIN].y = my - DRAG_OY;
-            clamp_win(DRAG_WIN);
-            render_drag_step();
-        }
-        if RESIZING && left != 0 {
-            let idx = RESIZE_WIN;
-            let mut nw = mx - WINS[idx].x;
-            let mut nh = my - WINS[idx].y;
-            if nw < 160 { nw = 160; }
-            if nh < 80 { nh = 80; }
-            let sw = graphics::width() as i32;
-            let sh = graphics::height() as i32;
-            if WINS[idx].x + nw > sw { nw = sw - WINS[idx].x; }
-            if WINS[idx].y + nh > sh - 40 { nh = sh - 40 - WINS[idx].y; }
-            WINS[idx].w = nw;
-            WINS[idx].h = nh;
-            WINS[idx].rw = nw;
-            WINS[idx].rh = nh;
-            DIRTY_FULL = true;
-        }
-        PREV_MB = buttons;
-        MB = buttons;
-    }
-}
-
 fn draw_cursor(x: i32, y: i32) {
     let x = if x < 0 { 0usize } else { x as usize };
     let y = if y < 0 { 0usize } else { y as usize };
