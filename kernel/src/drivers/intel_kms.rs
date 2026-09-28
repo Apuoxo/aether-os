@@ -2,7 +2,7 @@
 //! MMIO identity mapping + bounded forcewake + read-only register dump.
 //! No GGTT/GSM, no modeset, no EDID, no infinite waits.
 
-use crate::{mm, serial};
+use crate::{mm, serial, graphics, fb};
 use crate::drivers::intel_igpu;
 
 const PCI_ADDR: u16 = 0x0CF8;
@@ -19,6 +19,16 @@ const PIPEASTAT: usize = 0x70024;
 const PIPEADSL: usize = 0x70000;
 const PIPESTAT_VBLANK: u32 = 1 << 1;
 const VBLANK_WAIT_ITERS: usize = 2_000_000;
+const DSPACNTR: usize = 0x70180;
+const DSPASTRIDE: usize = 0x70188;
+const DSPASIZE: usize = 0x70190;
+const DSPASURF: usize = 0x7019C;
+const PLANE_ENABLE: u32 = 1 << 31;
+const PLANE_TILED: u32 = 1 << 10;
+const PLANE_FORMAT_MASK: u32 = 0xF << 26;
+const PLANE_FORMAT_XRGB8888: u32 = 0x6 << 26;
+const PLANE_MAX_W: usize = 4096;
+const PLANE_MAX_H: usize = 2160;
 
 static mut MMIO_BASE: usize = 0;
 static mut MMIO_READY: bool = false;
@@ -248,6 +258,136 @@ pub fn init() -> bool {
             serial::write_str("[KMS] STAGE4=TIMEOUT (LFB path preserved)\n");
         }
         true
+    }
+}
+
+
+/// Map the Intel graphics aperture as ordinary identity-mapped RAM.
+/// This is deliberately limited to the current framebuffer footprint.
+unsafe fn map_aperture(phys: usize, size: usize) -> bool {
+    if phys == 0 || size == 0 {
+        return false;
+    }
+    let cr3 = crate::mm::paging::kernel_cr3();
+    if cr3 == 0 {
+        return false;
+    }
+    let start = phys & !0xFFF;
+    let end = match phys.checked_add(size.saturating_add(0xFFF)) {
+        Some(v) => v & !0xFFF,
+        None => return false,
+    };
+    let mut va = start;
+    while va < end {
+        if !crate::mm::paging::map_page(
+            cr3, va, va,
+            crate::mm::paging::PAGE_PRESENT | crate::mm::paging::PAGE_WRITE,
+        ) {
+            return false;
+        }
+        va += crate::mm::paging::PAGE_SIZE;
+    }
+    crate::mm::paging::load_cr3(cr3);
+    true
+}
+
+/// Stage 5: retarget the existing Pipe A primary plane to the Multiboot
+/// framebuffer. No PLL/FDI/timing programming and no GGTT/GSM setup.
+pub fn set_plane_surface(surf: u32, stride: u32, w: u16, h: u16) -> bool {
+    unsafe {
+        if !MMIO_READY || !fb::is_ready() || !FORCEWAKE_READY {
+            return false;
+        }
+        let w = w as usize;
+        let h = h as usize;
+        if surf != 0 || w < 320 || h < 200 || w > PLANE_MAX_W || h > PLANE_MAX_H {
+            return false;
+        }
+        if stride == 0 || (stride & 63) != 0 || stride as usize < w.saturating_mul(4) {
+            return false;
+        }
+
+        let aper = intel_igpu::aperture_bar() as usize;
+        let lfb = fb::address();
+        if aper == 0 || lfb != aper {
+            serial::write_str("[KMS] PLANE REFUSE LFB!=GMADR LFB=");
+            serial::write_hex(lfb);
+            serial::write_str(" GMADR=");
+            serial::write_hex(aper);
+            serial::write_str("\n");
+            return false;
+        }
+
+        let size = match (stride as usize).checked_mul(h) {
+            Some(v) if v != 0 && v <= 16 * 1024 * 1024 => v,
+            _ => return false,
+        };
+        if !map_aperture(aper, size) {
+            serial::write_str("[KMS] GMADR MAP=FAIL\n");
+            return false;
+        }
+
+        let old = mmio_read32(DSPACNTR);
+        mmio_write32(DSPACNTR, old & !PLANE_ENABLE);
+
+        let mut n = 0usize;
+        while n < 80_000 && (mmio_read32(DSPACNTR) & PLANE_ENABLE) != 0 {
+            core::hint::spin_loop();
+            n += 1;
+        }
+        if (mmio_read32(DSPACNTR) & PLANE_ENABLE) != 0 {
+            serial::write_str("[KMS] PLANE disable TIMEOUT\n");
+            return false;
+        }
+
+        mmio_write32(DSPASTRIDE, stride);
+        mmio_write32(DSPASIZE, (((h - 1) as u32) << 16) | ((w - 1) as u32));
+        mmio_write32(DSPASURF, surf);
+
+        let mut plane = old & !(PLANE_FORMAT_MASK | PLANE_TILED);
+        plane |= PLANE_FORMAT_XRGB8888 | PLANE_ENABLE;
+        mmio_write32(DSPACNTR, plane);
+
+        let ok = wait_vblank();
+        serial::write_str("[KMS] PLANE ");
+        serial::write_str(if ok { "PASS" } else { "VBLANK-FAIL" });
+        serial::write_str("\n");
+        ok
+    }
+}
+
+/// Stage 5 modeset entry point. The pipe timings remain firmware-owned;
+/// this only binds the already-selected framebuffer dimensions to Pipe A.
+pub fn modeset_to(w: u16, h: u16) -> bool {
+    unsafe {
+        if !MMIO_READY || !fb::is_ready() || w == 0 || h == 0 {
+            return false;
+        }
+        let fw = fb::width();
+        let fh = fb::height();
+        if fw != w as usize || fh != h as usize || fb::bpp() != 32 {
+            serial::write_str("[KMS] MODESET REFUSE framebuffer geometry mismatch\n");
+            return false;
+        }
+        if !forcewake_get() {
+            serial::write_str("[KMS] MODESET FORCEWAKE=FAIL\n");
+            return false;
+        }
+
+        let stride = (((w as usize).saturating_mul(4)).saturating_add(63)) & !63usize;
+        let ok = set_plane_surface(0, stride as u32, w, h);
+        forcewake_put();
+        if ok {
+            graphics::init(fb::address(), w as usize, h as usize, stride, 32, false);
+            fb::sync_runtime(fb::address(), w as usize, h as usize, stride, 32);
+            crate::drivers::ps2::clamp_to_screen();
+            serial::write_str("[KMS] MODESET=PASS ");
+            serial::write_usize(w as usize);
+            serial::write_str("x");
+            serial::write_usize(h as usize);
+            serial::write_str("\n");
+        }
+        ok
     }
 }
 
