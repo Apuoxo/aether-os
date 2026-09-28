@@ -3094,11 +3094,46 @@ fn render_drag_step() {
 
 
 
+fn redraw_terminal_input(idx: usize) {
+    unsafe {
+        if idx >= MAX_WIN || !WINS[idx].visible || WINS[idx].minimized ||
+           WINS[idx].kind != WinKind::Terminal || FOCUS != idx {
+            return;
+        }
+        // Keyboard input changes only the live input row. Redrawing the whole
+        // terminal window still looks like a flash on the real LFB, even
+        // though it no longer reaches DIRTY_FULL.
+        cursor_restore();
+        let w = &WINS[idx];
+        let wx = w.x as usize;
+        let wy = w.y as usize;
+        let ww = w.w as usize;
+        let wh = w.h as usize;
+        let view_rows = term_visible_rows();
+        let y = wy + TITLE_H as usize + 34 + (view_rows.saturating_sub(1)) * 10;
+        if y + 8 < wy + wh && !TERM_PAGE_MODE {
+            graphics::fill_rect(wx + 8, y, ww.saturating_sub(28), 10, 0x0013161B);
+            graphics::draw_str(wx + 10, y, "aether> ", COL_TERM_PROMPT);
+            let mut k = 0usize;
+            while k < INPUT_LEN {
+                graphics::draw_char(wx + 10 + 64 + k * 8, y, INPUT[k], COL_TERM_FG);
+                k += 1;
+            }
+            graphics::fill_rect(wx + 10 + 64 + INPUT_CURSOR * 8, y, 6, 8, 0x0000D7FF);
+        }
+        CURSOR_SAVED = false;
+        cursor_save_and_draw(MX, MY);
+    }
+}
+
 fn redraw_single_window(idx: usize) {
     unsafe {
         if idx >= MAX_WIN || !WINS[idx].visible || WINS[idx].minimized { return; }
-        // Restore only the cursor; the window is redrawn in place, without
-        // touching the desktop wallpaper or other windows.
+        if WINS[idx].kind == WinKind::Terminal {
+            redraw_terminal_input(idx);
+            return;
+        }
+        // Non-terminal windows keep the existing local redraw path.
         cursor_restore();
         draw_window(idx);
         CURSOR_SAVED = false;
