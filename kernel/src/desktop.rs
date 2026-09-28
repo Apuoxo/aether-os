@@ -1279,10 +1279,14 @@ fn keyboard_key_to_ascii(label:&str,shift:bool,caps:bool)->Option<u8>{
                 } else if WINS[idx].kind == WinKind::MediaPlayer
                     && my >= WINS[idx].y + TITLE_H
                 {
+                    if MEDIA_OPEN_DIALOG {
+                        let _=media_open_dialog_click(mx,my,WINS[idx].x,WINS[idx].y);
+                    } else {
                     let bx=WINS[idx].x; let by=WINS[idx].y + TITLE_H;
                     let cy=by;
                     let py=cy+154;
-                    if my >= cy+240 && my < cy+240+48 {
+                    if my >= cy+220 && my < cy+244 && mx >= bx+18 && mx < bx+118 { media_open_dialog_reset(); DIRTY_FULL=true; }
+                    else if my >= cy+240 && my < cy+240+48 {
                         let row=((my-(cy+240))/16) as usize;
                         if row < crate::media_player::builtin_count() && mx >= bx+18 && mx < bx+300 {
                             let _=crate::media_player::select_builtin(row);
@@ -1316,9 +1320,13 @@ fn keyboard_key_to_ascii(label:&str,shift:bool,caps:bool)->Option<u8>{
                         let barw=(WINS[idx].w-36).max(1) as i32;
                         let rel=(mx-(bx+18)).max(0).min(barw) as u16;
                         let perm=((rel as u32)*1000/(barw as u32)) as u16;
-                        crate::media_player::seek_permille(perm);
-                        DIRTY_FULL=true;
+                        crate::media_player::seek_permille(perm); DIRTY_FULL=true;
                     }
+                    }
+                } else if WINS[idx].kind == WinKind::Keyboard
+                    && my >= WINS[idx].y + TITLE_H
+                {
+                    let _=handle_keyboard_click(mx,my); DIRTY_FULL=true;
                 } else if WINS[idx].kind == WinKind::Sound
                     && my >= WINS[idx].y + TITLE_H
                 {
@@ -1615,11 +1623,14 @@ fn draw_window(idx: usize) {
                     _=>"EMPTY",
                 };
                 graphics::draw_str(wx+18,cy+204,st,COL_TEXT_DIM);
-                graphics::draw_str(wx+18,cy+230,"Bundled test media:",COL_TEXT_DIM);
+                graphics::fill_rect(wx+18,cy+220,100,24,COL_BTN_FACE);
+                graphics::border_rect(wx+18,cy+220,100,24,0x00606060);
+                graphics::draw_str(wx+40,cy+228,"Open...",COL_TEXT);
+                graphics::draw_str(wx+18,cy+250,"Bundled test media:",COL_TEXT_DIM);
                 let selected=crate::media_player::selected_builtin();
                 let mut bi=0usize;
                 while bi<crate::media_player::builtin_count() {
-                    let yy=cy+248+bi*16;
+                    let yy=cy+268+bi*16;
                     let name=crate::media_player::builtin_name(bi);
                     let kind=crate::media_player::builtin_kind(bi);
                     if bi==selected {
@@ -1629,8 +1640,8 @@ fn draw_window(idx: usize) {
                     graphics::draw_str(wx+112,yy,kind,COL_TEXT_DIM);
                     bi+=1;
                 }
-                graphics::draw_str(wx+330,cy+248,"Select a track, then Play",COL_TEXT_DIM);
-                graphics::draw_str(wx+330,cy+264,"MP3: native decoder",COL_TEXT_DIM);
+                graphics::draw_str(wx+330,cy+250,"Select a track, then Play",COL_TEXT_DIM);
+                graphics::draw_str(wx+330,cy+266,"Open... loads MP3/WAV from AetherFS",COL_TEXT_DIM);
             }
             WinKind::About => {
                                 graphics::fill_rect(
