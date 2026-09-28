@@ -37,11 +37,11 @@ const GFX_MODE: usize = 0x70000;
 
 // GMBUS block. Normal initialization only snapshots these registers; EDID
 // transactions are explicit and are never started implicitly by init().
-const GMBUS0: usize = 0x5100;
-const GMBUS1: usize = 0x5104;
-const GMBUS2: usize = 0x5108;
-const GMBUS3: usize = 0x510C;
-const GMBUS4: usize = 0x5110;
+const GMBUS0: usize = 0xC5100;
+const GMBUS1: usize = 0xC5104;
+const GMBUS2: usize = 0xC5108;
+const GMBUS3: usize = 0xC510C;
+const GMBUS4: usize = 0xC5110;
 
 #[derive(Copy, Clone)]
 struct Bar {
@@ -64,6 +64,8 @@ struct Gpu {
     func: u8,
     bar0: Bar,
     mmio: usize,
+    aperture: usize,
+    did: u16,
 }
 
 static mut GPU: Gpu = Gpu {
@@ -203,7 +205,8 @@ fn detect_existing_scanout() {
             return;
         }
         let expected_stride = if bpp == 32 { w.saturating_mul(4) } else { w.saturating_mul(3) };
-        if stride != pitch || pitch < expected_stride || addr == 0 || surf != addr {
+        let aper = GPU.aperture as u64;
+        if stride != pitch || pitch < expected_stride || addr == 0 || addr != aper || surf != 0 {
             serial::write_str("[VIDEO/SCANOUT] existing surface does not match Multiboot FB
 ");
             return;
@@ -341,6 +344,8 @@ fn discover() -> bool {
                                 bus: 0, dev, func,
                                 bar0: selected,
                                 mmio: selected.base as usize,
+                                aperture: if bars[2].base <= usize::MAX as u64 { bars[2].base as usize } else { 0 },
+                                did: device,
                             };
                             GPU_READY = true;
                             serial::write_str("[VIDEO/MMIO] mapping PASS (1 MiB guarded window)\n");
@@ -635,6 +640,98 @@ pub fn draw_driver_marker() -> bool {
     true
 }
 
+
+
+// ---------------------------------------------------------------------------
+// Active Sandy Bridge Gen6 primary-plane path.
+// Firmware keeps pipe/timing/link alive; Aether retargets the plane only.
+// GGTT/GSM and PLL/FDI programming are intentionally not part of this stage.
+// ---------------------------------------------------------------------------
+const FORCEWAKE_MT: usize = 0xA188;
+const FORCEWAKE_MT_ACK: usize = 0x130040;
+const FORCEWAKE: usize = 0xA18C;
+const FORCEWAKE_ACK: usize = 0x130090;
+const PIPEASRC: usize = 0x6001C;
+const PIPEADSL: usize = 0x70000;
+const PLANE_ENABLE: u32 = 1 << 31;
+const PLANE_TILED: u32 = 1 << 10;
+const PLANE_FORMAT_MASK: u32 = 0xF << 26;
+const PLANE_FORMAT_XRGB8888: u32 = 0x6 << 26;
+static mut HW_W: u16 = 0;
+static mut HW_H: u16 = 0;
+unsafe fn forcewake_get() -> bool {
+    if !GPU_READY { return false; }
+    mmio_write32(FORCEWAKE_MT, 0x0001_0001);
+    let mut n = 0u32;
+    while n < 50_000 { if mmio_read32(FORCEWAKE_MT_ACK) & 1 != 0 { return true; } core::hint::spin_loop(); n += 1; }
+    mmio_write32(FORCEWAKE, 0x0001_0001);
+    n = 0;
+    while n < 50_000 { if mmio_read32(FORCEWAKE_ACK) & 1 != 0 { return true; } core::hint::spin_loop(); n += 1; }
+    serial::write_str("[VIDEO/FW] ACK timeout\n"); false
+}
+unsafe fn forcewake_put() { if GPU_READY { mmio_write32(FORCEWAKE_MT, 0x0001_0000); mmio_write32(FORCEWAKE, 0); } }
+fn active_pipe() -> Option<u8> {
+    unsafe { if !GPU_READY { None } else if mmio_read32(PIPEACONF) & PLANE_ENABLE != 0 { Some(0) } else if mmio_read32(PIPEBCONF) & PLANE_ENABLE != 0 { Some(1) } else { None } }
+}
+unsafe fn wait_vblank() -> bool {
+    let pipe = match active_pipe() { Some(p) => p, None => return false };
+    let dsl = if pipe == 0 { PIPEADSL } else { 0x71000 };
+    let before = mmio_read32(dsl) & 0x1FFF;
+    let mut n = 0u32;
+    while n < 100_000 { if (mmio_read32(dsl) & 0x1FFF) != before { return true; } core::hint::spin_loop(); n += 1; }
+    serial::write_str("[VIDEO/VBLANK] scanline timeout\n"); false
+}
+pub fn set_plane_surface(surf: u32, stride: u32, w: u16, h: u16) -> bool {
+    unsafe {
+        if !GPU_READY || GPU.aperture == 0 || surf != 0 || w < 320 || h < 200 || w > 4096 || h > 2160 || stride == 0 || (stride & 63) != 0 { return false; }
+        if !forcewake_get() { return false; }
+        let old = mmio_read32(DSPACNTR);
+        mmio_write32(DSPACNTR, old & !PLANE_ENABLE);
+        let mut n = 0u32;
+        while n < 80_000 && (mmio_read32(DSPACNTR) & PLANE_ENABLE) != 0 { core::hint::spin_loop(); n += 1; }
+        mmio_write32(DSPASTRIDE, stride);
+        mmio_write32(DSPASURF, 0);
+        mmio_write32(PIPEASRC, (((w as u32) - 1) << 16) | ((h as u32 - 1) & 0x0FFF));
+        let mut plane = mmio_read32(DSPACNTR);
+        plane &= !(PLANE_FORMAT_MASK | PLANE_TILED);
+        plane |= PLANE_FORMAT_XRGB8888 | PLANE_ENABLE;
+        mmio_write32(DSPACNTR, plane);
+        mmio_write32(DSPASURF, 0);
+        let ok = wait_vblank();
+        forcewake_put();
+        ok
+    }
+}
+pub fn modeset_to(w: u16, h: u16) -> bool {
+    unsafe {
+        if !GPU_READY || GPU.aperture == 0 || !fb::is_ready() { return false; }
+        let aper = GPU.aperture;
+        if fb::address() != aper { serial::write_str("[VIDEO/KMS] REFUSE: LFB != GMADR\n"); return false; }
+        let stride = (((w as usize).saturating_mul(4)).saturating_add(63)) & !63usize;
+        let size = match stride.checked_mul(h as usize) { Some(v) => v, None => return false };
+        if size == 0 || size > 16 * 1024 * 1024 { return false; }
+        if !map_mmio(aper as u64, size + PAGE_SIZE) { return false; }
+        let mut y = 0usize;
+        while y < h as usize { let row = (aper + y * stride) as *mut u32; let mut x = 0usize; while x < w as usize { core::ptr::write_volatile(row.add(x), 0x0010_2840); x += 1; } y += 1; }
+        if !set_plane_surface(0, stride as u32, w, h) { return false; }
+        graphics::init(aper, w as usize, h as usize, stride, 32, false);
+        crate::fb::sync_runtime(aper, w as usize, h as usize, stride, 32);
+        crate::drivers::ps2::clamp_to_screen();
+        HW_W = w; HW_H = h;
+        serial::write_str("[VIDEO/KMS] MODESET "); serial::write_usize(w as usize); serial::write_str("x"); serial::write_usize(h as usize); serial::write_str(" PASS\n");
+        true
+    }
+}
+pub fn modeset_panel() -> bool {
+    match preferred_mode() { Some(m) => modeset_to(m.width, m.height), None => { serial::write_str("[VIDEO/KMS] no validated EDID mode; use modeset_to()\n"); false } }
+}
+pub fn hw_width() -> u16 { unsafe { HW_W } }
+pub fn hw_height() -> u16 { unsafe { HW_H } }
+pub fn mmio_base() -> usize { unsafe { GPU.mmio } }
+pub fn aperture() -> usize { unsafe { GPU.aperture } }
+pub fn gen() -> u8 { unsafe { if GPU.did == HD3000_DID { 6 } else { 0 } } }
+pub fn forcewake_enter() -> bool { unsafe { forcewake_get() } }
+pub fn forcewake_leave() { unsafe { forcewake_put() } }
 
 /// Try the Sandy Bridge DDC pins until one returns a valid EDID block.
 pub fn probe_edid(out: &mut [u8; 128]) -> u32 {
