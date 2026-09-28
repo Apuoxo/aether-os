@@ -11,6 +11,15 @@ This file is the persistent engineering log for the Aether OS repository.
 - Current graphics hardware: Intel Sandy Bridge HD Graphics 3000, PCI 8086:0116, Gen6.
 - GGTT/GSM physical region 0xDF800000 is currently considered unsafe on AH532 after mapping attempts caused reboot. Do not re-enable such mapping without a new, justified test plan.
 
+## Rules
+
+- Do not claim a subsystem is complete without runtime evidence.
+- Record source changes, build results, hardware results, failures, and the next controlled step.
+- Preserve known-good states and avoid repeating experiments already shown unsafe.
+- AH532 is a real-hardware validation target; QEMU success is not equivalent to AH532 success.
+- Current graphics hardware: Intel Sandy Bridge HD Graphics 3000, PCI 8086:0116, Gen6.
+- GGTT/GSM physical region 0xDF800000 is currently considered unsafe on AH532 after mapping attempts caused reboot. Do not re-enable such mapping without a new, justified test plan.
+
 ## Current State — 2026-09-23
 
 ### Build / CI
@@ -91,7 +100,6 @@ Every significant change should be followed by:
 - No PANIC or user page-fault kill was observed in the smoke test.
 - This is QEMU evidence only; AH532 hardware validation remains required, especially PS/2 keyboard interaction and the already-known Gen6 display path.
 
-
 ### 2026-09-24 — AH532 boot failure: GRUB video mode
 - Real-hardware validation of build #139 on Fujitsu AH532 failed before Aether OS kernel startup with the reported message: "Error: no suitable video mode found".
 - This is currently classified as a bootloader/GRUB video-mode failure, not evidence of a Ring3 or userspace failure.
@@ -100,7 +108,6 @@ Every significant change should be followed by:
 - No code or graphics-driver changes were made in response to this report yet.
 - Next controlled step: inspect the GRUB/Multiboot boot path and make the smallest change that allows AH532 to enter the kernel without assuming a firmware-supported graphics mode; then rebuild and retest QEMU before another AH532 run.
 
-
 ### 2026-09-24 — Controlled GRUB text-mode fix for AH532 boot failure
 - Root symptom under real AH532: GRUB reported "Error: no suitable video mode found" before kernel startup.
 - Source inspection found the ISO Makefile generated a minimal GRUB configuration without explicit text-mode/gfxpayload settings.
@@ -108,7 +115,6 @@ Every significant change should be followed by:
 - No kernel, Intel driver, framebuffer ownership, GGTT/GSM, Ring3, storage, or Wi-Fi code was changed.
 - Commit: 3c60f7ca5cabd61346b5077542a6123a288b6455.
 - Runtime result: not yet verified. Required next step is GitHub CI build + QEMU smoke test, then a fresh ISO must be tested on AH532.
-
 
 ### 2026-09-24 — AH532 retry: GRUB text-mode settings did not resolve failure
 - Real AH532 retest of build #142 still reports the same "Error: no suitable video mode found" before Aether startup.
@@ -119,15 +125,13 @@ Every significant change should be followed by:
 - No kernel, graphics-driver, GGTT/GSM, Ring3, storage, or Wi-Fi code was changed.
 - Next step: verify CI/QEMU build, then test the resulting ISO on AH532. If the same GRUB error persists, inspect the GRUB image/modules and boot path rather than making further blind kernel changes.
 
-
 ### 2026-09-24 — AH532 retry #2: GRUB console-only config still fails
 - Real AH532 retest of build #144 still reports the same "Error: no suitable video mode found" before Aether startup.
 - Build #144 was independently inspected: the published artifact contains a 12,953,600-byte ISO, and its embedded grub.cfg contains only `set timeout=0`, `set default=0`, `terminal_output console`, and the Multiboot2 entry. This confirms the failure is not caused by the previously removed gfxmode/gfxpayload directives.
-- GNU GRUB documentation confirms `terminal_output console` is a valid native console output and that `grub-mkrescue --install-modules=...` can restrict installed modules and their dependencies. citeturn1search0turn1search1
+- GNU GRUB documentation confirms `terminal_output console` is a valid native console output and that `grub-mkrescue --install-modules=...` can restrict installed modules and their dependencies. 
 - Applied the next controlled bootloader experiment: restrict the ISO to the minimum GRUB modules needed for legacy BIOS ISO9660 + Multiboot2 + normal/terminal boot, and remove installed themes/fonts/locales. The kernel and runtime code are unchanged.
 - Commit: 0c79ad9da5e698b5f70412dd6339f36384b6bcac.
 - No claim of AH532 success yet. Required next step: CI build/QEMU smoke test, then fresh ISO on AH532. If the same error persists, the next investigation is the GRUB platform image/core path rather than further kernel changes.
-
 
 ### 2026-09-24 — Explorer architecture correction: logical volumes vs physical partitions
 - Current task owned by Virt: finish the Windows 7-style Explorer so its UI semantics match the storage/filesystem architecture instead of exposing raw partition enumeration as the contents of Local Disk (C:).
@@ -148,8 +152,6 @@ Every significant change should be followed by:
 - The same rule applies to diagnostic commands such as `77` and `dsk`: verify the actual GUI dispatch path before changing command behavior.
 - Terminal-capacity finding: the GUI terminal keeps only 16 visible rows and scrolls older lines out of its buffer; it also limits each line to 52 columns. Long diagnostics must therefore be designed/validated with this constraint in mind.
 
-
-
 ### 2026-09-28 — Native 1366x768 nature wallpaper graphics check
 - User-requested graphics validation: replace the procedural desktop background with a photographic nature image at exactly 1366x768.
 - Selected Wikimedia Commons image: “Comeragh Mountains Lake.jpg” by Mik Herman (Citarny), 1920x1080 source, licensed CC BY-SA 3.0.
@@ -158,13 +160,11 @@ Every significant change should be followed by:
 - The wallpaper is rendered through the existing framebuffer path; no Intel KMS/GGTT/GSM behavior is changed.
 - Required validation: green GitHub Actions build, then boot the new ISO on AH532 at 1366x768 and visually inspect image sharpness, full-screen coverage, color conversion, and stability during window movement.
 
-
 ### 2026-09-28 — Wallpaper CI correction
 - First wallpaper commit 900d147078ff215ddb42594550c111ea493d48ea downloaded the source and converted it successfully, but the Makefile size check was malformed by Make variable expansion (`test "" -eq 2098176`).
 - No ISO was published from that failed run.
 - Corrected only the shell/Makefile size validation; wallpaper source, rendering path, resolution, and graphics driver code are unchanged.
 - Next required evidence: green build run and AH532 visual test at 1366x768.
-
 
 ### 2026-09-28 — Native cursor library and Settings → Mouse → Cursor
 - Integrated Phinger Cursors by Philipp Schaffrath (CC BY-SA 4.0).
@@ -173,10 +173,14 @@ Every significant change should be followed by:
 - Applying a selection changes the actual native desktop cursor renderer immediately.
 - KMS/GGTT/GSM and framebuffer paths are unchanged.
 
-
 ### 2026-09-28 — Explorer MP3 double-click autoplay
 - Control baseline: build #672, commit 386110499f45fa4c8fc9aba8241c3adb206a5d06.
 - Explorer at this baseline already detects .mp3 files and routes them to desktop::open_media_path(), which opens the file and adds it to the Media Player playlist.
 - The missing step was playback start: open_media_path() did not call media_player::play().
 - Controlled change: call the existing media_player::play() after a successful open and playlist insertion. No decoder, HDA, storage, or graphics code changed.
 - Acceptance: double-clicking an MP3 in AetherFS Explorer brings the Media Player forward and immediately starts playback through the existing native MP3/HDA path.
+
+### 2026-09-28 — CI trigger retry for Explorer MP3 autoplay
+- Source remains based directly on control baseline build #672.
+- No runtime/source behavior changed; this log-only commit exists to retrigger the pull-request workflow for the already-reviewed MP3 autoplay change.
+- The functional change remains exactly the prior commit: c025e53ac492ff6f3d92eaa9c1c5d22fe1a949ee.
