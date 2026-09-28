@@ -303,7 +303,7 @@ pub fn set_plane_surface(surf: u32, stride: u32, w: u16, h: u16) -> bool {
         if surf != 0 || w < 320 || h < 200 || w > PLANE_MAX_W || h > PLANE_MAX_H {
             return false;
         }
-        if stride == 0 || (stride & 63) != 0 || stride as usize < w.saturating_mul(4) {
+        if stride == 0 || (stride & 63) != 0 || (stride as usize) < w.saturating_mul(4) {
             return false;
         }
 
@@ -390,7 +390,3 @@ pub fn modeset_to(w: u16, h: u16) -> bool {
         ok
     }
 }
-
-pub fn ready() -> bool { unsafe { MMIO_READY } }
-pub fn forcewake_ready() -> bool { unsafe { FORCEWAKE_READY } }
-pub fn mmio_base() -> usize { unsafe { MMIO_BASE } }
