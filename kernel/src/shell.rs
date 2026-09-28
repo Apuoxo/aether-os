@@ -183,14 +183,14 @@ fn serial_read_byte() -> Option<u8> {
 }
 
 fn eq(line: &[u8], s: usize, clen: usize, b: &[u8]) -> bool {
-    if clen != b.len() {
-        return false;
-    }
+    if clen != b.len() { return false; }
     let mut i = 0usize;
     while i < clen {
-        if line[s + i] != b[i] {
-            return false;
-        }
+        let mut a = line[s + i];
+        let mut e = b[i];
+        if a >= b'A' && a <= b'Z' { a += b'a' - b'A'; }
+        if e >= b'A' && e <= b'Z' { e += b'a' - b'A'; }
+        if a != e { return false; }
         i += 1;
     }
     true
@@ -833,7 +833,7 @@ fn cmd_video_mode(w: u16, h: u16) {
 }
 
 fn cmd_help() {
-    write_str("Aether Terminal — native command interface\n");
+    write_str("Aether Terminal - native command interface\n");
     write_str("Core: HELP  CLS  VER  TANSI  SEARCH <text>\n");
     write_str("Hardware: KMS5  VINFO  V800  V1366  AUD  AUD2  AUD3  MOUS  USB  WF\n");
     write_str("Tip: Up/Down recalls command history; arrow keys scroll long output.\n");

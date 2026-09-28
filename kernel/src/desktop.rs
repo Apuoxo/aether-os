@@ -177,8 +177,11 @@ static mut TERM_LINES: [[u8; TERM_COLS]; TERM_ROWS] = [[0; TERM_COLS]; TERM_ROWS
 static mut TERM_COLOR: [[u8; TERM_COLS]; TERM_ROWS] = [[7; TERM_COLS]; TERM_ROWS];
 static mut TERM_LEN: [usize; TERM_ROWS] = [0; TERM_ROWS];
 static mut TERM_ANSI_STATE: u8 = 0;
-static mut TERM_ANSI_PARAMS: [u16; 4] = [0; 4];
+static mut TERM_ANSI_PARAMS: [u16; 8] = [0; 8];
 static mut TERM_ANSI_PARAM_COUNT: usize = 0;
+static mut TERM_ANSI_OVERFLOW: bool = false;
+static mut TERM_ANSI_BASE: u8 = 7;
+static mut TERM_ANSI_BOLD: bool = false;
 static mut TERM_ANSI_CURRENT: u8 = 7;
 static mut TERM_ROW: usize = 0;
 static mut TERM_COL: usize = 0;
@@ -424,7 +427,7 @@ fn term_clear() {
         TERM_VIEW = 0;
         TERM_ANSI_STATE = 0;
         TERM_ANSI_PARAM_COUNT = 0;
-        TERM_ANSI_PARAMS = [0; 4];
+        TERM_ANSI_PARAMS = [0; 8];
         TERM_ANSI_CURRENT = 7;
     }
 }
@@ -711,52 +714,137 @@ fn term_ansi_color(code: u8) -> u32 {
 
 fn term_ansi_apply(final_byte: u8) {
     unsafe {
-        let p = |n: usize, default: u16| -> u16 { if TERM_ANSI_PARAM_COUNT > n { TERM_ANSI_PARAMS[n] } else { default } };
-        let p0=p(0,0);
+        let p = |n: usize, default: u16| -> u16 {
+            if TERM_ANSI_PARAM_COUNT > n { TERM_ANSI_PARAMS[n] } else { default }
+        };
+        let p0 = p(0, 0);
         match final_byte {
-            b'm' => { if TERM_ANSI_PARAM_COUNT==0 {TERM_ANSI_CURRENT=7;} let mut i=0; while i<TERM_ANSI_PARAM_COUNT {let v=TERM_ANSI_PARAMS[i]; if v==0||v==39{TERM_ANSI_CURRENT=7;}else if v==1{if TERM_ANSI_CURRENT<8{TERM_ANSI_CURRENT+=8;}}else if v>=30&&v<=37{TERM_ANSI_CURRENT=(v-30) as u8;}else if v>=90&&v<=97{TERM_ANSI_CURRENT=(v-90+8) as u8;} i+=1;}}
-            b'A' => {TERM_ROW=TERM_ROW.saturating_sub(p0.max(1) as usize);}
-            b'B' => {TERM_ROW=(TERM_ROW+p0.max(1) as usize).min(TERM_ROWS-1);}
-            b'C' => {TERM_COL=(TERM_COL+p0.max(1) as usize).min(TERM_COLS-1);}
-            b'D' => {TERM_COL=TERM_COL.saturating_sub(p0.max(1) as usize);}
-            b'H'|b'f' => {let row=p(0,1).max(1) as usize;let col=p(1,1).max(1) as usize;TERM_ROW=(row-1).min(TERM_ROWS-1);TERM_COL=(col-1).min(TERM_COLS-1);}
-            b's' => {TERM_SAVED_ROW=TERM_ROW;TERM_SAVED_COL=TERM_COL;}
-            b'u' => {TERM_ROW=TERM_SAVED_ROW.min(TERM_ROWS-1);TERM_COL=TERM_SAVED_COL.min(TERM_COLS-1);}
-            b'J' => {if p0==2 {let mut r=0;while r<TERM_ROWS{TERM_LEN[r]=0;r+=1;}TERM_ROW=0;TERM_COL=0;TERM_VIEW=0;}else if p0==0{let mut c=TERM_COL;while c<TERM_LEN[TERM_ROW]{TERM_LINES[TERM_ROW][c]=0;TERM_COLOR[TERM_ROW][c]=7;c+=1;}TERM_LEN[TERM_ROW]=TERM_COL.min(TERM_COLS);}}
-            b'K' => {if p0==0{let mut c=TERM_COL;while c<TERM_LEN[TERM_ROW]{TERM_LINES[TERM_ROW][c]=0;TERM_COLOR[TERM_ROW][c]=7;c+=1;}TERM_LEN[TERM_ROW]=TERM_COL.min(TERM_COLS);}else if p0==1{let end=TERM_LEN[TERM_ROW];let mut c=0;while c<=TERM_COL&&c<end{TERM_LINES[TERM_ROW][c]=b' ';c+=1;}}else if p0==2{TERM_LEN[TERM_ROW]=0;TERM_COL=0;}}
+            b'm' => {
+                if TERM_ANSI_PARAM_COUNT == 0 {
+                    TERM_ANSI_BASE = 7;
+                    TERM_ANSI_BOLD = false;
+                } else {
+                    let mut i = 0usize;
+                    while i < TERM_ANSI_PARAM_COUNT {
+                        let v = TERM_ANSI_PARAMS[i] as u8;
+                        if v == 38 || v == 48 {
+                            if i + 1 < TERM_ANSI_PARAM_COUNT {
+                                if TERM_ANSI_PARAMS[i + 1] == 2 { i = i.saturating_add(5); }
+                                else { i = i.saturating_add(3); }
+                            } else { i += 1; }
+                            continue;
+                        }
+                        match v {
+                            0 => { TERM_ANSI_BASE = 7; TERM_ANSI_BOLD = false; }
+                            1 => TERM_ANSI_BOLD = true,
+                            22 => TERM_ANSI_BOLD = false,
+                            30..=37 => TERM_ANSI_BASE = v - 30,
+                            39 => TERM_ANSI_BASE = 7,
+                            90..=97 => TERM_ANSI_BASE = v - 90 + 8,
+                            _ => {}
+                        }
+                        i += 1;
+                    }
+                }
+                TERM_ANSI_CURRENT = if TERM_ANSI_BOLD && TERM_ANSI_BASE < 8 {
+                    TERM_ANSI_BASE + 8
+                } else { TERM_ANSI_BASE };
+            }
+            b'A' => { TERM_ROW = TERM_ROW.saturating_sub(p0.max(1) as usize); }
+            b'B' => { TERM_ROW = (TERM_ROW + p0.max(1) as usize).min(TERM_ROWS - 1); }
+            b'C' => { TERM_COL = (TERM_COL + p0.max(1) as usize).min(TERM_COLS - 1); }
+            b'D' => { TERM_COL = TERM_COL.saturating_sub(p0.max(1) as usize); }
+            b'H' | b'f' => {
+                let row = p(0, 1).max(1) as usize;
+                let col = p(1, 1).max(1) as usize;
+                TERM_ROW = (row - 1).min(TERM_ROWS - 1);
+                TERM_COL = (col - 1).min(TERM_COLS - 1);
+            }
+            b's' => { TERM_SAVED_ROW = TERM_ROW; TERM_SAVED_COL = TERM_COL; }
+            b'u' => {
+                TERM_ROW = TERM_SAVED_ROW.min(TERM_ROWS - 1);
+                TERM_COL = TERM_SAVED_COL.min(TERM_COLS - 1);
+            }
+            b'J' => {
+                if p0 == 2 {
+                    let mut r = 0;
+                    while r < TERM_ROWS { TERM_LEN[r] = 0; r += 1; }
+                    TERM_ROW = 0; TERM_COL = 0; TERM_VIEW = 0;
+                } else if p0 == 0 {
+                    let mut c = TERM_COL;
+                    while c < TERM_LEN[TERM_ROW] {
+                        TERM_LINES[TERM_ROW][c] = 0;
+                        TERM_COLOR[TERM_ROW][c] = 7;
+                        c += 1;
+                    }
+                    TERM_LEN[TERM_ROW] = TERM_COL.min(TERM_COLS);
+                }
+            }
+            b'K' => {
+                // K/0K are intentionally no-op at the terminal's line-end
+                // cursor position; explicit 1K/2K are the erase-line forms.
+                if p0 == 1 || p0 == 2 {
+                    TERM_LEN[TERM_ROW] = 0;
+                    TERM_COL = 0;
+                }
+            }
             _ => {}
         }
-        TERM_ANSI_STATE=0;TERM_ANSI_PARAM_COUNT=0;TERM_ANSI_PARAMS=[0;4];
+        TERM_ANSI_STATE = 0;
+        TERM_ANSI_PARAM_COUNT = 0;
+        TERM_ANSI_OVERFLOW = false;
+        TERM_ANSI_PARAMS = [0; 8];
     }
 }
 
 fn term_ansi_byte(ch: u8) {
     unsafe {
+        // Restart on a new ESC even if the previous CSI is incomplete.
+        if ch == 0x1B {
+            TERM_ANSI_STATE = 1;
+            TERM_ANSI_PARAM_COUNT = 0;
+            TERM_ANSI_OVERFLOW = false;
+            TERM_ANSI_PARAMS = [0; 8];
+            return;
+        }
         if TERM_ANSI_STATE == 1 {
             if ch == b'[' {
                 TERM_ANSI_STATE = 2;
                 TERM_ANSI_PARAM_COUNT = 0;
-                TERM_ANSI_PARAMS = [0; 4];
+                TERM_ANSI_OVERFLOW = false;
+                TERM_ANSI_PARAMS = [0; 8];
             } else { TERM_ANSI_STATE = 0; }
             return;
         }
         if TERM_ANSI_STATE == 2 {
             if ch >= b'0' && ch <= b'9' {
-                if TERM_ANSI_PARAM_COUNT == 0 { TERM_ANSI_PARAM_COUNT = 1; }
-                let n = TERM_ANSI_PARAM_COUNT - 1;
-                TERM_ANSI_PARAMS[n] = TERM_ANSI_PARAMS[n].saturating_mul(10).saturating_add((ch - b'0') as u16);
+                if !TERM_ANSI_OVERFLOW {
+                    if TERM_ANSI_PARAM_COUNT == 0 { TERM_ANSI_PARAM_COUNT = 1; }
+                    let n = TERM_ANSI_PARAM_COUNT - 1;
+                    TERM_ANSI_PARAMS[n] = TERM_ANSI_PARAMS[n].saturating_mul(10)
+                        .saturating_add((ch - b'0') as u16);
+                }
                 return;
             }
             if ch == b';' {
-                if TERM_ANSI_PARAM_COUNT < 4 { TERM_ANSI_PARAM_COUNT += 1; }
+                if TERM_ANSI_PARAM_COUNT < 8 && !TERM_ANSI_OVERFLOW {
+                    TERM_ANSI_PARAM_COUNT += 1;
+                } else {
+                    TERM_ANSI_OVERFLOW = true;
+                }
                 return;
             }
-            if ch >= 0x40 && ch <= 0x7E { term_ansi_apply(ch); return; }
+            // CSI parameter/private/intermediate bytes (20..3F) are consumed.
+            if ch >= 0x20 && ch <= 0x3F { return; }
+            if ch >= 0x40 && ch <= 0x7E {
+                term_ansi_apply(ch);
+                return;
+            }
             TERM_ANSI_STATE = 0;
             TERM_ANSI_PARAM_COUNT = 0;
+            TERM_ANSI_OVERFLOW = false;
             return;
         }
-        if ch == 0x1B { TERM_ANSI_STATE = 1; return; }
         term_putc(ch);
     }
 }
