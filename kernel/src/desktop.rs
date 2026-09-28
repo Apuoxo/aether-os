@@ -2069,9 +2069,6 @@ fn draw_settings(wx: usize, wy: usize, ww: usize, wh: usize) {
     unsafe {
         graphics::fill_rect(wx + 3, wy + TITLE_H as usize, ww - 6, wh - TITLE_H as usize - 3, COL_CLIENT);
 
-        // Settings categories are intentionally present as native placeholders.
-        // Only Mouse is functional today; the other pages document the future
-        // driver/subsystem surfaces without pretending they are implemented.
         let cats: [&str; 10] = [
             "Mouse",
             "Display",
@@ -2087,39 +2084,63 @@ fn draw_settings(wx: usize, wy: usize, ww: usize, wh: usize) {
 
         if SETTINGS_VIEW == 1 {
             graphics::draw_str(wx + 18, wy + 44, "Mouse", COL_TEXT);
-            graphics::draw_str(wx + 18, wy + 62, "Mouse settings", COL_TEXT_DIM);
-            graphics::border_rect(wx + 14, wy + 76, ww - 28, 150, 0x00808080);
-            graphics::draw_str(wx + 26, wy + 88, "Choose cursor", COL_TEXT);
-            let colors: [u32; 5] = [0x00FFFFFF, 0x00000000, 0x00E81123, 0x0000A000, 0x000000CC];
-            let names: [&str; 5] = ["White", "Black", "Red", "Green", "Blue"];
+            graphics::draw_str(wx + 18, wy + 62, "Cursor", COL_TEXT_DIM);
+            graphics::border_rect(wx + 14, wy + 76, ww - 28, 270, 0x00808080);
+
+            // 24 native cursor variants: 4 shapes x 6 colors.
+            // The click geometry is shared with handle_mouse_buttons().
+            let shapes: [&str; 4] = ["Arrow", "Pointer", "Cross", "Text"];
+            let colors: [&str; 6] = ["Red", "Blue", "Green", "Gold", "Purple", "Cyan"];
+
             let mut i = 0usize;
-            while i < 5 {
-                let bx = wx + 28 + i * 88;
-                let by = wy + 112;
+            while i < crate::cursor_builtin::COUNT {
+                let col = i % 6;
+                let row = i / 6;
+                let bx = wx + 18 + (col as i32) * 78;
+                let by = wy + 96 + (row as i32) * 52;
                 let selected = CURSOR_PENDING == i as u8;
-                graphics::fill_rect(bx, by, 68, 82, if selected { 0x00DCEBFA } else { 0x00FFFFFF });
-                graphics::border_rect(bx, by, 68, 82, if selected { 0x00316AC5 } else { 0x00808080 });
-                let cx = bx + 24;
-                let cy = by + 10;
-                let col = colors[i];
-                graphics::fill_rect(cx, cy, 2, 18, col);
-                graphics::fill_rect(cx, cy, 13, 2, col);
-                graphics::fill_rect(cx + 2, cy + 5, 9, 2, col);
-                graphics::fill_rect(cx + 2, cy + 10, 7, 2, col);
-                graphics::put_pixel(cx + 3, cy + 14, col);
-                graphics::put_pixel(cx + 4, cy + 15, col);
-                graphics::draw_str(bx + 8, by + 58, names[i], COL_TEXT);
+
+                graphics::fill_rect(
+                    bx as usize,
+                    by as usize,
+                    70,
+                    46,
+                    if selected { 0x00DCEBFA } else { 0x00FFFFFF },
+                );
+                graphics::border_rect(
+                    bx as usize,
+                    by as usize,
+                    70,
+                    46,
+                    if selected { 0x00316AC5 } else { 0x00808080 },
+                );
+
+                // Crisp 16x16 preview from the exact bundled cursor asset.
+                crate::cursor_builtin::draw(
+                    i,
+                    (bx + 5) as usize,
+                    (by + 4) as usize,
+                );
+
+                let shape = shapes[row];
+                let color = colors[col];
+                graphics::draw_str(bx as usize + 25, by as usize + 8, shape, COL_TEXT);
+                graphics::draw_str(bx as usize + 25, by as usize + 23, color, COL_TEXT_DIM);
                 i += 1;
             }
-            graphics::draw_str(wx + 18, wy + 244, "Current cursor:", COL_TEXT_DIM);
-            let current = match CURSOR_PENDING { 0 => "White", 1 => "Black", 2 => "Red", 3 => "Green", _ => "Blue" };
-            graphics::draw_str(wx + 126, wy + 244, current, COL_TEXT);
+
+            graphics::draw_str(wx + 18, wy + 350, "Selected:", COL_TEXT_DIM);
+            let selected_name = crate::cursor_builtin::name(CURSOR_PENDING as usize);
+            graphics::draw_str(wx + 82, wy + 350, selected_name, COL_TEXT);
+
             let okx = wx + ww - 184;
             let cancelx = wx + ww - 94;
             let by = wy + wh - 42;
+
             graphics::fill_rect(okx, by, 78, 24, COL_BTN_FACE);
             graphics::border_rect(okx, by, 78, 24, 0x00404040);
-            graphics::draw_str(okx + 22, by + 8, "Choose", COL_TEXT);
+            graphics::draw_str(okx + 22, by + 8, "Apply", COL_TEXT);
+
             graphics::fill_rect(cancelx, by, 78, 24, COL_BTN_FACE);
             graphics::border_rect(cancelx, by, 78, 24, 0x00404040);
             graphics::draw_str(cancelx + 22, by + 8, "Cancel", COL_TEXT);
@@ -2147,7 +2168,7 @@ fn draw_settings(wx: usize, wy: usize, ww: usize, wh: usize) {
             graphics::draw_str(wx + 212, wy + 48, "Settings", COL_TEXT);
             graphics::draw_str(wx + 212, wy + 76, "Configure Aether OS.", COL_TEXT_DIM);
             graphics::draw_str(wx + 212, wy + 98, "Mouse", COL_TEXT);
-            graphics::draw_str(wx + 212, wy + 116, "Pointer and cursor settings are available.", COL_TEXT_DIM);
+            graphics::draw_str(wx + 212, wy + 116, "Cursor selection is available.", COL_TEXT_DIM);
             graphics::draw_str(wx + 212, wy + 150, "Other categories are prepared", COL_TEXT_DIM);
             graphics::draw_str(wx + 212, wy + 166, "for future native drivers and services.", COL_TEXT_DIM);
             return;
@@ -2171,6 +2192,7 @@ fn draw_settings(wx: usize, wy: usize, ww: usize, wh: usize) {
         }
     }
 }
+
 fn draw_u32(x: usize, y: usize, n: u32, color: u32) {
     if n == 0 {
         graphics::draw_char(x, y, b'0', color);
