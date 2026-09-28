@@ -5,6 +5,7 @@ MEDIA_MP3 = $(MEDIA_DIR)/TEST.MP3
 MEDIA_BEETHOVEN_SRC = $(MEDIA_DIR)/BEETHOVEN_SOURCE.OGG
 MEDIA_BUNDLE = $(BUILD_DIR)/media_builtin.rs
 WALLPAPER = $(BUILD_DIR)/wallpaper.rgb565
+CURSOR_BUNDLE = $(BUILD_DIR)/cursor_builtin.rs
 
 $(MEDIA_DIR): | $(BUILD_DIR)
 	mkdir -p $(MEDIA_DIR)
@@ -60,7 +61,17 @@ $(WALLPAPER): | $(BUILD_DIR)
 	test "$$(wc -c < "$(BUILD_DIR)/wallpaper.rgb565")" -eq 2098176
 	rm -f "$(BUILD_DIR)/wallpaper-source.jpg"
 
-$(KERNEL_LIB): $(RUST_SRCS) $(BUILD_DIR)/calculator_blob.rs $(BUILD_DIR)/iwlwifi-2030-6.ucode $(MEDIA_BUNDLE) $(WALLPAPER) | $(BUILD_DIR)
+$(CURSOR_BUNDLE): | $(BUILD_DIR)
+	mkdir -p "$(BUILD_DIR)/cursor_src" "$(BUILD_DIR)/cursor_png"
+	set -e; for spec in "default:red:#E81123" "default:blue:#0078D7" "default:green:#107C10" "default:gold:#FFB900" "default:purple:#5C2D91" "default:cyan:#00B7C3" "pointer:red:#E81123" "pointer:blue:#0078D7" "pointer:green:#107C10" "pointer:gold:#FFB900" "pointer:purple:#5C2D91" "pointer:cyan:#00B7C3" "crosshair:red:#E81123" "crosshair:blue:#0078D7" "crosshair:green:#107C10" "crosshair:gold:#FFB900" "crosshair:purple:#5C2D91" "crosshair:cyan:#00B7C3" "text:red:#E81123" "text:blue:#0078D7" "text:green:#107C10" "text:gold:#FFB900" "text:purple:#5C2D91" "text:cyan:#00B7C3"; do \
+		shape=${spec%%:*}; rest=${spec#*:}; name=${rest%%:*}; color=${rest#*:}; \
+		curl -L --fail --retry 5 --retry-delay 2 -A "AetherOS/1.0" "https://raw.githubusercontent.com/phisch/phinger-cursors/master/theme/light/${shape}_32.svg" -o "$(BUILD_DIR)/cursor_src/${shape}.svg"; \
+		sed "s/#FBFBFB/${color}/g" "$(BUILD_DIR)/cursor_src/${shape}.svg" > "$(BUILD_DIR)/cursor_src/${shape}_${name}.svg"; \
+		rsvg-convert -w 16 -h 16 "$(BUILD_DIR)/cursor_src/${shape}_${name}.svg" -o "$(BUILD_DIR)/cursor_png/${shape}_${name}.png"; \
+	done
+	python3 -c "from pathlib import Path; specs='default:red default:blue default:green default:gold default:purple default:cyan pointer:red pointer:blue pointer:green pointer:gold pointer:purple pointer:cyan crosshair:red crosshair:blue crosshair:green crosshair:gold crosshair:purple crosshair:cyan text:red text:blue text:green text:gold text:purple text:cyan'.split(); p=Path('$(BUILD_DIR)/cursor_builtin.rs'); p.write_text('pub const COUNT: usize = 24;\\n'+''.join([f'pub static C{i}: &[u8] = include_bytes!(\\"cursor_png/{s.replace(\\":\\", \\"_\\")}.png\\");\\n' for i,s in enumerate(specs)]))"
+
+$(KERNEL_LIB): $(RUST_SRCS) $(BUILD_DIR)/calculator_blob.rs $(BUILD_DIR)/iwlwifi-2030-6.ucode $(MEDIA_BUNDLE) $(WALLPAPER) $(CURSOR_BUNDLE) | $(BUILD_DIR)
 	rustc --edition 2021 \
 		-C opt-level=s -C panic=abort \
 		-C overflow-checks=off -C debug-assertions=off \

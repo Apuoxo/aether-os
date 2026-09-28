@@ -164,3 +164,11 @@ Every significant change should be followed by:
 - No ISO was published from that failed run.
 - Corrected only the shell/Makefile size validation; wallpaper source, rendering path, resolution, and graphics driver code are unchanged.
 - Next required evidence: green build run and AH532 visual test at 1366x768.
+
+
+### 2026-09-28 — Native cursor library and Settings → Mouse → Cursor
+- Integrated Phinger Cursors by Philipp Schaffrath (CC BY-SA 4.0).
+- CI downloads upstream SVG artwork, creates 24 Aether variants (4 cursor shapes × 6 colors), rasterizes to 16x16 RGBA, and bundles them.
+- Settings → Mouse → Cursor now presents a real 24-item preview/selection grid with Apply and Cancel.
+- Applying a selection changes the actual native desktop cursor renderer immediately.
+- KMS/GGTT/GSM and framebuffer paths are unchanged.

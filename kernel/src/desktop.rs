@@ -146,7 +146,7 @@ static mut SETTINGS_VIEW: u8 = 0;
 static mut VIDEO_PENDING_W: u16 = 800;
 static mut VIDEO_PENDING_H: u16 = 600;
 static mut VIDEO_STATUS: u8 = 0; // 0=idle, 1=applied, 2=failed
-static mut CURSOR_COLOR: u32 = COL_CURSOR;
+static mut CURSOR_ID: u8 = 0;
 static mut CURSOR_PENDING: u8 = 0;
 
 static mut MEDIA_OPEN_DIALOG: bool = false;
@@ -1319,13 +1319,7 @@ fn handle_mouse_buttons(buttons: u8) {
                             if mx >= sx + 14 && mx < sx + 177 && my >= row_y - 2 && my < row_y + 21 {
                                 SETTINGS_VIEW = (i + 1) as u8;
                                 if i == 0 {
-                                    CURSOR_PENDING = match CURSOR_COLOR {
-                                        0x00000000 => 1,
-                                        0x00E81123 => 2,
-                                        0x0000A000 => 3,
-                                        0x000000CC => 4,
-                                        _ => 0,
-                                    };
+                                    CURSOR_PENDING = CURSOR_ID;
                                 }
                                 DIRTY_FULL = true;
                                 break;
@@ -1333,13 +1327,12 @@ fn handle_mouse_buttons(buttons: u8) {
                             i += 1;
                         }
                     } else if SETTINGS_VIEW == 1 {
-                        let colors: [u32; 5] = [0x00FFFFFF, 0x00000000, 0x00E81123, 0x0000A000, 0x000000CC];
                         let mut i = 0usize;
-                        while i < 5 {
-                            let bx = sx + 28 + (i as i32) * 88;
-                            if mx >= bx && mx < bx + 68 && my >= sy + 112 && my < sy + 194 {
-                                CURSOR_PENDING = i as u8;
-                                DIRTY_FULL = true;
+                        while i < crate::cursor_builtin::COUNT {
+                            let col = i % 6; let row = i / 6;
+                            let bx = sx + 18 + (col as i32) * 78; let by = sy + 96 + (row as i32) * 52;
+                            if mx >= bx && mx < bx + 70 && my >= by && my < by + 46 {
+                                CURSOR_PENDING = i as u8; DIRTY_FULL = true; break;
                             }
                             i += 1;
                         }
@@ -1348,7 +1341,7 @@ fn handle_mouse_buttons(buttons: u8) {
                         let by = sy + sh - 42;
                         if my >= by && my < by + 24 {
                             if mx >= okx && mx < okx + 78 {
-                                CURSOR_COLOR = colors[CURSOR_PENDING as usize];
+                                CURSOR_ID = CURSOR_PENDING;
                                 SETTINGS_VIEW = 0;
                                 DIRTY_FULL = true;
                             } else if mx >= cancelx && mx < cancelx + 78 {
@@ -1545,13 +1538,7 @@ fn handle_mouse_buttons(buttons: u8) {
 fn draw_cursor(x: i32, y: i32) {
     let x = if x < 0 { 0usize } else { x as usize };
     let y = if y < 0 { 0usize } else { y as usize };
-    let col = unsafe { CURSOR_COLOR };
-    graphics::fill_rect(x, y, 2, 16, col);
-    graphics::fill_rect(x, y, 12, 2, col);
-    graphics::fill_rect(x + 2, y + 4, 8, 2, col);
-    graphics::fill_rect(x + 2, y + 8, 6, 2, col);
-    graphics::put_pixel(x + 3, y + 12, col);
-    graphics::put_pixel(x + 4, y + 13, col);
+    crate::cursor_builtin::draw(unsafe { CURSOR_ID as usize }, x, y);
 }
 
 fn draw_window(idx: usize) {
