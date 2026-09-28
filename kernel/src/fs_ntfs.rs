@@ -730,6 +730,44 @@ pub fn entry(i: usize) -> Option<NtfsEntry> {
 }
 
 
+pub fn read_file_range(mft_ref:u32, offset:u64, out:&mut [u8])->Option<usize> {
+    if !is_mounted() || out.is_empty() { return Some(0); }
+    let rec_size=unsafe{MFT_REC_SIZE as usize}; if rec_size>1024{return None;}
+    let mut rec=[0u8;1024]; if !read_mft_record(mft_ref,&mut rec[..rec_size]){return None;}
+    let mut ao=u16::from_le_bytes([rec[20],rec[21]]) as usize;
+    while ao+8<=rec_size {
+        let at=u32::from_le_bytes([rec[ao],rec[ao+1],rec[ao+2],rec[ao+3]]);
+        if at==0xFFFF_FFFF{break;}
+        let al=u32::from_le_bytes([rec[ao+4],rec[ao+5],rec[ao+6],rec[ao+7]]) as usize;
+        if al<16||ao+al>rec_size{break;}
+        if at==0x80 {
+            if rec[ao+8]==0 {
+                let vl=u32::from_le_bytes([rec[ao+16],rec[ao+17],rec[ao+18],rec[ao+19]]) as u64;
+                let vo=u16::from_le_bytes([rec[ao+20],rec[ao+21]]) as usize;
+                if offset>=vl{return Some(0);} let n=(out.len() as u64).min(vl-offset) as usize;
+                let src=ao+vo+offset as usize;if src+n>ao+al{return None;}
+                let mut i=0;while i<n{out[i]=rec[src+i];i+=1;}return Some(n);
+            }
+            let ds=u64::from_le_bytes([rec[ao+48],rec[ao+49],rec[ao+50],rec[ao+51],rec[ao+52],rec[ao+53],rec[ao+54],rec[ao+55]]);
+            if offset>=ds{return Some(0);} let n=(out.len() as u64).min(ds-offset) as usize;
+            let mut runs=[(0u64,0u64);32];let mut rc=0usize;parse_runlist(&rec,ao,al,&mut runs,&mut rc);if rc==0{return None;}
+            let bpc=unsafe{SPC as u64*512};let mut done=0usize;
+            while done<n {
+                let pos=offset+done as u64;let ci=pos/bpc;let intra=(pos%bpc) as usize;
+                let mut base=0u64;let mut l=None;let mut ri=0usize;
+                while ri<rc{let(x,c)=runs[ri];if ci<base+c{l=Some(x+(ci-base));break;}base+=c;ri+=1;}
+                let lcn=match l{Some(v)=>v,None=>return None};let mut sec=(intra/512) as u32;let mut off=intra%512;
+                while sec<unsafe{SPC as u32}&&done<n{
+                    let mut sb=[0u8;512];if !read_lba(unsafe{DISK},cluster_to_lba(lcn)+sec,&mut sb){return None;}
+                    let take=(512-off).min(n-done);let mut i=0;while i<take{out[done+i]=sb[off+i];i+=1;}done+=take;sec+=1;off=0;
+                }
+            }
+            return Some(done);
+        }
+        ao+=al;
+    } None
+}
+
 /// NTFS diagnostic for the GUI terminal (read-only).
 /// This intentionally exercises the filesystem parser path, not the DSK RAW/MBR probe.
 fn diag_str(s: &str) {

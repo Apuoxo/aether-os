@@ -44,6 +44,8 @@ static mut PL_LEN: [usize; MAX_PLAYLIST] = [0; MAX_PLAYLIST];
 static mut PL_COUNT: usize = 0;
 static mut PL_INDEX: usize = 0;
 static mut BUILTIN_ACTIVE: u8 = 0;
+static mut NTFS_ACTIVE: bool = false;
+static mut NTFS_MFT_REF: u32 = 0;
 static mut SELECTED_BUILTIN: usize = 0;
 static mut MP3_DECODER: crate::mp3_decoder::Decoder = crate::mp3_decoder::Decoder::new();
 static mut MP3_INPUT: [u8; MP3_INPUT_BUF] = [0; MP3_INPUT_BUF];
@@ -199,7 +201,7 @@ fn parse_wav(path:&str)->Option<(usize,u32,u16,u16,usize,usize)> {
 pub fn init() {
     unsafe {
         STATE=State::Empty; FORMAT=Format::Unknown; SELECTED_BUILTIN=0; PATH_LEN=0; TITLE_LEN=0;
-        FILE_SIZE=0; SAMPLE_RATE=0; CHANNELS=0; BITS=0; DATA_OFF=0; DATA_LEN=0;
+        FILE_SIZE=0; SAMPLE_RATE=0; CHANNELS=0; BITS=0; DATA_OFF=0; DATA_LEN=0; NTFS_ACTIVE=false; NTFS_MFT_REF=0;
         PCM_FILE_POS=0; PCM_READY=0; MP3_INPUT_LEN=0; MP3_FILE_POS=0; MP3_DECODER=crate::mp3_decoder::Decoder::new(); VOLUME=100; MUTED=false;
         REPEAT=false; SHUFFLE=false; LAST_ERROR=0; PL_COUNT=0; PL_INDEX=0; BUILTIN_ACTIVE=0;
     }
@@ -222,6 +224,20 @@ pub fn error()->u8 { unsafe{LAST_ERROR} }
 pub fn title(out:&mut [u8])->usize { unsafe{copy_bytes(out,&TITLE[..TITLE_LEN])} }
 pub fn path(out:&mut [u8])->usize { unsafe{copy_bytes(out,&PATH[..PATH_LEN])} }
 
+fn parse_ntfs_path(path:&str)->Option<(u32,usize)>{
+    let b=path.as_bytes();if !b.starts_with(b"ntfs:"){return None;}let mut i=5;let mut m=0u32;
+    while i<b.len()&&b[i].is_ascii_digit(){m=m.saturating_mul(10).saturating_add((b[i]-b'0')as u32);i+=1;}
+    if i>=b.len()||b[i]!=b':'{return None;}i+=1;let mut s=0usize;
+    while i<b.len()&&b[i].is_ascii_digit(){s=s.saturating_mul(10).saturating_add((b[i]-b'0')as usize);i+=1;}
+    if i>=b.len()||b[i]!=b':'||s==0{return None;}Some((m,s))
+}
+fn open_ntfs(mft:u32,size:usize,name:&str)->bool{
+    if size==0||name.len()>MAX_PATH{return false;}unsafe{
+        NTFS_ACTIVE=true;NTFS_MFT_REF=mft;BUILTIN_ACTIVE=0;PATH_LEN=copy_bytes(&mut PATH,name.as_bytes());TITLE_LEN=PATH_LEN.min(TITLE.len());
+        let mut i=0;while i<TITLE_LEN{TITLE[i]=PATH[i];i+=1;}FILE_SIZE=size;SAMPLE_RATE=0;CHANNELS=0;BITS=16;DATA_OFF=0;DATA_LEN=size;
+        PCM_FILE_POS=0;PCM_READY=0;MP3_INPUT_LEN=0;MP3_FILE_POS=0;MP3_DECODER=crate::mp3_decoder::Decoder::new();FORMAT=Format::Mp3;LAST_ERROR=0;STATE=State::Stopped;
+    }serial::write_str("[MEDIA] NTFS MP3 opened\n");true
+}
 fn is_mp3_path(path:&str)->bool {
     let b=path.as_bytes();
     if b.len()<4 { return false; }
@@ -269,12 +285,10 @@ fn refill_mp3()->usize {
                     while i<avail { MP3_INPUT[i]=src[MP3_FILE_POS+i]; i+=1; }
                     Some(avail)
                 }
+            } else if NTFS_ACTIVE {
+                crate::fs_ntfs::read_file_range(NTFS_MFT_REF,MP3_FILE_POS as u64,&mut MP3_INPUT[..n])
             } else {
-                fs::read_range(
-                    core::str::from_utf8_unchecked(&PATH[..PATH_LEN]),
-                    MP3_FILE_POS,
-                    &mut MP3_INPUT[..n]
-                )
+                fs::read_range(core::str::from_utf8_unchecked(&PATH[..PATH_LEN]),MP3_FILE_POS,&mut MP3_INPUT[..n])
             };
 
             let got=match got {
@@ -345,12 +359,13 @@ fn refill_mp3()->usize {
     }
 }
 pub fn open(path:&str)->bool {
+    if let Some((mft,size))=parse_ntfs_path(path){let b=path.as_bytes();let mut i=5;while i<b.len()&&b[i]!=b':'{i+=1;}if i<b.len(){i+=1;}while i<b.len()&&b[i]!=b':'{i+=1;}if i<b.len(){i+=1;}return open_ntfs(mft,size,core::str::from_utf8(&b[i..]).unwrap_or("NTFS MP3"));}
     if is_mp3_path(path) {
         let size=match fs::file_size(path) {
             Some(v)=>v,
             None=>{unsafe{STATE=State::Error;FORMAT=Format::Unknown;LAST_ERROR=1;} return false;}
         };
-        unsafe { BUILTIN_ACTIVE=0; }
+        unsafe { BUILTIN_ACTIVE=0; NTFS_ACTIVE=false; }
         return open_mp3_common(path,size);
     }
 

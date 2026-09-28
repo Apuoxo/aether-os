@@ -184,3 +184,9 @@ Every significant change should be followed by:
 - Source remains based directly on control baseline build #672.
 - No runtime/source behavior changed; this log-only commit exists to retrigger the pull-request workflow for the already-reviewed MP3 autoplay change.
 - The functional change remains exactly the prior commit: c025e53ac492ff6f3d92eaa9c1c5d22fe1a949ee.
+
+
+### 2026-09-28 — Explorer HDD/NTFS MP3 autoplay
+- Root cause: NTFS Explorer double-click stopped at `NTFS file preview not implemented`; AetherFS already used the media-player handoff.
+- Added bounded NTFS file-data reads, an NTFS MP3 source in the native player, and NTFS `.mp3` double-click routing through the existing media-player handoff.
+- No graphics, HDA, partition mounting, or decoder changes.

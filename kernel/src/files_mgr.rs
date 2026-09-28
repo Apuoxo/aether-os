@@ -808,7 +808,15 @@ pub fn on_click(wx:i32,wy:i32,ww:i32,wh:i32,title_h:i32,mx:i32,my:i32,right:bool
                                 status(b"NTFS folder read failed");
                             }
                         }else{
-                            status(b"NTFS file preview not implemented");
+                            let is_mp3=e.name_len>=4&&e.name[e.name_len-4]==b'.'&&(e.name[e.name_len-3]|0x20)==b'm'&&(e.name[e.name_len-2]|0x20)==b'p'&&(e.name[e.name_len-1]|0x20)==b'3';
+                            if is_mp3 {
+                                let mut path=[0u8;96];let mut p=0usize;for c in b"ntfs:"{path[p]=*c;p+=1;}
+                                let mut v=e.mft_ref;let mut d=[0u8;10];let mut dn=0usize;if v==0{d[0]=b'0';dn=1;}else{while v>0{d[dn]=(v%10)as u8+b'0';v/=10;dn+=1;}}
+                                while dn>0{dn-=1;path[p]=d[dn];p+=1;}path[p]=b':';p+=1;
+                                let mut sz=e.size;let mut sd=[0u8;20];let mut sn=0usize;if sz==0{sd[0]=b'0';sn=1;}else{while sz>0{sd[sn]=(sz%10)as u8+b'0';sz/=10;sn+=1;}}
+                                while sn>0{sn-=1;path[p]=sd[sn];p+=1;}path[p]=b':';p+=1;let mut k=0usize;while k<e.name_len&&p<95{path[p]=e.name[k];p+=1;}
+                                if let Ok(ps)=core::str::from_utf8(&path[..p]){if crate::desktop::open_media_path(ps){status(b"Loaded NTFS MP3 in Media Player");}else{status(b"NTFS MP3 open failed");}}
+                            }else{status(b"NTFS file preview not implemented");}
                         }
                     }
                     }
