@@ -1,4 +1,5 @@
 //! Aether Desktop v1.1 XP complete UI — Windows XP Luna visual style (homage)
+//! 2026-09-28: added Aether Memory GUI v1 (real PMM summary + visual placeholders).
 
 use crate::graphics;
 use crate::drivers::ps2;
@@ -43,7 +44,7 @@ const COL_BTN_FACE: u32 = 0x00D4D0C8;
 const COL_MENU_BG: u32 = 0x00FFFFFF;
 const COL_MENU_HDR: u32 = 0x001665CA;
 
-const MAX_WIN: usize = 13;
+const MAX_WIN: usize = 14;
 const TITLE_H: i32 = 26;
 const TASKBAR_H: usize = 30;
 
@@ -62,6 +63,7 @@ enum WinKind {
     MediaPlayer,
     Keyboard,
     Alarm,
+    Memory,
 }
 
 struct Window {
@@ -107,6 +109,10 @@ static mut WINS: [Window; MAX_WIN] = [
         minimized: false, maximized: false, rx: 30, ry: 275, rw: 740, rh: 295 },
     Window { x: 120, y: 55, w: 470, h: 360, kind: WinKind::Alarm, visible: false, z: 13,
         minimized: false, maximized: false, rx: 120, ry: 55, rw: 470, rh: 360 },
+    // Aether Memory: first GUI surface uses real PMM totals/free pages and
+    // intentionally keeps subsystem accounting as visual placeholders.
+    Window { x: 120, y: 48, w: 620, h: 430, kind: WinKind::Memory, visible: false, z: 14,
+        minimized: false, maximized: false, rx: 120, ry: 48, rw: 620, rh: 430 },
 ];
 
 static mut FOCUS: usize = 0; // terminal
@@ -1706,6 +1712,7 @@ fn handle_mouse_buttons(buttons: u8) {
                         7 => open_win(11), // On-Screen Keyboard
                         8 => open_win(12), // Alarm Clock
                         9 => open_win(99), // Recycle Bin
+                        10 => open_win(13), // Memory
                         _ => {}
                     }
                 } else if my >= 28 {
@@ -2341,6 +2348,79 @@ fn draw_window(idx: usize) {
                 }
                 graphics::draw_str(wx+330,cy+248,"Select a track, then Play",COL_TEXT_DIM);
                 graphics::draw_str(wx+330,cy+264,"MP3: native decoder",COL_TEXT_DIM);
+            }
+            WinKind::Memory => {
+                // Aether Memory v1: clean system monitor surface. PMM data is
+                // real; subsystem rows remain deliberate placeholders until
+                // the allocator gains tagged accounting.
+                graphics::fill_rect(wx + 3, wy + TITLE_H as usize, ww - 6,
+                    wh - TITLE_H as usize - 3, 0x00F4F6F9);
+
+                graphics::draw_str(wx + 18, wy + 44, "MEMORY", 0x001F4E79);
+                graphics::draw_str(wx + 18, wy + 62,
+                    "Physical memory overview", 0x00606A73);
+
+                let total = crate::mm::total_count();
+                let free = crate::mm::free_count();
+                let used = total.saturating_sub(free);
+                let pct = if total == 0 { 0 } else { ((used as u64 * 100) / total as u64) as usize };
+
+                // Main usage bar.
+                let bx = wx + 18;
+                let by = wy + 82;
+                let bw = ww - 36;
+                graphics::fill_rect(bx, by, bw, 28, 0x00D8DDE3);
+                if total > 0 {
+                    let fill = ((bw as u64 * used as u64) / total as u64) as usize;
+                    graphics::fill_rect(bx, by, fill.min(bw), 28, 0x00316AC5);
+                }
+                graphics::border_rect(bx, by, bw, 28, 0x00808A94);
+
+                // Three large summary values.
+                graphics::draw_str(wx + 18, wy + 126, "TOTAL", 0x00717D89);
+                graphics::draw_str(wx + 210, wy + 126, "USED", 0x00717D89);
+                graphics::draw_str(wx + 402, wy + 126, "AVAILABLE", 0x00717D89);
+                let total_mib = (total as u64 * 4096) / (1024 * 1024);
+                let used_mib = (used as u64 * 4096) / (1024 * 1024);
+                let free_mib = (free as u64 * 4096) / (1024 * 1024);
+                draw_u32(wx + 18, wy + 145, total_mib.min(u32::MAX as u64) as u32, COL_TEXT);
+                draw_u32(wx + 210, wy + 145, used_mib.min(u32::MAX as u64) as u32, COL_TEXT);
+                draw_u32(wx + 402, wy + 145, free_mib.min(u32::MAX as u64) as u32, COL_TEXT);
+                graphics::draw_str(wx + 82, wy + 145, "MB", COL_TEXT_DIM);
+                graphics::draw_str(wx + 274, wy + 145, "MB", COL_TEXT_DIM);
+                graphics::draw_str(wx + 466, wy + 145, "MB", COL_TEXT_DIM);
+                draw_u32(wx + 18, wy + 166, pct as u32, 0x001F4E79);
+                graphics::draw_str(wx + 42, wy + 166, "% used", COL_TEXT_DIM);
+
+                // Six clean component cards. Values are placeholders by design.
+                let cards: [(&str, &str, &str); 6] = [
+                    ("KERNEL", "128 MB", "PLACEHOLDER"),
+                    ("DRIVERS", "256 MB", "PLACEHOLDER"),
+                    ("GRAPHICS", "384 MB", "PLACEHOLDER"),
+                    ("AUDIO", "32 MB", "PLACEHOLDER"),
+                    ("SERVICES", "640 MB", "PLACEHOLDER"),
+                    ("APPLICATIONS", "—", "PLACEHOLDER"),
+                ];
+                let mut i = 0usize;
+                while i < cards.len() {
+                    let col = i % 3;
+                    let row = i / 3;
+                    let cx = wx + 18 + col * 194;
+                    let cy = wy + 196 + row * 78;
+                    graphics::fill_rect(cx, cy, 180, 66, 0x00FFFFFF);
+                    graphics::border_rect(cx, cy, 180, 66, 0x00C4CBD3);
+                    graphics::draw_str(cx + 10, cy + 10, cards[i].0, 0x001F4E79);
+                    graphics::draw_str(cx + 10, cy + 28, cards[i].1, COL_TEXT);
+                    graphics::draw_str(cx + 10, cy + 47, cards[i].2, 0x00717D89);
+                    graphics::fill_rect(cx + 112, cy + 50, 56, 5, 0x00D8DDE3);
+                    graphics::fill_rect(cx + 112, cy + 50, 24, 5, 0x00316AC5);
+                    i += 1;
+                }
+
+                // Quiet footer: page structure is present without fake data.
+                graphics::draw_str(wx + 18, wy + wh - 30,
+                    "Overview    Processes    Physical    Virtual", 0x005A6673);
+                graphics::draw_str(wx + ww - 92, wy + wh - 30, "Refresh", 0x001E5AA8);
             }
             WinKind::Alarm => {
                 crate::alarm::alarm_draw(wx as i32 + 3, wy as i32 + TITLE_H);
@@ -3205,7 +3285,7 @@ fn draw_start_menu() {
     use crate::gui::icon::{self, IconId};
     let h = graphics::height();
     let tb = TASKBAR_H;
-    let menu_h = 364usize;
+    let menu_h = 392usize;
     let menu_w = 220usize;
     let mx = 2usize;
     let my = h.saturating_sub(tb + menu_h);
@@ -3228,6 +3308,7 @@ fn draw_start_menu() {
         (IconId::File, "On-Screen Keyboard", 11),
         (IconId::Settings, "Alarm Clock", 12),
         (IconId::RecycleBin, "Recycle Bin", 99),
+        (IconId::Settings, "Memory", 13),
     ];
     let mut i = 0usize;
     while i < 10 {
@@ -3261,7 +3342,7 @@ fn hit_start_menu(mx: i32, my: i32) -> Option<usize> {
         return None;
     }
     let idx = (rel / 28) as usize;
-    if idx < 10 {
+    if idx < 11 {
         Some(idx)
     } else {
         None
