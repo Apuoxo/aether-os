@@ -1,0 +1,145 @@
+name: Extract AH532 service documentation
+
+on:
+  push:
+    paths:
+      - 'DA0FH6MB6E0 rev E PDF .rar'
+      - '.github/workflows/extract-ah532-docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install extraction and OCR tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y p7zip-full poppler-utils tesseract-ocr
+
+      - name: Extract RAR
+        run: |
+          rm -rf docs/AH532-SERVICE-MANUAL
+          mkdir -p docs/AH532-SERVICE-MANUAL
+          7z x 'DA0FH6MB6E0 rev E PDF .rar' -odocs/AH532-SERVICE-MANUAL -y
+
+      - name: Extract searchable text and OCR fallback
+        shell: bash
+        run: |
+          set -e
+          pdf='docs/AH532-SERVICE-MANUAL/DA0FH6MB6E0 rev E PDF .pdf'
+          pdftotext -layout "$pdf" docs/AH532-SERVICE-MANUAL/manual-text.txt || true
+          chars=$(wc -c < docs/AH532-SERVICE-MANUAL/manual-text.txt || echo 0)
+          echo "pdftotext character count: $chars"
+          if [ "$chars" -lt 1000 ]; then
+            rm -rf /tmp/ah532-ocr
+            mkdir -p /tmp/ah532-ocr
+            pdftoppm -jpeg -r 180 "$pdf" /tmp/ah532-ocr/page >/dev/null 2>&1 || true
+            : > docs/AH532-SERVICE-MANUAL/manual-ocr.txt
+            for img in /tmp/ah532-ocr/page-*.jpg; do
+              [ -e "$img" ] || continue
+              tesseract "$img" stdout 2>/dev/null >> docs/AH532-SERVICE-MANUAL/manual-ocr.txt || true
+              printf '\n\n--- PAGE ---\n\n' >> docs/AH532-SERVICE-MANUAL/manual-ocr.txt
+            done
+          fi
+
+      - name: Verify document identity
+        shell: bash
+        run: |
+          set -e
+          dir='docs/AH532-SERVICE-MANUAL'
+          pdf="$dir/DA0FH6MB6E0 rev E PDF .pdf"
+          text="$dir/manual-text.txt"
+          report="$dir/manual-identity-report.md"
+
+          pdfinfo "$pdf" > "$dir/pdfinfo.txt" 2>&1 || true
+          pdftotext -f 1 -l 12 -layout "$pdf" "$dir/first-pages.txt" || true
+
+          {
+            echo "# Manual identity verification"
+            echo
+            echo "## File"
+            echo "- PDF: `$(basename "$pdf")`"
+            echo "- SHA-256: `$(sha256sum "$pdf" | awk '{print $1}')`"
+            echo "- Size: $(stat -c%s "$pdf") bytes"
+            echo
+            echo "## PDF metadata"
+            sed -n '1,40p' "$dir/pdfinfo.txt"
+            echo
+            echo "## Direct identity matches"
+            echo 'Search terms: AH532, LIFEBOOK, FUJITSU, DA0FH6MB6E0, MBDA0FH6MB6E0, FH6MB6E0'
+            echo
+            if grep -Ein -m 80 -C 2 'AH532|LIFEBOOK|FUJITSU|DA0FH6MB6E0|MBDA0FH6MB6E0|FH6MB6E0' "$text" > "$dir/identity-matches.txt"; then
+              sed -n '1,240p' "$dir/identity-matches.txt"
+            else
+              echo "NO_MATCHES_IN_EXTRACTED_TEXT"
+            fi
+            echo
+            echo "## First 12 pages — identity-related lines"
+            if grep -Ein -C 2 'AH532|LIFEBOOK|FUJITSU|DA0FH6MB6E0|MBDA0FH6MB6E0|FH6MB6E0' "$dir/first-pages.txt"; then
+              true
+            else
+              echo "NO_MATCHES_IN_FIRST_12_PAGES"
+            fi
+            echo
+            echo "## Preliminary assessment"
+            if grep -Eiq 'AH532|LIFEBOOK AH532' "$text"; then
+              echo "DIRECT_MODEL_IDENTIFIER_FOUND: The extracted text contains AH532/LIFEBOOK AH532. This is direct evidence of model relevance."
+            elif grep -Eiq 'DA0FH6MB6E0|MBDA0FH6MB6E0|FH6MB6E0' "$text"; then
+              echo "BOARD_IDENTIFIER_FOUND_BUT_MODEL_NOT_CONFIRMED: A matching board identifier appears, but AH532 was not found in extracted text. Corroboration is required before treating this as AH532-specific."
+            else
+              echo "NO_DIRECT_AH532_OR_BOARD_IDENTIFIER_FOUND: Do not treat this document as AH532-specific without further evidence."
+            fi
+          } > "$report"
+
+
+      - name: Build schematic technical index
+        shell: bash
+        run: |
+          set -e
+          dir='docs/AH532-SERVICE-MANUAL'
+          pdf="$dir/DA0FH6MB6E0 rev E PDF .pdf"
+          out="$dir/schematic-technical-index.md"
+          pages="$dir/schematic-pages.txt"
+          pdftotext -layout -nopgbrk "$pdf" "$pages" || true
+
+          {
+            echo "# DA0FH6MB6E0 Rev E — technical schematic index"
+            echo
+            echo "This is an extracted keyword/page index from the 34-page motherboard schematic."
+            echo "It is a navigation aid, not proof that every matched signal belongs to the AH532 without checking the schematic page itself."
+            echo
+            echo "| Topic | Keywords | Pages with matches |"
+            echo "|---|---|---|"
+            for spec in               "Display|LVDS eDP HDMI CRT DDI GMBUS EDID LCD PANEL BLON PWM BACKLIGHT"               "Graphics/Intel|Intel GPU GMCH PCH SNB IVB Sandy Bridge Ivy Bridge HD Graphics"               "USB|USB xHCI EHCI UHCI USB2 USB3 XHCI"               "Storage|SATA AHCI HDD SSD SATA0 SATA1 SATA2 SATA3"               "PCI/PCIe|PCI PCIe PCIE CLKREQ PERST PME"               "SMBus/I2C|SMBus SMBUS I2C GMBUS SCL SDA"               "EC/LPC|EC LPC KBC KB8042 SUPERIO SIO GPIO"               "Network|LAN RTL8168 RTL8111 WLAN 2230 0887 MINI PCIe"               "Audio|HDA HDAUDIO AZALIA codec audio"               "Power/Reset|VR_ON SLP_S3 SLP_S4 SLP_S5 RSMRST PLTRST PWRBTN RESET"               "ACPI|ACPI _S3 _S4 _S5 GPE SCI"               "Memory|DDR3 SO-DIMM DIMM SPD SMBUS"               "Firmware|BIOS SPI ROM EC FLASH ME"               "Thermal|THERMAL TEMP FAN CPU_FAN"               "Camera|CAMERA CCD USB_CAM"               "Card reader|CARD READER SD MMC"               "Touchpad|TOUCHPAD PS2 TPAD"               "Display power|LCDVDD VDD_LCD VCC_LCD VDDP BL_EN BLON INV PWM"               "Board identity|DA0FH6MB6E0 FH6 FH6C CP581562 HM76" ; do
+                topic="${spec%%|*}"
+                words="${spec#*|}"
+                pages_found=""
+                for w in $words; do
+                  p=$(grep -in -m 200 -C 0 -F "$w" "$pages" | sed -n 's/.*\f//p' | head -1 || true)
+                  if [ -n "$p" ]; then pages_found="${pages_found}${pages_found:+, }$w"; fi
+                done
+                echo "| $topic | $words | $pages_found |"
+              done
+
+            echo
+            echo "## Targeted excerpts"
+            for term in LVDS GMBUS EDID HDMI USB xHCI SATA AHCI PCIe LPC EC SMBus GPIO RTL8168 2230 HDA BIOS SPI HM76 DA0FH6MB6E0; do
+              echo
+              echo "### $term"
+              grep -Ein -m 30 -C 2 "$term" "$pages" || echo "No text match"
+            done
+          } > "$out"
+
+      - name: Commit extracted documents and identity verification
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/AH532-SERVICE-MANUAL
+          git diff --cached --quiet || git commit -m 'docs: verify service manual identity'
+          git push
