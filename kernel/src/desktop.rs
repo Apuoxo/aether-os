@@ -948,7 +948,7 @@ fn keyboard_key_to_ascii(label:&str,shift:bool,caps:bool)->Option<u8>{
         (91,false)=>91,(91,true)=>123,(93,false)=>93,(93,true)=>125,
         (59,false)=>59,(59,true)=>58,(39,false)=>39,(39,true)=>34,
         (44,false)=>44,(44,true)=>60,(46,false)=>46,(46,true)=>62,
-        (47,false)=>47,(47,true)=>63,_=>c
+        (47,false)=>47,(47,true)=>63,(92,false)=>92,(92,true)=>124,_=>c
     })
 }
 
@@ -973,7 +973,13 @@ fn keyboard_emit(label:&str){
         else if label=="END"{let _=handle_special_key(0x4D);}
         else if label=="DEL"{let _=handle_special_key(0x4C);}
         else if label.starts_with('F'){
-            if label=="F1"{open_win(1);}else if label=="F2"{open_win(5);}else if label=="F3"{open_win(10);}
+            match label {
+                "F1"=>open_win(1), "F2"=>open_win(5), "F3"=>open_win(10),
+                "F4"=>open_win(2), "F5"=>open_win(9), "F6"=>open_win(3),
+                "F7"=>open_win(4), "F8"=>open_win(7), "F9"=>open_win(6),
+                "F10"=>open_win(8), "F11"=>open_win(10), "F12"=>open_win(11),
+                _=>{}
+            }
         }else if let Some(ch)=keyboard_key_to_ascii(label,KEYBOARD_SHIFT,KEYBOARD_CAPS){
             handle_key(ch);if KEYBOARD_SHIFT{KEYBOARD_SHIFT=false;}
         }
