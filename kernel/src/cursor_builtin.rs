@@ -4,30 +4,30 @@
 
 use crate::graphics;
 pub const COUNT: usize = 24;
-pub static C0: &[u8] = include_bytes!("../build/cursor_png/default_red.png");
-pub static C1: &[u8] = include_bytes!("../build/cursor_png/default_blue.png");
-pub static C2: &[u8] = include_bytes!("../build/cursor_png/default_green.png");
-pub static C3: &[u8] = include_bytes!("../build/cursor_png/default_gold.png");
-pub static C4: &[u8] = include_bytes!("../build/cursor_png/default_purple.png");
-pub static C5: &[u8] = include_bytes!("../build/cursor_png/default_cyan.png");
-pub static C6: &[u8] = include_bytes!("../build/cursor_png/pointer_red.png");
-pub static C7: &[u8] = include_bytes!("../build/cursor_png/pointer_blue.png");
-pub static C8: &[u8] = include_bytes!("../build/cursor_png/pointer_green.png");
-pub static C9: &[u8] = include_bytes!("../build/cursor_png/pointer_gold.png");
-pub static C10: &[u8] = include_bytes!("../build/cursor_png/pointer_purple.png");
-pub static C11: &[u8] = include_bytes!("../build/cursor_png/pointer_cyan.png");
-pub static C12: &[u8] = include_bytes!("../build/cursor_png/crosshair_red.png");
-pub static C13: &[u8] = include_bytes!("../build/cursor_png/crosshair_blue.png");
-pub static C14: &[u8] = include_bytes!("../build/cursor_png/crosshair_green.png");
-pub static C15: &[u8] = include_bytes!("../build/cursor_png/crosshair_gold.png");
-pub static C16: &[u8] = include_bytes!("../build/cursor_png/crosshair_purple.png");
-pub static C17: &[u8] = include_bytes!("../build/cursor_png/crosshair_cyan.png");
-pub static C18: &[u8] = include_bytes!("../build/cursor_png/text_red.png");
-pub static C19: &[u8] = include_bytes!("../build/cursor_png/text_blue.png");
-pub static C20: &[u8] = include_bytes!("../build/cursor_png/text_green.png");
-pub static C21: &[u8] = include_bytes!("../build/cursor_png/text_gold.png");
-pub static C22: &[u8] = include_bytes!("../build/cursor_png/text_purple.png");
-pub static C23: &[u8] = include_bytes!("../build/cursor_png/text_cyan.png");
+pub static C0: &[u8] = include_bytes!("../build/cursor_png/default_red.rgba");
+pub static C1: &[u8] = include_bytes!("../build/cursor_png/default_blue.rgba");
+pub static C2: &[u8] = include_bytes!("../build/cursor_png/default_green.rgba");
+pub static C3: &[u8] = include_bytes!("../build/cursor_png/default_gold.rgba");
+pub static C4: &[u8] = include_bytes!("../build/cursor_png/default_purple.rgba");
+pub static C5: &[u8] = include_bytes!("../build/cursor_png/default_cyan.rgba");
+pub static C6: &[u8] = include_bytes!("../build/cursor_png/pointer_red.rgba");
+pub static C7: &[u8] = include_bytes!("../build/cursor_png/pointer_blue.rgba");
+pub static C8: &[u8] = include_bytes!("../build/cursor_png/pointer_green.rgba");
+pub static C9: &[u8] = include_bytes!("../build/cursor_png/pointer_gold.rgba");
+pub static C10: &[u8] = include_bytes!("../build/cursor_png/pointer_purple.rgba");
+pub static C11: &[u8] = include_bytes!("../build/cursor_png/pointer_cyan.rgba");
+pub static C12: &[u8] = include_bytes!("../build/cursor_png/crosshair_red.rgba");
+pub static C13: &[u8] = include_bytes!("../build/cursor_png/crosshair_blue.rgba");
+pub static C14: &[u8] = include_bytes!("../build/cursor_png/crosshair_green.rgba");
+pub static C15: &[u8] = include_bytes!("../build/cursor_png/crosshair_gold.rgba");
+pub static C16: &[u8] = include_bytes!("../build/cursor_png/crosshair_purple.rgba");
+pub static C17: &[u8] = include_bytes!("../build/cursor_png/crosshair_cyan.rgba");
+pub static C18: &[u8] = include_bytes!("../build/cursor_png/text_red.rgba");
+pub static C19: &[u8] = include_bytes!("../build/cursor_png/text_blue.rgba");
+pub static C20: &[u8] = include_bytes!("../build/cursor_png/text_green.rgba");
+pub static C21: &[u8] = include_bytes!("../build/cursor_png/text_gold.rgba");
+pub static C22: &[u8] = include_bytes!("../build/cursor_png/text_purple.rgba");
+pub static C23: &[u8] = include_bytes!("../build/cursor_png/text_cyan.rgba");
 pub fn name(id: usize) -> &'static str {
     match id {
         0=>"Arrow Red",1=>"Arrow Blue",2=>"Arrow Green",3=>"Arrow Gold",4=>"Arrow Purple",5=>"Arrow Cyan",
