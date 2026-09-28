@@ -238,3 +238,8 @@ Every significant change should be followed by:
 - CI #688 failed because RAMTEST source was emitted with literal escape characters; corrected in the next commit without changing PMM logic.
 
 - 2026-09-28: переименован диагностический тест PMM `RAMTEST` в `RAM2`, без изменения логики теста.
+
+## 2026-09-28 — Memory GUI real-time Overview
+- Reused the existing desktop real-time clock tick (`LAST_SEC`) instead of adding a new timer subsystem.
+- Memory window now requests a local redraw once per second while visible.
+- Overview continues to read live PMM totals/free pages; subsystem category values remain explicit placeholders until allocation accounting exists.

@@ -997,8 +997,7 @@ fn toggle_maximize(idx: usize) {
             WINS[idx].rx = WINS[idx].x;
             WINS[idx].ry = WINS[idx].y;
             WINS[idx].rw = WINS[idx].w;
-            WINS[idx].rh = WINS[idx].h;
-            WINS[idx].x = 0;
+            WINS[idx].rh = WINS[idx].h;            WINS[idx].x = 0;
             WINS[idx].y = 30;
             WINS[idx].w = sw;
             WINS[idx].h = sh - 70;
@@ -1997,8 +1996,7 @@ fn handle_mouse_buttons(buttons: u8) {
                     if my >= cy+240 && my < cy+240+48 {
                         let row=((my-(cy+240))/16) as usize;
                         if row < crate::media_player::builtin_count() && mx >= bx+18 && mx < bx+300 {
-                            let _=crate::media_player::select_builtin(row);
-                            let _=crate::media_player::open_builtin(row);
+                            let _=crate::media_player::select_builtin(row);                            let _=crate::media_player::open_builtin(row);
                             DIRTY_WINDOW=idx as i16;
                         }
                     } else if my >= py && my < py+28 {
@@ -3000,7 +2998,6 @@ fn redraw_status_strip() {
 }
 
 
-
 fn draw_start_button(_w: usize, h: usize) {
     let tb = TASKBAR_H;
     let ty = h.saturating_sub(tb);
@@ -3762,6 +3759,11 @@ pub fn run() -> ! {
                     cursor_restore();
                     redraw_status_strip();
                     cursor_save_and_draw(MX, MY);
+                    // Memory Overview is a live system view: refresh its PMM
+                    // counters once per real-time second while the window is open.
+                    if WINS[13].visible && !WINS[13].minimized {
+                        DIRTY_WINDOW = 13;
+                    }
                 }
             }
             if DIRTY_FULL {
