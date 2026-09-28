@@ -1426,7 +1426,7 @@ unsafe fn L3_decode(
     }
     if (*h).header[3 as i32 as usize] as i32 & 0x10 as i32 != 0 {
         L3_intensity_stereo(
-            (*s).grbuf.as_flattened_mut(),
+            core::slice::from_raw_parts_mut((*s).grbuf.as_mut_ptr() as *mut f32, 2 * 576),
             ((*s).ist_pos[1 as i32 as usize]).as_mut_ptr(),
             gr_info,
             &(*h).header,
@@ -1435,7 +1435,7 @@ unsafe fn L3_decode(
         == 0x60 as i32
     {
         L3_midside_stereo(
-            (*s).grbuf.as_flattened_mut(),
+            core::slice::from_raw_parts_mut((*s).grbuf.as_mut_ptr() as *mut f32, 2 * 576),
             576,
         );
     }
@@ -1462,7 +1462,7 @@ unsafe fn L3_decode(
                 ((*s).grbuf[ch as usize])
                     .as_mut_ptr()
                     .offset((n_long_bands * 18 as i32) as isize),
-                (*s).syn.as_flattened_mut().as_mut_ptr(),
+                (*s).syn.as_mut_ptr() as *mut f32,
                 (gr_info[0].sfbtab).offset(gr_info[0].n_long_sfb as i32 as isize),
             );
         }
@@ -1483,7 +1483,7 @@ unsafe fn mp3d_DCT_II(grbuf: *mut f32, n: u32) {
     let mut k = 0;
     while k < n {
         let mut t: [[f32; 8]; 4] = [[0.; 8]; 4];
-        let mut x: *mut f32 = t.as_flattened_mut().as_mut_ptr();
+        let mut x: *mut f32 = t.as_mut_ptr() as *mut f32;
         let mut y: *mut f32 = grbuf.offset(k as isize);
         i = 0 as i32;
         while i < 8 as i32 {
@@ -1515,7 +1515,7 @@ unsafe fn mp3d_DCT_II(grbuf: *mut f32, n: u32) {
             i += 1;
             x = x.offset(1);
         }
-        x = t.as_flattened_mut().as_mut_ptr();
+        x = t.as_mut_ptr() as *mut f32;
         i = 0 as i32;
         while i < 4 as i32 {
             let mut x0_0: f32 = *x.offset(0 as i32 as isize);
@@ -2225,7 +2225,7 @@ pub unsafe fn mp3dec_decode_frame(
             igr = 0;
             while igr < (if hdr[1] & 0x8 != 0 { 2 } else { 1 })
             {
-                scratch.grbuf.as_flattened_mut().fill(0f32);
+                core::slice::from_raw_parts_mut(scratch.grbuf.as_mut_ptr() as *mut f32, 2 * 576).fill(0f32);
                 L3_decode(
                     dec,
                     &mut scratch,
@@ -2235,11 +2235,11 @@ pub unsafe fn mp3dec_decode_frame(
                 );
                 mp3d_synth_granule(
                     ((*dec).qmf_state).as_mut_ptr(),
-                    scratch.grbuf.as_flattened_mut().as_mut_ptr(),
+                    scratch.grbuf.as_mut_ptr() as *mut f32,
                     18,
                     (*info).channels,
                     pcm,
-                    scratch.syn.as_flattened_mut().as_mut_ptr(),
+                    scratch.syn.as_mut_ptr() as *mut f32,
                 );
                 igr += 1;
                 pcm = &mut pcm[576 * ((*info).channels as usize)..];
