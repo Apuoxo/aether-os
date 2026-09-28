@@ -234,3 +234,5 @@ Every significant change should be followed by:
 - Commit requested as `diag: Ram`; CI must pass before further PMM changes or hardware testing.
 
 - Added RAMTEST PMM regression command: alloc_page/write-read/free, alloc_pages(4)/write-read/free, and free-count restoration checks.
+
+- CI #688 failed because RAMTEST source was emitted with literal escape characters; corrected in the next commit without changing PMM logic.
