@@ -259,6 +259,7 @@ pub fn alloc_page() -> Option<usize> {
                     FREE_RANGE_COUNT.store(count - 1, Ordering::SeqCst);
                 }
                 FREE.fetch_sub(1, Ordering::SeqCst);
+                OWNER_PAGES[owner_index(MemoryOwner::Kernel)].fetch_add(1, Ordering::SeqCst);
                 return Some(addr);
             }
             i += 1;
@@ -289,6 +290,7 @@ pub fn alloc_pages(count: usize) -> Option<usize> {
                     FREE_RANGE_COUNT.store(range_count - 1, Ordering::SeqCst);
                 }
                 FREE.fetch_sub(count, Ordering::SeqCst);
+                OWNER_PAGES[owner_index(MemoryOwner::Kernel)].fetch_add(count, Ordering::SeqCst);
                 return Some(addr);
             }
             i += 1;
@@ -298,6 +300,14 @@ pub fn alloc_pages(count: usize) -> Option<usize> {
 }
 
 pub fn free_page(addr: usize) {
+    let before = FREE.load(Ordering::SeqCst);
+    free_page_raw(addr);
+    if FREE.load(Ordering::SeqCst) > before {
+        OWNER_PAGES[owner_index(MemoryOwner::Kernel)].fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+fn free_page_raw(addr: usize) {
     if addr & (PAGE_SIZE - 1) != 0 { return; }
     let target = addr as u64;
     unsafe {
@@ -342,6 +352,67 @@ pub fn free_page(addr: usize) {
 
 pub fn free_count() -> usize { FREE.load(Ordering::SeqCst) }
 pub fn total_count() -> usize { TOTAL.load(Ordering::SeqCst) }
+
+// Aether Memory Manager (AMM) accounting.
+// PMM remains responsible for physical page ownership; AMM adds a small,
+// global owner-tagged accounting layer without changing the allocator policy.
+#[derive(Clone, Copy)]
+pub enum MemoryOwner {
+    Kernel = 0,
+    Drivers = 1,
+    Graphics = 2,
+    Audio = 3,
+    Services = 4,
+    Applications = 5,
+}
+
+const OWNER_COUNT: usize = 6;
+static OWNER_PAGES: [AtomicUsize; OWNER_COUNT] = [
+    AtomicUsize::new(0),
+    AtomicUsize::new(0),
+    AtomicUsize::new(0),
+    AtomicUsize::new(0),
+    AtomicUsize::new(0),
+    AtomicUsize::new(0),
+];
+
+fn owner_index(owner: MemoryOwner) -> usize {
+    owner as usize
+}
+
+pub fn alloc_page_owned(owner: MemoryOwner) -> Option<usize> {
+    let page = alloc_page();
+    if page.is_some() {
+        OWNER_PAGES[owner_index(MemoryOwner::Kernel)].fetch_sub(1, Ordering::SeqCst);
+        OWNER_PAGES[owner_index(owner)].fetch_add(1, Ordering::SeqCst);
+    }
+    page
+}
+
+pub fn alloc_pages_owned(count: usize, owner: MemoryOwner) -> Option<usize> {
+    let pages = alloc_pages(count);
+    if pages.is_some() {
+        OWNER_PAGES[owner_index(MemoryOwner::Kernel)].fetch_sub(count, Ordering::SeqCst);
+        OWNER_PAGES[owner_index(owner)].fetch_add(count, Ordering::SeqCst);
+    }
+    pages
+}
+
+pub fn free_page_owned(addr: usize, owner: MemoryOwner) {
+    let before = free_count();
+    free_page_raw(addr);
+    if free_count() > before {
+        OWNER_PAGES[owner_index(owner)].fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+pub fn owner_pages(owner: MemoryOwner) -> usize {
+    OWNER_PAGES[owner_index(owner)].load(Ordering::SeqCst)
+}
+
+pub fn owner_bytes(owner: MemoryOwner) -> usize {
+    owner_pages(owner).saturating_mul(PAGE_SIZE)
+}
 
 
 pub fn zero_pages(phys: usize, count: usize) {

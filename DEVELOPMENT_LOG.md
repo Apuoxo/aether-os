@@ -243,3 +243,12 @@ Every significant change should be followed by:
 - Reused the existing desktop real-time clock tick (`LAST_SEC`) instead of adding a new timer subsystem.
 - Memory window now requests a local redraw once per second while visible.
 - Overview continues to read live PMM totals/free pages; subsystem category values remain explicit placeholders until allocation accounting exists.
+
+
+## 2026-09-28 — Aether Memory Manager accounting
+- Added a minimal global AMM accounting layer on top of the existing range-based PMM.
+- PMM remains the physical allocator; AMM tracks allocated pages by owner category.
+- Existing allocation entry points remain behavior-compatible and are accounted as Kernel until subsystem call sites opt into explicit owner tags.
+- Memory GUI component cards now read AMM counters instead of displaying fixed placeholder sizes.
+- No VMM, paging policy, heap, audio, graphics, or storage behavior was changed.
+- Next step: migrate selected subsystem allocations to explicit owner tags, then add real application/process accounting.

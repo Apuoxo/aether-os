@@ -2392,28 +2392,42 @@ fn draw_window(idx: usize) {
                 draw_u32(wx + 18, wy + 166, pct as u32, 0x001F4E79);
                 graphics::draw_str(wx + 42, wy + 166, "% used", COL_TEXT_DIM);
 
-                // Six clean component cards. Values are placeholders by design.
-                let cards: [(&str, &str, &str); 6] = [
-                    ("KERNEL", "128 MB", "PLACEHOLDER"),
-                    ("DRIVERS", "256 MB", "PLACEHOLDER"),
-                    ("GRAPHICS", "384 MB", "PLACEHOLDER"),
-                    ("AUDIO", "32 MB", "PLACEHOLDER"),
-                    ("SERVICES", "640 MB", "PLACEHOLDER"),
-                    ("APPLICATIONS", "—", "PLACEHOLDER"),
+                // Component accounting is now sourced from AMM. Existing
+                // allocations default to Kernel until their subsystem call site
+                // opts into an explicit owner tag.
+                let owners = [
+                    crate::mm::MemoryOwner::Kernel,
+                    crate::mm::MemoryOwner::Drivers,
+                    crate::mm::MemoryOwner::Graphics,
+                    crate::mm::MemoryOwner::Audio,
+                    crate::mm::MemoryOwner::Services,
+                    crate::mm::MemoryOwner::Applications,
                 ];
+                let labels = ["KERNEL", "DRIVERS", "GRAPHICS", "AUDIO", "SERVICES", "APPLICATIONS"];
                 let mut i = 0usize;
-                while i < cards.len() {
+                while i < owners.len() {
                     let col = i % 3;
                     let row = i / 3;
                     let cx = wx + 18 + col * 194;
                     let cy = wy + 196 + row * 78;
+                    let bytes = crate::mm::owner_bytes(owners[i]);
+                    let mib = (bytes as u64 / (1024 * 1024)) as u32;
+                    let used_pages = crate::mm::owner_pages(owners[i]);
                     graphics::fill_rect(cx, cy, 180, 66, 0x00FFFFFF);
                     graphics::border_rect(cx, cy, 180, 66, 0x00C4CBD3);
-                    graphics::draw_str(cx + 10, cy + 10, cards[i].0, 0x001F4E79);
-                    graphics::draw_str(cx + 10, cy + 28, cards[i].1, COL_TEXT);
-                    graphics::draw_str(cx + 10, cy + 47, cards[i].2, 0x00717D89);
+                    graphics::draw_str(cx + 10, cy + 10, labels[i], 0x001F4E79);
+                    draw_u32(cx + 10, cy + 28, mib, COL_TEXT);
+                    graphics::draw_str(cx + 58, cy + 28, "MB", COL_TEXT_DIM);
+                    if used_pages == 0 {
+                        graphics::draw_str(cx + 10, cy + 47, "NO ALLOCATIONS", 0x00717D89);
+                    } else {
+                        graphics::draw_str(cx + 10, cy + 47, "AMM ACCOUNTED", 0x00008000);
+                    }
                     graphics::fill_rect(cx + 112, cy + 50, 56, 5, 0x00D8DDE3);
-                    graphics::fill_rect(cx + 112, cy + 50, 24, 5, 0x00316AC5);
+                    let fill = if used == 0 { 0 } else {
+                        ((56u64 * bytes as u64) / (used as u64 * 4096)).min(56) as usize
+                    };
+                    graphics::fill_rect(cx + 112, cy + 50, fill, 5, 0x00316AC5);
                     i += 1;
                 }
 
