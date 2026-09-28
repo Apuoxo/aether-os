@@ -97,8 +97,8 @@ static mut WINS: [Window; MAX_WIN] = [
         minimized: false, maximized: false, rx: 80, ry: 40, rw: 520, rh: 360 },
     Window { x: 140, y: 50, w: 420, h: 360, kind: WinKind::SysProps, visible: false, z: 9,
         minimized: false, maximized: false, rx: 140, ry: 50, rw: 420, rh: 360 },
-    Window { x: 120, y: 60, w: 500, h: 360, kind: WinKind::Settings, visible: false, z: 10,
-        minimized: false, maximized: false, rx: 120, ry: 60, rw: 500, rh: 360 },
+    Window { x: 120, y: 50, w: 500, h: 410, kind: WinKind::Settings, visible: false, z: 10,
+        minimized: false, maximized: false, rx: 120, ry: 50, rw: 500, rh: 410 },
     Window { x: 70, y: 70, w: 660, h: 390, kind: WinKind::MediaPlayer, visible: false, z: 11,
         minimized: false, maximized: false, rx: 70, ry: 70, rw: 660, rh: 390 },
     Window { x: 30, y: 275, w: 740, h: 295, kind: WinKind::Keyboard, visible: false, z: 12,
@@ -1330,8 +1330,8 @@ fn handle_mouse_buttons(buttons: u8) {
                         let mut i = 0usize;
                         while i < crate::cursor_builtin::COUNT {
                             let col = i % 6; let row = i / 6;
-                            let bx = sx + 18 + (col as i32) * 78; let by = sy + 96 + (row as i32) * 52;
-                            if mx >= bx && mx < bx + 70 && my >= by && my < by + 46 {
+                            let bx = sx + 18 + (col as i32) * 78; let by = sy + 96 + (row as i32) * 40;
+                            if mx >= bx && mx < bx + 70 && my >= by && my < by + 34 {
                                 CURSOR_PENDING = i as u8; DIRTY_FULL = true; break;
                             }
                             i += 1;
@@ -2085,7 +2085,7 @@ fn draw_settings(wx: usize, wy: usize, ww: usize, wh: usize) {
         if SETTINGS_VIEW == 1 {
             graphics::draw_str(wx + 18, wy + 44, "Mouse", COL_TEXT);
             graphics::draw_str(wx + 18, wy + 62, "Cursor", COL_TEXT_DIM);
-            graphics::border_rect(wx + 14, wy + 76, ww - 28, 270, 0x00808080);
+            graphics::border_rect(wx + 14, wy + 76, ww - 28, 220, 0x00808080);
 
             // 24 native cursor variants: 4 shapes x 6 colors.
             // The click geometry is shared with handle_mouse_buttons().
@@ -2097,14 +2097,14 @@ fn draw_settings(wx: usize, wy: usize, ww: usize, wh: usize) {
                 let col = i % 6;
                 let row = i / 6;
                 let bx = wx + 18 + (col as i32) * 78;
-                let by = wy + 96 + (row as i32) * 52;
+                let by = wy + 96 + (row as i32) * 40;
                 let selected = CURSOR_PENDING == i as u8;
 
                 graphics::fill_rect(
                     bx as usize,
                     by as usize,
                     70,
-                    46,
+                    34,
                     if selected { 0x00DCEBFA } else { 0x00FFFFFF },
                 );
                 graphics::border_rect(
@@ -2119,19 +2119,19 @@ fn draw_settings(wx: usize, wy: usize, ww: usize, wh: usize) {
                 crate::cursor_builtin::draw(
                     i,
                     (bx + 5) as usize,
-                    (by + 4) as usize,
+                    (by + 3) as usize,
                 );
 
                 let shape = shapes[row];
                 let color = colors[col];
-                graphics::draw_str(bx as usize + 25, by as usize + 8, shape, COL_TEXT);
-                graphics::draw_str(bx as usize + 25, by as usize + 23, color, COL_TEXT_DIM);
+                graphics::draw_str(bx as usize + 25, by as usize + 5, shape, COL_TEXT);
+                graphics::draw_str(bx as usize + 25, by as usize + 19, color, COL_TEXT_DIM);
                 i += 1;
             }
 
-            graphics::draw_str(wx + 18, wy + 350, "Selected:", COL_TEXT_DIM);
+            graphics::draw_str(wx + 18, wy + 274, "Selected:", COL_TEXT_DIM);
             let selected_name = crate::cursor_builtin::name(CURSOR_PENDING as usize);
-            graphics::draw_str(wx + 82, wy + 350, selected_name, COL_TEXT);
+            graphics::draw_str(wx + 82, wy + 274, selected_name, COL_TEXT);
 
             let okx = wx + ww - 184;
             let cancelx = wx + ww - 94;
