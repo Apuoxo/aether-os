@@ -1734,7 +1734,7 @@ fn draw_window(idx: usize) {
                     graphics::fill_rect(x as usize,y,w as usize,30,if active{0x00B8D4FF}else{COL_BTN_FACE});
                     graphics::border_rect(x as usize,y,w as usize,30,0x00606060);
                     graphics::draw_str(x as usize+((w as usize).saturating_sub(label.len()*8))/2,y+10,label,COL_TEXT);
-                    x+=w+3;i+=1;}
+                    x+=(w as i32)+3;i+=1;}
             }
             WinKind::About => {
                                 graphics::fill_rect(
