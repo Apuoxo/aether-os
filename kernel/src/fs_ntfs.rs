@@ -676,17 +676,41 @@ fn parse_index_entries(rec: &[u8], mut off: usize, end: usize) -> usize {
             let mut name = [0u8; 48];
             let mut nl = 0usize;
             let mut c = 0usize;
-            while c < nlen && nl < 47 && name_bytes + c * 2 + 1 < off + entry_size {
-                let lo = rec[name_bytes + c * 2];
-                let hi = rec[name_bytes + c * 2 + 1];
-                if hi == 0 && lo >= 32 && lo < 127 {
-                    name[nl] = lo;
-                    nl += 1;
-                } else if hi == 0 && lo == 0 {
-                    break;
+            // NTFS stores file names as UTF-16LE. Preserve Unicode code points
+            // instead of collapsing every non-ASCII character to '?'.
+            while c < nlen && nl < 48 && name_bytes + c * 2 + 1 < off + entry_size {
+                let u = u16::from_le_bytes([
+                    rec[name_bytes + c * 2],
+                    rec[name_bytes + c * 2 + 1],
+                ]);
+                if u == 0 { break; }
+                let mut cp = u as u32;
+                if u >= 0xD800 && u <= 0xDBFF && c + 1 < nlen {
+                    let lo = u16::from_le_bytes([
+                        rec[name_bytes + (c + 1) * 2],
+                        rec[name_bytes + (c + 1) * 2 + 1],
+                    ]);
+                    if lo >= 0xDC00 && lo <= 0xDFFF {
+                        cp = 0x10000 + (((u as u32) - 0xD800) << 10) + ((lo as u32) - 0xDC00);
+                        c += 1;
+                    }
+                }
+                let need = if cp <= 0x7F { 1 } else if cp <= 0x7FF { 2 } else if cp <= 0xFFFF { 3 } else { 4 };
+                if nl + need > 48 { break; }
+                if cp <= 0x7F {
+                    name[nl] = cp as u8; nl += 1;
+                } else if cp <= 0x7FF {
+                    name[nl] = 0xC0 | ((cp >> 6) as u8);
+                    name[nl + 1] = 0x80 | ((cp & 0x3F) as u8); nl += 2;
+                } else if cp <= 0xFFFF {
+                    name[nl] = 0xE0 | ((cp >> 12) as u8);
+                    name[nl + 1] = 0x80 | (((cp >> 6) & 0x3F) as u8);
+                    name[nl + 2] = 0x80 | ((cp & 0x3F) as u8); nl += 3;
                 } else {
-                    name[nl] = b'?';
-                    nl += 1;
+                    name[nl] = 0xF0 | ((cp >> 18) as u8);
+                    name[nl + 1] = 0x80 | (((cp >> 12) & 0x3F) as u8);
+                    name[nl + 2] = 0x80 | (((cp >> 6) & 0x3F) as u8);
+                    name[nl + 3] = 0x80 | ((cp & 0x3F) as u8); nl += 4;
                 }
                 c += 1;
             }

@@ -198,3 +198,10 @@ Every significant change should be followed by:
 - Increased the cyclic PCM DMA ring from 8 to 16 periods (64 KiB), with matching 16-entry BDL, CBL and LVI configuration.
 - MP3 decoding, NTFS routing, Explorer behavior, graphics, and codec setup are unchanged.
 - Acceptance: continuous MP3 playback while opening/clicking Explorer must remain clean.
+
+
+### 2026-09-28 — NTFS Unicode filename preservation
+- Source audit confirmed the NTFS directory parser was converting every non-ASCII UTF-16 filename code unit to '?' before Explorer received it.
+- Replaced that lossy ASCII conversion with bounded UTF-8 encoding, including surrogate-pair handling, while keeping the existing fixed-size NtfsEntry ABI.
+- Explorer, Media Player, filesystem reads, and HDA code were not changed in this step.
+- Acceptance: Cyrillic and other Unicode NTFS filenames must reach the Explorer renderer intact instead of appearing as '?'.
