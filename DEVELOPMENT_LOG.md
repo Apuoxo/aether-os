@@ -232,3 +232,5 @@ Every significant change should be followed by:
 - Keeps non-usable ranges out of the allocator and reserves the Multiboot information block and Multiboot module payloads.
 - Preserves contiguous allocation for existing page users while allowing physical RAM above 4 GiB.
 - Commit requested as `diag: Ram`; CI must pass before further PMM changes or hardware testing.
+
+- Added RAMTEST PMM regression command: alloc_page/write-read/free, alloc_pages(4)/write-read/free, and free-count restoration checks.

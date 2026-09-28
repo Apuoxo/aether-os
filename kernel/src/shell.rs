@@ -832,6 +832,70 @@ fn cmd_video_mode(w: u16, h: u16) {
     write_str(" H="); write_usize(crate::graphics::height()); write_str("\n");
 }
 
+fn cmd_ramtest() {
+    write_str("======== RAM PMM ALLOC TEST ========\\n");
+    let before = crate::mm::free_count();
+    let total = crate::mm::total_count();
+    write_str("BEFORE_FREE="); write_usize(before);
+    write_str(" TOTAL="); write_usize(total); write_str("\\n");
+    let mut ok = true;
+
+    if let Some(p) = crate::mm::alloc_page() {
+        write_str("ALLOC_PAGE=0x"); write_hex(p); write_str("\\n");
+        unsafe {
+            let q = p as *mut u64;
+            *q = 0xA5A5_5A5A_DEAD_BEEFu64;
+            if *q != 0xA5A5_5A5A_DEAD_BEEFu64 { ok = false; }
+            *q = 0x1122_3344_5566_7788u64;
+            if *q != 0x1122_3344_5566_7788u64 { ok = false; }
+        }
+        crate::mm::free_page(p);
+        write_str("FREE_PAGE=RESTORED\\n");
+    } else {
+        write_str("ALLOC_PAGE=FAIL\\n");
+        ok = false;
+    }
+
+    let after_one = crate::mm::free_count();
+    write_str("AFTER_PAGE_FREE="); write_usize(after_one); write_str("\\n");
+    if after_one != before { ok = false; }
+
+    let pages = 4usize;
+    if let Some(p) = crate::mm::alloc_pages(pages) {
+        write_str("ALLOC_PAGES=4 BASE=0x"); write_hex(p); write_str("\\n");
+        unsafe {
+            let mut i = 0usize;
+            while i < pages {
+                let q = (p + i * 4096) as *mut u32;
+                *q = 0xC0DE_0000u32 + i as u32;
+                i += 1;
+            }
+            i = 0;
+            while i < pages {
+                let q = (p + i * 4096) as *const u32;
+                if *q != 0xC0DE_0000u32 + i as u32 { ok = false; }
+                i += 1;
+            }
+        }
+        let mut i = 0usize;
+        while i < pages {
+            crate::mm::free_page(p + i * 4096);
+            i += 1;
+        }
+        write_str("FREE_PAGES=RESTORED\\n");
+    } else {
+        write_str("ALLOC_PAGES=FAIL\\n");
+        ok = false;
+    }
+
+    let after_block = crate::mm::free_count();
+    write_str("AFTER_BLOCK_FREE="); write_usize(after_block); write_str("\\n");
+    if after_block != before { ok = false; }
+    write_str("TOTAL_END="); write_usize(total); write_str(" RESULT=");
+    write_str(if ok { "PASS" } else { "FAIL" });
+    write_str("\\n======== RAM PMM TEST END ========\\n");
+}
+
 fn cmd_ram() {
     write_str("======== RAM MEMORY MAP ========\n");
     write_str("MBI=0x"); write_hex(crate::mm::multiboot_addr()); write_str("\n");
@@ -845,7 +909,7 @@ fn cmd_ram() {
 fn cmd_help() {
     write_str("Aether Terminal - native command interface\n");
     write_str("Core: HELP  CLS  VER  TANSI  SEARCH <text>\n");
-    write_str("Hardware: KMS5  VINFO  V800  V1366  RAM  AUD  AUD2  AUD3  MOUS  USB  WF\n");
+    write_str("Hardware: KMS5  VINFO  V800  V1366  RAM  RAMTEST  AUD  AUD2  AUD3  MOUS  USB  WF\n");
     write_str("Tip: Up/Down recalls command history; arrow keys scroll long output.\n");
 }
 
@@ -885,7 +949,7 @@ fn run_line(line: &[u8], len: usize) {
         cmd_video_mode(1366, 768);
     } else if eq(line, s, clen, b"V800") || eq(line, s, clen, b"v800") {
         cmd_video_mode(800, 600);
-    } else if eq(line, s, clen, b"RAM") || eq(line, s, clen, b"ram") {
+    } else if eq(line, s, clen, b"RAMTEST") || eq(line, s, clen, b"ramtest") {\n        cmd_ramtest();\n    } else if eq(line, s, clen, b"RAM") || eq(line, s, clen, b"ram") {
         cmd_ram();
     } else if eq(line, s, clen, b"WF") || eq(line, s, clen, b"wf") {
         cmd_wf();
