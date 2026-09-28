@@ -834,7 +834,7 @@ fn cmd_video_mode(w: u16, h: u16) {
 
 fn cmd_help() {
     write_str("Aether Terminal — native command interface\n");
-    write_str("Core: HELP  CLS  VER  TANSI\n");
+    write_str("Core: HELP  CLS  VER  TANSI  SEARCH <text>\n");
     write_str("Hardware: KMS5  VINFO  V800  V1366  AUD  AUD2  AUD3  MOUS  USB  WF\n");
     write_str("Tip: Up/Down recalls command history; arrow keys scroll long output.\n");
 }
@@ -865,6 +865,8 @@ fn run_line(line: &[u8], len: usize) {
         cmd_ver();
     } else if eq(line, s, clen, b"TANSI") || eq(line, s, clen, b"tansi") {
         cmd_tansi();
+    else if clen >= 7 && (line[s]==b'S'||line[s]==b's')&&(line[s+1]==b'E'||line[s+1]==b'e')&&(line[s+2]==b'A'||line[s+2]==b'a')&&(line[s+3]==b'R'||line[s+3]==b'r')&&(line[s+4]==b'C'||line[s+4]==b'c')&&(line[s+5]==b'H'||line[s+5]==b'h')&&line[s+6]==b' ' {
+        let mut q=s+7;while q<e&&line[q]==b' '{q+=1;}crate::desktop::terminal_search(&line[q..e]);
     } else if eq(line, s, clen, b"KMS5") || eq(line, s, clen, b"kms5") {
         cmd_kms5();
     } else if eq(line, s, clen, b"VINFO") || eq(line, s, clen, b"vinfo") {
@@ -929,6 +931,8 @@ fn run_line(line: &[u8], len: usize) {
         write_str("Unknown command. Type HELP for commands.\n");
     }
 }
+
+pub fn terminal_search(query:&[u8]) { term_search_set(query,query.len()); }
 
 pub fn run_command_from_gui(line: &[u8], len: usize) {
     unsafe { GUI_OUTPUT = true; }

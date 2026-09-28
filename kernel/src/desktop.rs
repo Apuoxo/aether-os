@@ -169,7 +169,7 @@ static mut WIFI_UI_PASSWORD: [u8; 64] = [0; 64];
 static mut WIFI_UI_STATUS: u8 = 0; // 0=idle, 1=scanning, 2=connected, 3=error
 
 // Terminal buffer
-const TERM_ROWS: usize = 512;
+const TERM_ROWS: usize = 2048;
 const TERM_COLS: usize = 128;
 const TERM_VIEW_ROWS_MAX: usize = 48; // safety cap; actual viewport follows terminal window height
 static mut TERM_LINES: [[u8; TERM_COLS]; TERM_ROWS] = [[0; TERM_COLS]; TERM_ROWS];
@@ -180,6 +180,9 @@ static mut TERM_ANSI_PARAMS: [u16; 4] = [0; 4];
 static mut TERM_ANSI_PARAM_COUNT: usize = 0;
 static mut TERM_ANSI_CURRENT: u8 = 7;
 static mut TERM_ROW: usize = 0;
+static mut TERM_COL: usize = 0;
+static mut TERM_SAVED_ROW: usize = 0;
+static mut TERM_SAVED_COL: usize = 0;
 static mut TERM_VIEW: usize = 0; // 0 = live bottom, larger = scrolled up
 static mut TERM_SCROLL_DRAG: bool = false;
 // Diagnostic output pager: long command output is shown page-by-page so each
@@ -202,6 +205,11 @@ static mut TERM_HISTORY: [[u8; 64]; 16] = [[0; 64]; 16];
 static mut TERM_HISTORY_LEN: [usize; 16] = [0; 16];
 static mut TERM_HISTORY_COUNT: usize = 0;
 static mut TERM_HISTORY_POS: usize = 0;
+static mut TERM_SEARCH: [u8; 64] = [0; 64];
+static mut TERM_SEARCH_LEN: usize = 0;
+static mut TERM_SEARCH_HITS: [u16; 64] = [0; 64];
+static mut TERM_SEARCH_HIT_COUNT: usize = 0;
+static mut TERM_SEARCH_ACTIVE: bool = false;
 
 fn term_selection_bounds() -> (usize, usize, usize, usize) {
     unsafe {
@@ -406,6 +414,12 @@ fn term_clear() {
             r += 1;
         }
         TERM_ROW = 0;
+        TERM_COL = 0;
+        TERM_SAVED_ROW = 0;
+        TERM_SAVED_COL = 0;
+        TERM_SEARCH_LEN = 0;
+        TERM_SEARCH_HIT_COUNT = 0;
+        TERM_SEARCH_ACTIVE = false;
         TERM_VIEW = 0;
         TERM_ANSI_STATE = 0;
         TERM_ANSI_PARAM_COUNT = 0;
@@ -661,7 +675,19 @@ fn term_history_next() {
     }
 }
 
-pub fn terminal_clear() {
+pub fn term_search_set(query:&[u8],len:usize){
+    unsafe{
+        TERM_SEARCH_LEN=len.min(TERM_SEARCH.len());let mut i=0;while i<TERM_SEARCH_LEN{TERM_SEARCH[i]=query[i];i+=1;}
+        TERM_SEARCH_HIT_COUNT=0;TERM_SEARCH_ACTIVE=TERM_SEARCH_LEN>0;if !TERM_SEARCH_ACTIVE{DIRTY_FULL=true;return;}
+        let mut r=0;while r<=TERM_ROW&&r<TERM_ROWS&&TERM_SEARCH_HIT_COUNT<TERM_SEARCH_HITS.len(){let llen=TERM_LEN[r];if llen>=TERM_SEARCH_LEN{let mut c=0;while c+TERM_SEARCH_LEN<=llen&&TERM_SEARCH_HIT_COUNT<TERM_SEARCH_HITS.len(){let mut ok=true;let mut j=0;while j<TERM_SEARCH_LEN{if TERM_LINES[r][c+j].to_ascii_lowercase()!=TERM_SEARCH[j].to_ascii_lowercase(){ok=false;break;}j+=1;}if ok{TERM_SEARCH_HITS[TERM_SEARCH_HIT_COUNT]=r as u16;TERM_SEARCH_HIT_COUNT+=1;}c+=1;}}r+=1;}
+        DIRTY_FULL=true;
+    }
+}
+fn term_search_contains(row:usize,col:usize)->bool{
+    unsafe{if !TERM_SEARCH_ACTIVE||TERM_SEARCH_LEN==0{return false;}let mut c=0;while c+TERM_SEARCH_LEN<=TERM_LEN[row]{let mut ok=true;let mut j=0;while j<TERM_SEARCH_LEN{if TERM_LINES[row][c+j].to_ascii_lowercase()!=TERM_SEARCH[j].to_ascii_lowercase(){ok=false;break;}j+=1;}if ok&&col>=c&&col<c+TERM_SEARCH_LEN{return true;}c+=1;}false}
+}
+
+fn terminal_clear() {
     term_clear();
     unsafe {
         INPUT_LEN = 0;
@@ -684,28 +710,22 @@ fn term_ansi_color(code: u8) -> u32 {
 
 fn term_ansi_apply(final_byte: u8) {
     unsafe {
-        let p0 = if TERM_ANSI_PARAM_COUNT > 0 { TERM_ANSI_PARAMS[0] } else { 0 };
-        if final_byte == b'm' {
-            if TERM_ANSI_PARAM_COUNT == 0 { TERM_ANSI_CURRENT = 7; }
-            let mut i = 0usize;
-            while i < TERM_ANSI_PARAM_COUNT {
-                let p = TERM_ANSI_PARAMS[i];
-                if p == 0 || p == 39 { TERM_ANSI_CURRENT = 7; }
-                else if p == 1 { if TERM_ANSI_CURRENT < 8 { TERM_ANSI_CURRENT += 8; } }
-                else if p >= 30 && p <= 37 { TERM_ANSI_CURRENT = (p - 30) as u8; }
-                else if p >= 90 && p <= 97 { TERM_ANSI_CURRENT = (p - 90 + 8) as u8; }
-                i += 1;
-            }
-        } else if final_byte == b'J' && p0 == 2 {
-            let mut r = 0usize;
-            while r < TERM_ROWS { TERM_LEN[r] = 0; r += 1; }
-            TERM_ROW = 0; TERM_VIEW = 0;
-        } else if final_byte == b'K' {
-            TERM_LEN[TERM_ROW] = 0;
+        let p = |n: usize, default: u16| -> u16 { if TERM_ANSI_PARAM_COUNT > n { TERM_ANSI_PARAMS[n] } else { default } };
+        let p0=p(0,0);
+        match final_byte {
+            b'm' => { if TERM_ANSI_PARAM_COUNT==0 {TERM_ANSI_CURRENT=7;} let mut i=0; while i<TERM_ANSI_PARAM_COUNT {let v=TERM_ANSI_PARAMS[i]; if v==0||v==39{TERM_ANSI_CURRENT=7;}else if v==1{if TERM_ANSI_CURRENT<8{TERM_ANSI_CURRENT+=8;}}else if v>=30&&v<=37{TERM_ANSI_CURRENT=(v-30) as u8;}else if v>=90&&v<=97{TERM_ANSI_CURRENT=(v-90+8) as u8;} i+=1;}}
+            b'A' => {TERM_ROW=TERM_ROW.saturating_sub(p0.max(1) as usize);}
+            b'B' => {TERM_ROW=(TERM_ROW+p0.max(1) as usize).min(TERM_ROWS-1);}
+            b'C' => {TERM_COL=(TERM_COL+p0.max(1) as usize).min(TERM_COLS-1);}
+            b'D' => {TERM_COL=TERM_COL.saturating_sub(p0.max(1) as usize);}
+            b'H'|b'f' => {let row=p(0,1).max(1) as usize;let col=p(1,1).max(1) as usize;TERM_ROW=(row-1).min(TERM_ROWS-1);TERM_COL=(col-1).min(TERM_COLS-1);}
+            b's' => {TERM_SAVED_ROW=TERM_ROW;TERM_SAVED_COL=TERM_COL;}
+            b'u' => {TERM_ROW=TERM_SAVED_ROW.min(TERM_ROWS-1);TERM_COL=TERM_SAVED_COL.min(TERM_COLS-1);}
+            b'J' => {if p0==2 {let mut r=0;while r<TERM_ROWS{TERM_LEN[r]=0;r+=1;}TERM_ROW=0;TERM_COL=0;TERM_VIEW=0;}else if p0==0{let mut c=TERM_COL;while c<TERM_LEN[TERM_ROW]{TERM_LINES[TERM_ROW][c]=0;TERM_COLOR[TERM_ROW][c]=7;c+=1;}TERM_LEN[TERM_ROW]=TERM_COL.min(TERM_COLS);}}
+            b'K' => {if p0==0{let mut c=TERM_COL;while c<TERM_LEN[TERM_ROW]{TERM_LINES[TERM_ROW][c]=0;TERM_COLOR[TERM_ROW][c]=7;c+=1;}TERM_LEN[TERM_ROW]=TERM_COL.min(TERM_COLS);}else if p0==1{let end=TERM_LEN[TERM_ROW];let mut c=0;while c<=TERM_COL&&c<end{TERM_LINES[TERM_ROW][c]=b' ';c+=1;}}else if p0==2{TERM_LEN[TERM_ROW]=0;TERM_COL=0;}}
+            _ => {}
         }
-        TERM_ANSI_STATE = 0;
-        TERM_ANSI_PARAM_COUNT = 0;
-        TERM_ANSI_PARAMS = [0; 4];
+        TERM_ANSI_STATE=0;TERM_ANSI_PARAM_COUNT=0;TERM_ANSI_PARAMS=[0;4];
     }
 }
 
@@ -742,52 +762,17 @@ fn term_ansi_byte(ch: u8) {
 
 fn term_newline() {
     unsafe {
-        if TERM_ROW + 1 < TERM_ROWS {
-            TERM_ROW += 1;
-            TERM_LEN[TERM_ROW] = 0;
-        } else {
-            let mut r = 0usize;
-            while r + 1 < TERM_ROWS {
-                let mut c = 0usize;
-                while c < TERM_COLS {
-                    TERM_LINES[r][c] = TERM_LINES[r + 1][c];
-                    c += 1;
-                }
-                TERM_LEN[r] = TERM_LEN[r + 1];
-                let mut c2 = 0usize;
-                while c2 < TERM_COLS { TERM_COLOR[r][c2] = TERM_COLOR[r + 1][c2]; c2 += 1; }
-                r += 1;
-            }
-            TERM_LEN[TERM_ROWS - 1] = 0;
-            let mut c = 0usize;
-            while c < TERM_COLS {
-                TERM_LINES[TERM_ROWS - 1][c] = 0;
-                TERM_COLOR[TERM_ROWS - 1][c] = TERM_ANSI_CURRENT;
-                c += 1;
-            }
-        }
+        TERM_COL=0;
+        if TERM_ROW+1<TERM_ROWS {TERM_ROW+=1;TERM_LEN[TERM_ROW]=0;} else {let mut r=0;while r+1<TERM_ROWS{let mut c=0;while c<TERM_COLS{TERM_LINES[r][c]=TERM_LINES[r+1][c];TERM_COLOR[r][c]=TERM_COLOR[r+1][c];c+=1;}TERM_LEN[r]=TERM_LEN[r+1];r+=1;}TERM_LEN[TERM_ROWS-1]=0;let mut c=0;while c<TERM_COLS{TERM_LINES[TERM_ROWS-1][c]=0;TERM_COLOR[TERM_ROWS-1][c]=TERM_ANSI_CURRENT;c+=1;}}
     }
 }
-
-fn term_putc(ch: u8) {
+fn term_putc(ch:u8) {
     unsafe {
-        if ch == b'\n' {
-            term_newline();
-            return;
-        }
-        let cols = term_text_cols();
-        if TERM_LEN[TERM_ROW] >= cols {
-            term_newline();
-        }
-        if TERM_LEN[TERM_ROW] < TERM_COLS {
-            let c = TERM_LEN[TERM_ROW];
-            TERM_LINES[TERM_ROW][c] = ch;
-            TERM_COLOR[TERM_ROW][c] = TERM_ANSI_CURRENT;
-            TERM_LEN[TERM_ROW] = c + 1;
-        }
+        if ch==b'\n'{term_newline();return;} if ch==b'\r'{TERM_COL=0;return;} if ch==b'\t'{TERM_COL=(((TERM_COL/8)+1)*8).min(TERM_COLS-1);return;}
+        let cols=term_text_cols().min(TERM_COLS); if TERM_COL>=cols{term_newline();}
+        if TERM_COL<TERM_COLS{let c=TERM_COL;TERM_LINES[TERM_ROW][c]=ch;TERM_COLOR[TERM_ROW][c]=TERM_ANSI_CURRENT;if TERM_LEN[TERM_ROW]<=c{TERM_LEN[TERM_ROW]=c+1;}TERM_COL=c+1;}
     }
 }
-
 
 fn term_write_hex(mut v: usize) {
     if v == 0 {
@@ -2102,6 +2087,9 @@ fn draw_window(idx: usize) {
                                 if term_selection_contains(idx, k) {
                                     graphics::fill_rect(wx + 10 + k * 8, y, 8, 10, 0x0000B7C3);
                                     graphics::draw_char(wx + 10 + k * 8, y, TERM_LINES[idx][k], 0x00FFFFFF);
+                                } else if term_search_contains(idx, k) {
+                                    graphics::fill_rect(wx + 10 + k * 8, y, 8, 10, 0x00FFD966);
+                                    graphics::draw_char(wx + 10 + k * 8, y, TERM_LINES[idx][k], 0x00000000);
                                 } else {
                                     graphics::draw_char(wx + 10 + k * 8, y, TERM_LINES[idx][k], term_ansi_color(TERM_COLOR[idx][k]));
                                 }
