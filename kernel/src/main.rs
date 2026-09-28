@@ -33,7 +33,7 @@ mod shell;
 mod userspace;
 mod elf;
 mod elf_blobs;
-mod drivers { pub mod ps2; pub mod xhci; pub mod ata; pub mod ahci; pub mod pci_usb_diag; pub mod video; pub mod audio; pub mod net; pub mod wifi; }
+mod drivers { pub mod intel_igpu; pub mod ps2; pub mod xhci; pub mod ata; pub mod ahci; pub mod pci_usb_diag; pub mod video; pub mod audio; pub mod net; pub mod wifi; }
 mod personalities {
     pub mod linux;
     pub mod windows;
@@ -223,6 +223,8 @@ pub extern "C" fn kernel_main(mbi: usize) -> ! {
     // discovers/maps the firmware-provided scanout surface; it does not
     // program Intel display registers or touch the known-unsafe GGTT/GSM.
     serial::write_str("\n======== USERSPACE DISPLAY PREP ========\n");
+    drivers::intel_igpu::init();
+
     if fb::init_from_mbi(mbi) {
         serial::write_str("[APP-DISPLAY] framebuffer ready before Ring3\n");
         let _ = drivers::video::init();
