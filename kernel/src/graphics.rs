@@ -9,6 +9,12 @@ pub struct Framebuffer {
     pub software: bool,
 }
 
+const BACKBUFFER_BYTES: usize = 8 * 1024 * 1024;
+
+#[link_section = ".bss"]
+static mut BACKBUFFER: [u8; BACKBUFFER_BYTES] = [0; BACKBUFFER_BYTES];
+static mut BACKBUFFER_ACTIVE: bool = false;
+
 static mut FB: Framebuffer = Framebuffer {
     addr: 0,
     width: 0,
@@ -26,6 +32,7 @@ pub fn init(addr: usize, width: usize, height: usize, pitch: usize, bpp: u8, sof
         FB.pitch = pitch;
         FB.bpp = bpp;
         FB.software = software;
+        BACKBUFFER_ACTIVE = bpp == 32 && pitch.saturating_mul(height) <= BACKBUFFER_BYTES;
     }
 }
 
@@ -49,7 +56,10 @@ pub fn put_pixel(x: usize, y: usize, color: u32) {
         if FB.addr == 0 || x >= FB.width || y >= FB.height {
             return;
         }
-        if FB.bpp == 32 {
+        if BACKBUFFER_ACTIVE && FB.bpp == 32 {
+            let ptr = BACKBUFFER.as_mut_ptr().add(y * FB.pitch + x * 4) as *mut u32;
+            core::ptr::write_unaligned(ptr, color);
+        } else if FB.bpp == 32 {
             let ptr = (FB.addr + y * FB.pitch + x * 4) as *mut u32;
             core::ptr::write_volatile(ptr, color);
         } else if FB.bpp == 24 {
@@ -58,6 +68,19 @@ pub fn put_pixel(x: usize, y: usize, color: u32) {
             *p.add(1) = ((color >> 8) & 0xFF) as u8;
             *p.add(2) = ((color >> 16) & 0xFF) as u8;
         }
+    }
+}
+
+pub fn present() {
+    unsafe {
+        if !BACKBUFFER_ACTIVE || FB.addr == 0 || FB.bpp != 32 {
+            return;
+        }
+        let bytes = FB.pitch.saturating_mul(FB.height);
+        let src = BACKBUFFER.as_ptr();
+        let dst = FB.addr as *mut u8;
+        let _ = crate::drivers::intel_kms::wait_vblank();
+        core::ptr::copy_nonoverlapping(src, dst, bytes);
     }
 }
 
