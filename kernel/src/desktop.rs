@@ -1301,7 +1301,15 @@ fn apply_mouse_delta(dx: i32, dy: i32) {
                 MY - WINS[FOCUS].y - TITLE_H,
             );
         }
-        DIRTY_FULL = true;
+        // Mouse movement must not trigger a full framebuffer repaint while the
+        // terminal is focused. A moving cursor is a cursor-only change; the
+        // previous full repaint here could coincide with keyboard input and
+        // make every typed character visibly flash.
+        if FOCUS < MAX_WIN && WINS[FOCUS].visible && WINS[FOCUS].kind == WinKind::Terminal {
+            DIRTY_CURSOR = true;
+        } else {
+            DIRTY_FULL = true;
+        }
     }
 }
 
