@@ -252,3 +252,9 @@ Every significant change should be followed by:
 - Memory GUI component cards now read AMM counters instead of displaying fixed placeholder sizes.
 - No VMM, paging policy, heap, audio, graphics, or storage behavior was changed.
 - Next step: migrate selected subsystem allocations to explicit owner tags, then add real application/process accounting.
+
+
+## 2026-09-28 — Memory window title controls
+- Hardware test found Memory could not be minimized, closed, or moved.
+- Increased caption hit targets for close/minimize/maximize to tolerate physical mouse positioning; painted controls remain unchanged.
+- No Memory/PMM/AMM logic changed.

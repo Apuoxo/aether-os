@@ -969,17 +969,17 @@ fn in_title(idx: usize, mx: i32, my: i32) -> bool {
 fn in_max(idx: usize, mx: i32, my: i32) -> bool {
     unsafe {
         let w = &WINS[idx];
-        let cx = w.x + w.w - 42;
-        let cy = w.y + 4;
-        mx >= cx && mx < cx + 16 && my >= cy && my < cy + 16
+        let cx = w.x + w.w - 44;
+        let cy = w.y + 2;
+        mx >= cx && mx < cx + 20 && my >= cy && my < cy + 20
     }
 }
 fn in_min(idx: usize, mx: i32, my: i32) -> bool {
     unsafe {
         let w = &WINS[idx];
-        let cx = w.x + w.w - 62;
-        let cy = w.y + 4;
-        mx >= cx && mx < cx + 16 && my >= cy && my < cy + 16
+        let cx = w.x + w.w - 64;
+        let cy = w.y + 2;
+        mx >= cx && mx < cx + 20 && my >= cy && my < cy + 20
     }
 }
 
@@ -1260,9 +1260,9 @@ fn hit_taskbar(mx: i32, my: i32) -> Option<usize> {
 fn in_close(idx: usize, mx: i32, my: i32) -> bool {
     unsafe {
         let w = &WINS[idx];
-        let cx = w.x + w.w - 22;
-        let cy = w.y + 4;
-        mx >= cx && mx < cx + 16 && my >= cy && my < cy + 16
+        let cx = w.x + w.w - 24;
+        let cy = w.y + 2;
+        mx >= cx && mx < cx + 20 && my >= cy && my < cy + 20
     }
 }
 
