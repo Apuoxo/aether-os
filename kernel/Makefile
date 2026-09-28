@@ -57,7 +57,7 @@ $(BUILD_DIR)/calculator.elf: | $(BUILD_DIR)
 $(WALLPAPER): | $(BUILD_DIR)
 	curl -L --fail --retry 5 --retry-delay 2 -A "AetherOS/1.0" "https://upload.wikimedia.org/wikipedia/commons/7/7b/Comeragh_Mountains_Lake.jpg" -o "$(BUILD_DIR)/wallpaper-source.jpg"
 	ffmpeg -hide_banner -loglevel error -i "$(BUILD_DIR)/wallpaper-source.jpg" -vf "scale=1366:768" -pix_fmt rgb565le -f rawvideo -y "$@"
-	test "$(wc -c < "$@")" -eq 2098176
+	test "$$(wc -c < "$(BUILD_DIR)/wallpaper.rgb565")" -eq 2098176
 	rm -f "$(BUILD_DIR)/wallpaper-source.jpg"
 
 $(KERNEL_LIB): $(RUST_SRCS) $(BUILD_DIR)/calculator_blob.rs $(BUILD_DIR)/iwlwifi-2030-6.ucode $(MEDIA_BUNDLE) $(WALLPAPER) | $(BUILD_DIR)
