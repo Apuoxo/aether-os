@@ -1359,6 +1359,8 @@ fn handle_mouse_buttons(buttons: u8) {
             return;
         }
         let prev_left = PREV_MB & 1;
+        let right = buttons & 2;
+        let prev_right = PREV_MB & 2;
         let mx = MX;
         let my = MY;
         FRAME_N = FRAME_N.wrapping_add(1);
@@ -1421,8 +1423,6 @@ fn handle_mouse_buttons(buttons: u8) {
         }
 
                 // Desktop context menu (right-click empty area)
-        let right = buttons & 2;
-        let prev_right = PREV_MB & 2;
         if right != 0 && prev_right == 0 {
             // if click on desktop (not on taskbar, not on window)
             let sh = graphics::height() as i32;
@@ -1471,8 +1471,6 @@ fn handle_mouse_buttons(buttons: u8) {
             }
         }
 // Right-click Files context
-        let right = buttons & 2;
-        let prev_right = PREV_MB & 2;
         if right != 0 && prev_right == 0 {
             if let Some(idx) = hit_test(mx, my) {
                 if WINS[idx].kind == WinKind::Files {
