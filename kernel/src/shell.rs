@@ -832,10 +832,20 @@ fn cmd_video_mode(w: u16, h: u16) {
     write_str(" H="); write_usize(crate::graphics::height()); write_str("\n");
 }
 
+fn cmd_ram() {
+    write_str("======== RAM MEMORY MAP ========\n");
+    write_str("MBI=0x"); write_hex(crate::mm::multiboot_addr()); write_str("\n");
+    write_str("MAP_ENTRIES="); write_usize(crate::mm::memory_map_count()); write_str(" USABLE_RAM="); write_usize(crate::mm::usable_ram_bytes() / (1024 * 1024)); write_str(" MiB\n");
+    write_str("HIGHEST_PHYS=0x"); write_hex(crate::mm::highest_phys_addr()); write_str("\n");
+    write_str("PMM_CONFIGURED=64 MiB (DISCOVERY ONLY)\nRANGES:\n");
+    let n = crate::mm::memory_map_count(); let mut i = 0usize;
+    while i < n { if let Some((base, len, kind)) = crate::mm::memory_range(i) { write_str("#"); write_usize(i); write_str(" B="); write_hex(base as usize); write_str(" L="); write_hex(len as usize); write_str(" T="); if kind == 1 { write_str("USABLE"); } else if kind == 3 { write_str("ACPI"); } else if kind == 4 { write_str("NVS"); } else if kind == 5 { write_str("BAD"); } else { write_str("RESERVED"); } write_str("\n"); } i += 1; }
+    write_str("======== RAM MAP END ========\n");
+}
 fn cmd_help() {
     write_str("Aether Terminal - native command interface\n");
     write_str("Core: HELP  CLS  VER  TANSI  SEARCH <text>\n");
-    write_str("Hardware: KMS5  VINFO  V800  V1366  AUD  AUD2  AUD3  MOUS  USB  WF\n");
+    write_str("Hardware: KMS5  VINFO  V800  V1366  RAM  AUD  AUD2  AUD3  MOUS  USB  WF\n");
     write_str("Tip: Up/Down recalls command history; arrow keys scroll long output.\n");
 }
 
@@ -875,6 +885,8 @@ fn run_line(line: &[u8], len: usize) {
         cmd_video_mode(1366, 768);
     } else if eq(line, s, clen, b"V800") || eq(line, s, clen, b"v800") {
         cmd_video_mode(800, 600);
+    } else if eq(line, s, clen, b"RAM") || eq(line, s, clen, b"ram") {
+        cmd_ram();
     } else if eq(line, s, clen, b"WF") || eq(line, s, clen, b"wf") {
         cmd_wf();
     } else if eq(line, s, clen, b"MOUS") || eq(line, s, clen, b"mous") {

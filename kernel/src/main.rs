@@ -122,6 +122,7 @@ pub extern "C" fn kernel_main(mbi: usize) -> ! {
     // which caused early page allocations to overwrite the kernel itself.
     let kernel_end = unsafe { &__kernel_end as *const u8 as usize };
     let pmm_start = (kernel_end + 0x1F_FFFF) & !0x1F_FFFF;
+    unsafe { mm::discover_multiboot(mbi); }
     serial::write_str("[PMM] kernel_end=");
     serial::write_hex(kernel_end);
     serial::write_str(" start=");

@@ -220,3 +220,8 @@ Every significant change should be followed by:
   5. decouple audio refill/service from the desktop/Explorer polling path so filesystem/UI activity cannot starve PCM playback;
   6. replace the temporary Explorer→Media Player synthetic-path coupling with a proper Open/FileObject/application-association layer.
 - Rule for this sequence: one focused commit at a time, green CI before AH532 testing, and no speculative audio/GUI refactor before the RAM evidence is collected.
+
+
+### 2026-09-28 — Multiboot2 RAM discovery / RAM command
+- Added Multiboot2 memory-map discovery and the RAM terminal diagnostic.
+- PMM remains unchanged at 64 MiB until runtime RAM output is verified on real hardware.

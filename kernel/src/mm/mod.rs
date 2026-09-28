@@ -12,6 +12,53 @@ static TOTAL: AtomicUsize = AtomicUsize::new(0);
 static FREE: AtomicUsize = AtomicUsize::new(0);
 static START_PAGE: AtomicUsize = AtomicUsize::new(0);
 
+const MAX_MEMORY_RANGES: usize = 64;
+static mut MEMORY_RANGES: [(u64, u64, u32); MAX_MEMORY_RANGES] = [(0, 0, 0); MAX_MEMORY_RANGES];
+static MEMORY_RANGE_COUNT: AtomicUsize = AtomicUsize::new(0);
+static USABLE_RAM_BYTES: AtomicUsize = AtomicUsize::new(0);
+static HIGHEST_PHYS_ADDR: AtomicUsize = AtomicUsize::new(0);
+static MBI_ADDR: AtomicUsize = AtomicUsize::new(0);
+
+pub unsafe fn discover_multiboot(mbi: usize) {
+    MBI_ADDR.store(mbi, Ordering::SeqCst);
+    MEMORY_RANGE_COUNT.store(0, Ordering::SeqCst);
+    USABLE_RAM_BYTES.store(0, Ordering::SeqCst);
+    HIGHEST_PHYS_ADDR.store(0, Ordering::SeqCst);
+    if mbi == 0 { return; }
+    let total_size = core::ptr::read_unaligned(mbi as *const u32) as usize;
+    if total_size < 16 { return; }
+    let mut off = 8usize;
+    while off + 8 <= total_size {
+        let tag = (mbi + off) as *const u32;
+        let tag_type = core::ptr::read_unaligned(tag);
+        let tag_size = core::ptr::read_unaligned(tag.add(1)) as usize;
+        if tag_size < 8 || off + tag_size > total_size { break; }
+        if tag_type == 6 && tag_size >= 16 {
+            let entry_size = core::ptr::read_unaligned((mbi + off + 8) as *const u32) as usize;
+            if entry_size >= 24 {
+                let mut p = off + 16;
+                while p + entry_size <= off + tag_size {
+                    let base = core::ptr::read_unaligned((mbi + p) as *const u64);
+                    let len = core::ptr::read_unaligned((mbi + p + 8) as *const u64);
+                    let kind = core::ptr::read_unaligned((mbi + p + 16) as *const u32);
+                    let end = base.saturating_add(len);
+                    if end > HIGHEST_PHYS_ADDR.load(Ordering::SeqCst) as u64 { HIGHEST_PHYS_ADDR.store(end.min(usize::MAX as u64) as usize, Ordering::SeqCst); }
+                    let idx = MEMORY_RANGE_COUNT.load(Ordering::SeqCst);
+                    if idx < MAX_MEMORY_RANGES { MEMORY_RANGES[idx] = (base, len, kind); MEMORY_RANGE_COUNT.store(idx + 1, Ordering::SeqCst); }
+                    if kind == 1 { USABLE_RAM_BYTES.store(USABLE_RAM_BYTES.load(Ordering::SeqCst).saturating_add(len.min(usize::MAX as u64) as usize), Ordering::SeqCst); }
+                    p += entry_size;
+                }
+            }
+        }
+        off = (off + tag_size + 7) & !7;
+    }
+}
+pub fn memory_map_count() -> usize { MEMORY_RANGE_COUNT.load(Ordering::SeqCst) }
+pub fn usable_ram_bytes() -> usize { USABLE_RAM_BYTES.load(Ordering::SeqCst) }
+pub fn highest_phys_addr() -> usize { HIGHEST_PHYS_ADDR.load(Ordering::SeqCst) }
+pub fn multiboot_addr() -> usize { MBI_ADDR.load(Ordering::SeqCst) }
+pub fn memory_range(index: usize) -> Option<(u64, u64, u32)> { if index >= MEMORY_RANGE_COUNT.load(Ordering::SeqCst) || index >= MAX_MEMORY_RANGES { return None; } unsafe { Some(MEMORY_RANGES[index]) } }
+
 pub fn init(start: usize, size: usize) {
     let start_page = start / PAGE_SIZE;
     let count = size / PAGE_SIZE;
