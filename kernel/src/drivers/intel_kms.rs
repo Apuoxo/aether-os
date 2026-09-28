@@ -390,3 +390,7 @@ pub fn modeset_to(w: u16, h: u16) -> bool {
         ok
     }
 }
+
+pub fn ready() -> bool { unsafe { MMIO_READY } }
+pub fn forcewake_ready() -> bool { unsafe { FORCEWAKE_READY } }
+pub fn mmio_base() -> usize { unsafe { MMIO_BASE } }
