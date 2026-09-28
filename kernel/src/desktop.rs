@@ -100,8 +100,8 @@ static mut WINS: [Window; MAX_WIN] = [
         minimized: false, maximized: false, rx: 120, ry: 60, rw: 500, rh: 360 },
     Window { x: 70, y: 70, w: 660, h: 390, kind: WinKind::MediaPlayer, visible: false, z: 11,
         minimized: false, maximized: false, rx: 70, ry: 70, rw: 660, rh: 390 },
-    Window { x: 30, y: 315, w: 740, h: 255, kind: WinKind::Keyboard, visible: false, z: 12,
-        minimized: false, maximized: false, rx: 30, ry: 315, rw: 740, rh: 255 },
+    Window { x: 30, y: 275, w: 740, h: 295, kind: WinKind::Keyboard, visible: false, z: 12,
+        minimized: false, maximized: false, rx: 30, ry: 275, rw: 740, rh: 295 },
 ];
 
 static mut FOCUS: usize = 0; // terminal
