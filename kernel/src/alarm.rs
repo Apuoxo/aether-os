@@ -32,7 +32,7 @@ const CMOS_NMI_BIT:u8=0;
 #[derive(Clone,Copy,PartialEq,Eq)]
 pub struct DateTime{pub year:u16,pub month:u8,pub day:u8,pub hour:u8,pub min:u8,pub sec:u8}
 const DT_ZERO:DateTime=DateTime{year:2026,month:1,day:1,hour:0,min:0,sec:0};
-fn cmos_read(reg:u8)->u8{outb(0x70,CMOS_NMI_BIT|reg);inb(0x71);}
+fn cmos_read(reg:u8)->u8{outb(0x70,CMOS_NMI_BIT|reg);inb(0x71)}
 fn rtc_wait_ready(){let mut spin=0;while cmos_read(0x0A)&0x80!=0&&spin<50_000{spin+=1;}}
 fn rtc_raw()->[u8;6]{[cmos_read(0),cmos_read(2),cmos_read(4),cmos_read(7),cmos_read(8),cmos_read(9)]}
 fn days_in_month(y:u16,m:u8)->u8{match m{2=>if y%4==0&&(y%100!=0||y%400==0){29}else{28},4|6|9|11=>30,_=>31}}
@@ -65,7 +65,7 @@ fn btn_rect(id:u8)->(i32,i32,i32,i32){match id{B_HUP=>(286,136,44,16),B_HDN=>(28
 fn hit_button(lx:i32,ly:i32)->u8{let ringing=unsafe{RING!=NO_RING};let mut id=1;while id<=B_LABEL{let rb=id==B_SNOOZE||id==B_DISMISS;if rb==ringing{let(x,y,w,h)=btn_rect(id);if lx>=x&&lx<x+w&&ly>=y&&ly<y+h{return id;}}id+=1;}0}
 fn r(x:i32,y:i32,w:i32,h:i32,c:u32){if w<=0||h<=0{return;}let(ox,oy)=unsafe{(OX,OY)};gfx_rect((ox+x)as usize,(oy+y)as usize,w as usize,h as usize,c);}
 fn t(x:i32,y:i32,s:&[u8],c:u32){let(ox,oy)=unsafe{(OX,OY)};let mut i=0;while i<s.len(){gfx_char((ox+x+i as i32*8)as usize,(oy+y)as usize,s[i],c);i+=1;}}
-fn lerp(a:u32,b:u32,i:i32,n:i32)->u32{if n<=1{return a;}let mut o=0;let mut sh=16;loop{let ca=((a>>sh)&255)as i32;let cb=((b>>sh)&255)as i32;o|=(ca+(cb-ca)*i/(n-1))as u32<<sh;if sh==0{break;}sh-=8;}o}
+fn lerp(a:u32,b:u32,i:i32,n:i32)->u32{if n<=1{return a;}let mut o=0;let mut sh=16;loop{let ca=((a>>sh)&255)as i32;let cb=((b>>sh)&255)as i32;o|=((ca+(cb-ca)*i/(n-1))as u32)<<sh;if sh==0{break;}sh-=8;}o}
 fn vgrad(x:i32,y:i32,w:i32,h:i32,top:u32,bot:u32){let mut i=0;while i<h{r(x,y+i,w,1,lerp(top,bot,i,h));i+=1;}}
 fn rframe(x:i32,y:i32,w:i32,h:i32,c:u32){r(x+1,y,w-2,1,c);r(x+1,y+h-1,w-2,1,c);r(x,y+1,1,h-2,c);r(x+w-1,y+1,1,h-2,c);}
 fn arrow(cx:i32,cy:i32,up:bool,c:u32){let mut i=0;while i<4{let w=if up{1+i*2}else{7-i*2};r(cx-w/2,cy+i,w,1,c);i+=1;}}
