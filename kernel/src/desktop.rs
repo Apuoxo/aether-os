@@ -1640,6 +1640,21 @@ fn handle_mouse_buttons(buttons: u8) {
             }
         }
 
+        // The on-screen keyboard is a real mouse input source. Its key clicks
+        // must enter the previously focused window through the same terminal
+        // input path as physical keyboard input. Handle key cells before the
+        // generic window/title handlers can consume the click.
+        if left != 0 && prev_left == 0 {
+            let keyboard_focused = FOCUS < MAX_WIN
+                && WINS[FOCUS].visible
+                && WINS[FOCUS].kind == WinKind::Keyboard;
+            if keyboard_focused && handle_keyboard_click(mx, my) {
+                PREV_MB = buttons;
+                MB = buttons;
+                return;
+            }
+        }
+
                 // Desktop context menu (right-click empty area)
         if right != 0 && prev_right == 0 {
             // if click on desktop (not on taskbar, not on window)
