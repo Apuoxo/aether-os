@@ -98,37 +98,38 @@ The rule is:
 
 All reused code must be evaluated for architecture fit, licensing, maintenance cost and hardware/resource ownership.
 
-## 5. Windows Personality — first target
+## 5. Linux Personality — first target
 
-Windows is the first Personality because it gives Aether a concrete end-to-end binary-compatibility milestone.
+Linux is the first executable-compatibility target because Aether already has an ELF64 loader, Ring3/process foundation, VFS storage path and Linux Personality scaffold. The first proof must be a real external Linux ELF loaded from the hard disk.
 
 Initial path:
 
 ```
-real Windows PE
-    -> PE loader
-    -> Windows process/thread model
-    -> NT/Win32 compatibility
-    -> Aether kernel objects/VFS/IPC/graphics
-    -> Aether compositor/input
+real Linux ELF on HDD
+    -> Aether VFS
+    -> Runtime Manager
+    -> Linux Personality
+    -> ELF loader
+    -> Linux syscall ABI
+    -> Aether kernel objects/VFS
 ```
 
-The first acceptance target is a small real Win32 application, not a native Aether imitation.
+The first acceptance target is an unmodified GNU Hello Linux x86_64 ELF stored on a mounted hard-disk filesystem.
 
 Milestones:
 
-1. PE header/parser.
-2. PE section mapping with correct R/W/X permissions.
-3. Relocations.
-4. Import resolution.
-5. Windows process bootstrap.
-6. NTDLL/NT compatibility foundation.
-7. Kernel32-compatible subset.
-8. User32-compatible window/message subset.
-9. GDI-compatible drawing subset.
-10. Aether input -> Windows message translation.
-11. Real Win32 test application.
-12. Resource cleanup and Personality unload.
+1. External ELF format resolution.
+2. VFS path -> image read.
+3. ELF segment mapping with correct R/W/X permissions.
+4. Linux process bootstrap.
+5. Linux write/exit syscall subset.
+6. Process cleanup and Personality release.
+7. Static file-I/O application.
+8. Dynamic ELF/runtime support.
+9. Threads/futex/signals.
+10. Sockets/networking.
+11. Real Linux GUI application.
+12. Large application such as Firefox.
 
 A Windows environment image/WIM/WinPE-style environment may be used as an **Environment Pack** providing DLLs, resources, fonts and other user-space components.
 
@@ -136,24 +137,21 @@ It is an environment source, not a second Windows kernel.
 
 Modern WinUI/Store applications and complex DirectX software are later compatibility targets, not prerequisites for the first proof.
 
-## 6. Linux Personality — second target
+## 6. Windows Personality — second target
 
-Linux Personality follows the stabilization of the common Aether foundations and the first Windows vertical slice.
+Windows Personality follows the first Linux vertical slice and the stabilization of the common executable/process foundations.
 
 Priority areas:
 
-- ELF execution;
-- Linux process/thread semantics;
-- virtual memory;
-- file descriptors;
-- signals;
-- futexes;
-- pipes/IPC;
-- sockets;
-- dynamic linking/runtime;
-- Linux filesystem semantics.
+- PE execution;
+- relocations and imports;
+- NT process/thread semantics;
+- Win32 DLL compatibility;
+- User32/GDI windowing;
+- input/message translation;
+- Windows environment packs.
 
-LKL and other reusable Linux components should be evaluated before implementing large subsystems independently.
+NeptuneOS-style NT compatibility techniques and reusable components should be evaluated before implementing large subsystems independently.
 
 ## 7. Android Personality — third target
 
@@ -232,16 +230,15 @@ Development follows the established Aether rule:
 
 No large speculative Personality implementation should be merged as one unverified change.
 
-The first Windows milestone is considered complete only when a real PE application has:
+The first Linux milestone is considered complete only when a real external ELF application has:
 
-- loaded successfully;
-- created a real Aether-backed process/thread;
-- resolved its required APIs;
-- created a real window;
-- accepted keyboard/mouse input;
-- rendered through the Aether graphics path;
+- been loaded from a mounted hard-disk filesystem;
+- created a real Aether-backed process;
+- executed through the Linux syscall ABI;
+- produced its expected output;
 - exited cleanly;
-- released all resources.
+- released all process resources;
+- released the Linux Personality when its final process exits.
 
 ## 11. Architectural decision
 
