@@ -163,6 +163,7 @@ static mut MEDIA_OPEN_DIALOG: bool = false;
 static mut MEDIA_DIR: [u8; 96] = [0; 96];
 static mut MEDIA_DIR_LEN: usize = 0;
 static mut KEYBOARD_TARGET: usize = 0;
+static mut KEYBOARD_OPEN: bool = false;
 static mut KEYBOARD_SHIFT: bool = false;
 static mut KEYBOARD_CAPS: bool = false;
 static mut KEYBOARD_CTRL: bool = false;
@@ -453,11 +454,16 @@ fn term_text_cols() -> usize {
     }
 }
 
+fn terminal_keyboard_height(w: i32) -> usize {
+    if w >= 1100 { 188 } else if w >= 700 { 168 } else { 150 }
+}
+
 fn term_visible_rows() -> usize {
     unsafe {
         if FOCUS < MAX_WIN && WINS[FOCUS].kind == WinKind::Terminal && WINS[FOCUS].visible {
-            let usable = if WINS[FOCUS].h > TITLE_H + 31 + 22 {
-                (WINS[FOCUS].h - TITLE_H - 31 - 22) as usize
+            let keyboard_h = if KEYBOARD_OPEN { terminal_keyboard_height(WINS[FOCUS].w) as i32 } else { 0 };
+            let usable = if WINS[FOCUS].h > TITLE_H + 31 + 22 + keyboard_h {
+                (WINS[FOCUS].h - TITLE_H - 31 - 22 - keyboard_h) as usize
             } else {
                 1
             };
@@ -1492,6 +1498,7 @@ fn keyboard_key_to_ascii(label:&str,shift:bool,caps:bool)->Option<u8>{
         }}else{c});
     }
     Some(match(c,shift){
+        (96,false)=>96,(96,true)=>126,
         (45,false)=>45,(45,true)=>95,(61,false)=>61,(61,true)=>43,
         (91,false)=>91,(91,true)=>123,(93,false)=>93,(93,true)=>125,
         (59,false)=>59,(59,true)=>58,(39,false)=>39,(39,true)=>34,
@@ -1502,13 +1509,18 @@ fn keyboard_key_to_ascii(label:&str,shift:bool,caps:bool)->Option<u8>{
 
 fn keyboard_emit(label:&str){
     unsafe{
-        let target=KEYBOARD_TARGET;if target>=MAX_WIN||!WINS[target].visible{return;}
+        let target=KEYBOARD_TARGET;
+        if target>=MAX_WIN||!WINS[target].visible||WINS[target].kind!=WinKind::Terminal{return;}
         if label=="SHIFT"{KEYBOARD_SHIFT=!KEYBOARD_SHIFT;DIRTY_FULL=true;return;}
         if label=="CAPS"{KEYBOARD_CAPS=!KEYBOARD_CAPS;DIRTY_FULL=true;return;}
         if label=="CTRL"{KEYBOARD_CTRL=!KEYBOARD_CTRL;DIRTY_FULL=true;return;}
         if label=="ALT"{KEYBOARD_ALT=!KEYBOARD_ALT;DIRTY_FULL=true;return;}
+        if label=="META"{return;}
         let old=FOCUS;FOCUS=target;
-        if label=="ENTER"{handle_key(b'\n');}
+        if label=="GRAVE" {
+            handle_key(if KEYBOARD_SHIFT { 126 } else { 96 });
+            if KEYBOARD_SHIFT { KEYBOARD_SHIFT=false; }
+        } else if label=="ENTER"{handle_key(b'\n');}
         else if label=="BACK"{handle_key(0x08);}
         else if label=="SPACE"{handle_key(b' ');}
         else if label=="ESC"{handle_key(0x1B);}
@@ -1521,19 +1533,128 @@ fn keyboard_emit(label:&str){
         else if label=="END"{let _=handle_special_key(0x4D);}
         else if label=="DEL"{let _=handle_special_key(0x4C);}
         else if label.starts_with('F'){
-            match label {
-                "F1"=>open_win(1), "F2"=>open_win(5), "F3"=>open_win(10),
-                "F4"=>open_win(2), "F5"=>open_win(9), "F6"=>open_win(3),
-                "F7"=>open_win(4), "F8"=>open_win(7), "F9"=>open_win(6),
-                "F10"=>open_win(8), "F11"=>open_win(10), "F12"=>open_win(11),
-                _=>{}
-            }
-        }else if let Some(ch)=keyboard_key_to_ascii(label,KEYBOARD_SHIFT,KEYBOARD_CAPS){
-            handle_key(ch);if KEYBOARD_SHIFT{KEYBOARD_SHIFT=false;}
+        }else if let Some(mut ch)=keyboard_key_to_ascii(label,KEYBOARD_SHIFT,KEYBOARD_CAPS){
+            if KEYBOARD_CTRL && ch>=97 && ch<=122 { ch = ch - 96; }
+            handle_key(ch);
+            if KEYBOARD_SHIFT{KEYBOARD_SHIFT=false;}
         }
-        // Force the terminal input row to repaint immediately while the keyboard remains open.
         DIRTY_FULL=true;
-        FOCUS=old;DIRTY_FULL=true;
+        FOCUS=old;
+    }
+}
+
+fn handle_terminal_keyboard_button(mx:i32,my:i32)->bool{
+    unsafe{
+        if FOCUS>=MAX_WIN||!WINS[FOCUS].visible||WINS[FOCUS].kind!=WinKind::Terminal{return false;}
+        let w=&WINS[FOCUS];
+        let bx=w.x+w.w-84;
+        let by=w.y+TITLE_H+4;
+        if mx>=bx&&mx<bx+30&&my>=by&&my<by+20{
+            KEYBOARD_OPEN=!KEYBOARD_OPEN;
+            KEYBOARD_TARGET=FOCUS;
+            KEYBOARD_SHIFT=false;
+            KEYBOARD_CTRL=false;
+            KEYBOARD_ALT=false;
+            DIRTY_FULL=true;
+            return true;
+        }
+        false
+    }
+}
+
+fn draw_terminal_keyboard(idx:usize){
+    unsafe{
+        if !KEYBOARD_OPEN||idx>=MAX_WIN||!WINS[idx].visible||WINS[idx].kind!=WinKind::Terminal{return;}
+        let w=&WINS[idx];
+        let wx=w.x as usize;
+        let wy=w.y as usize;
+        let ww=w.w.max(220) as usize;
+        let wh=w.h as usize;
+        let kh=terminal_keyboard_height(w.w);
+        let panel_y=wy+wh.saturating_sub(kh);
+        graphics::fill_rect(wx+4,panel_y,ww.saturating_sub(8),kh.saturating_sub(4),0x0021262D);
+        graphics::border_rect(wx+4,panel_y,ww.saturating_sub(8),kh.saturating_sub(4),0x005A6670);
+        graphics::draw_str(wx+12,panel_y+7,"On-screen keyboard",0x00D7E3EA);
+        let rows:[&[&str];6]=[
+            &["ESC","F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"],
+            &["GRAVE","1","2","3","4","5","6","7","8","9","0","-","=","BACK"],
+            &["TAB","q","w","e","r","t","y","u","i","o","p","[","]"],
+            &["CAPS","a","s","d","f","g","h","j","k","l",";","'","ENTER"],
+            &["SHIFT","z","x","c","v","b","n","m",",",".","/","SHIFT","UP"],
+            &["CTRL","ALT","META","SPACE","LEFT","DOWN","RIGHT","HOME","END","DEL"]
+        ];
+        let row_h=((kh.saturating_sub(32))/6).max(18);
+        let gap=3usize;
+        let inner_w=ww.saturating_sub(20);
+        let unit=(inner_w.saturating_sub(12*gap))/13;
+        let mut r=0usize;
+        while r<rows.len(){
+            let mut x=wx+10;
+            let y=panel_y+26+r*row_h;
+            let mut c=0usize;
+            while c<rows[r].len(){
+                let label=rows[r][c];
+                let units=if r==1&&c==13{2}else if r==2&&c==0{2}else if r==3&&c==0{2}else if r==3&&c==12{2}else if r==4&&(c==0||c==11){2}else if r==5&&c==3{4}else{1};
+                let kw=unit*units+gap*(units-1);
+                let active=(label=="SHIFT"&&KEYBOARD_SHIFT)||(label=="CAPS"&&KEYBOARD_CAPS)||(label=="CTRL"&&KEYBOARD_CTRL)||(label=="ALT"&&KEYBOARD_ALT);
+                graphics::fill_rect(x,y,kw,row_h.saturating_sub(3),if active{0x003E9CCB}else{0x00343B43});
+                graphics::border_rect(x,y,kw,row_h.saturating_sub(3),0x007B8790);
+                let short=match label{
+                    "BACK"=>"BACK","ENTER"=>"ENTER","SHIFT"=>"SHIFT","CAPS"=>"CAPS",
+                    "SPACE"=>"SPACE","CTRL"=>"CTRL","ALT"=>"ALT","META"=>"WIN",
+                    "LEFT"=>"<","DOWN"=>"v","RIGHT"=>">","UP"=>"^","HOME"=>"HOME","END"=>"END","DEL"=>"DEL",
+                    "TAB"=>"TAB","ESC"=>"ESC","GRAVE"=>"GR",_=>label
+                };
+                let tw=short.len()*8;
+                if tw<=kw { graphics::draw_str(x+(kw-tw)/2,y+((row_h.saturating_sub(3)).saturating_sub(8))/2,short,0x00F0F3F5); }
+                x+=kw+gap;
+                c+=1;
+            }
+            r+=1;
+        }
+    }
+}
+
+fn handle_terminal_keyboard_click(mx:i32,my:i32)->bool{
+    unsafe{
+        if !KEYBOARD_OPEN||FOCUS>=MAX_WIN||!WINS[FOCUS].visible||WINS[FOCUS].kind!=WinKind::Terminal{return false;}
+        let w=&WINS[FOCUS];
+        let wx=w.x;
+        let wy=w.y;
+        let ww=w.w.max(220);
+        let kh=terminal_keyboard_height(w.w) as i32;
+        let panel_y=wy+w.h-kh;
+        if my<panel_y+26||my>=wy+w.h-4||mx<wx+8||mx>=wx+ww-8{return false;}
+        let rows:[&[&str];6]=[
+            &["ESC","F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"],
+            &["GRAVE","1","2","3","4","5","6","7","8","9","0","-","=","BACK"],
+            &["TAB","q","w","e","r","t","y","u","i","o","p","[","]"],
+            &["CAPS","a","s","d","f","g","h","j","k","l",";","'","ENTER"],
+            &["SHIFT","z","x","c","v","b","n","m",",",".","/","SHIFT","UP"],
+            &["CTRL","ALT","META","SPACE","LEFT","DOWN","RIGHT","HOME","END","DEL"]
+        ];
+        let row_h=((kh as usize-32)/6).max(18);
+        let gap=3i32;
+        let inner_w=(ww as usize).saturating_sub(20);
+        let unit=(inner_w.saturating_sub(12*(gap as usize)))/13;
+        let mut r=0usize;
+        while r<rows.len(){
+            let y=panel_y+26+(r*row_h) as i32;
+            if my>=y&&my<y+row_h as i32-3{
+                let mut x=wx+10;
+                let mut c=0usize;
+                while c<rows[r].len(){
+                    let label=rows[r][c];
+                    let units=if r==1&&c==13{2}else if r==2&&c==0{2}else if r==3&&c==0{2}else if r==3&&c==12{2}else if r==4&&(c==0||c==11){2}else if r==5&&c==3{4}else{1};
+                    let kw=(unit*units+gap as usize*(units-1)) as i32;
+                    if mx>=x&&mx<x+kw{keyboard_emit(label);return true;}
+                    x+=kw+gap;
+                    c+=1;
+                }
+            }
+            r+=1;
+        }
+        false
     }
 }
 
@@ -1647,15 +1768,9 @@ fn handle_mouse_buttons(buttons: u8) {
             }
         }
 
-        // The on-screen keyboard is a real mouse input source. Its key clicks
-        // must enter the previously focused window through the same terminal
-        // input path as physical keyboard input. Handle key cells before the
-        // generic window/title handlers can consume the click.
+        // Integrated terminal keyboard: handle key cells before generic window hit-testing.
         if left != 0 && prev_left == 0 {
-            let keyboard_focused = FOCUS < MAX_WIN
-                && WINS[FOCUS].visible
-                && WINS[FOCUS].kind == WinKind::Keyboard;
-            if keyboard_focused && handle_keyboard_click(mx, my) {
+            if handle_terminal_keyboard_click(mx, my) {
                 PREV_MB = buttons;
                 MB = buttons;
                 return;
@@ -1725,6 +1840,11 @@ fn handle_mouse_buttons(buttons: u8) {
             }
         }
         if left != 0 && prev_left == 0 {
+            if handle_terminal_keyboard_button(mx, my) {
+                PREV_MB = buttons;
+                MB = buttons;
+                return;
+            }
             // Terminal scrollbar gets first refusal on a mouse-down.
             // Do not let generic window dragging/content handlers consume it.
             if handle_terminal_scroll_click(mx, my) {
@@ -1760,9 +1880,8 @@ fn handle_mouse_buttons(buttons: u8) {
                         4 => open_win(9), // Settings
                         5 => open_win(10), // Media Player
                         6 => open_win(5), // Documents -> Files
-                        7 => open_win(11), // On-Screen Keyboard
-                        8 => open_win(12), // Alarm Clock
-                        9 => open_win(99), // Recycle Bin
+                        7 => open_win(12), // Alarm Clock
+                        8 => open_win(99), // Recycle Bin
                         _ => {}
                     }
                 } else if my >= 28 {
@@ -2261,7 +2380,11 @@ fn draw_window(idx: usize) {
                 graphics::fill_rect(wx + 5, body_y + 24, 142, 1, 0x0000B7C3);
                 graphics::draw_str(wx + 14, body_y + 10, "Aether Shell", 0x00F2F2F2);
                 graphics::draw_str(wx + 158, body_y + 10, "+", 0x00A0A8B0);
-                graphics::draw_str(wx + ww - 58, body_y + 10, "LOCAL", 0x007D8791);
+                let kb_x = wx + ww.saturating_sub(84);
+                graphics::fill_rect(kb_x, body_y + 4, 30, 20, if KEYBOARD_OPEN { 0x003E9CCB } else { 0x00282F38 });
+                graphics::border_rect(kb_x, body_y + 4, 30, 20, 0x006A747C);
+                graphics::draw_str(kb_x + 7, body_y + 10, "KB", 0x00F2F2F2);
+                graphics::draw_str(wx + ww.saturating_sub(48), body_y + 10, "LOCAL", 0x007D8791);
                 let total = TERM_ROW + 1;
                 let view_rows = term_visible_rows();
                 let output_rows = view_rows.saturating_sub(1).max(1);
@@ -2336,6 +2459,7 @@ fn draw_window(idx: usize) {
                 graphics::draw_str(wx + 10, footer_y + 5,
                     if TERM_PAGE_MODE { "PAGE MODE  SPACE: NEXT  BACKSPACE: PREVIOUS" } else { "ASCII | UP/DOWN: HISTORY | DRAG: SELECT | RIGHT CLICK: MENU" },
                     if TERM_PAGE_MODE { 0x00FFD24A } else { 0x007D8791 });
+                draw_terminal_keyboard(idx);
             }
             WinKind::MediaPlayer => {
                 let cy = wy + TITLE_H as usize;
@@ -3320,7 +3444,7 @@ fn draw_start_menu() {
     graphics::fill_rect(mx, my, menu_w, 28, 0x00245EDC);
     graphics::draw_str(mx + 12, my + 10, "Aether User", 0x00FFFFFF);
     // items with icons
-    let items: [(IconId, &str, usize); 10] = [
+    let items: [(IconId, &str, usize); 9] = [
         (IconId::Terminal, "Terminal", 0),
         (IconId::Folder, "Files", 5),
         (IconId::MyComputer, "My Computer", 7),
@@ -3328,12 +3452,11 @@ fn draw_start_menu() {
         (IconId::Settings, "Settings", 8),
         (IconId::File, "Media Player", 10),
         (IconId::MyDocuments, "Documents", 5),
-        (IconId::File, "On-Screen Keyboard", 11),
         (IconId::Settings, "Alarm Clock", 12),
         (IconId::RecycleBin, "Recycle Bin", 99),
     ];
     let mut i = 0usize;
-    while i < 10 {
+    while i < 9 {
         let (id, name, _) = items[i];
         let iy = my + 36 + i * 28;
         icon::blit(id, mx + 10, iy, false);
@@ -3364,7 +3487,7 @@ fn hit_start_menu(mx: i32, my: i32) -> Option<usize> {
         return None;
     }
     let idx = (rel / 28) as usize;
-    if idx < 10 {
+    if idx < 9 {
         Some(idx)
     } else {
         None
