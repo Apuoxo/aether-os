@@ -6,6 +6,8 @@ mod mm;
 mod capability;
 mod personality;
 mod pe;
+mod winamp;
+mod winamp_builtin { include!("../build/winamp_blob.rs"); }
 mod process;
 mod sched;
 mod graphics;
@@ -214,6 +216,11 @@ pub extern "C" fn kernel_main(mbi: usize) -> ! {
         serial::write_str("[WIN32] installed /hello.exe\n");
     } else {
         serial::write_str("[WIN32] could not install /hello.exe\n");
+    }
+    if winamp::install() {
+        serial::write_str("[WIN32] installed real Winamp executable /winamp.exe\n");
+    } else {
+        serial::write_str("[WIN32] could not install /winamp.exe\n");
     }
     vga_mark(15, b'D');
     unsafe {

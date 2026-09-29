@@ -6,6 +6,7 @@
 //! added only after the Ring3 process path is independently verified.
 
 static mut HELLO_VALID: bool = false;
+static mut WINAMP_VALID: bool = false;
 
 const fn put16(a: &mut [u8; 1024], p: usize, v: u16) {
     a[p] = v as u8;
@@ -111,4 +112,34 @@ pub fn launch_hello() -> bool {
 
 pub fn hello_valid() -> bool {
     unsafe { HELLO_VALID }
+}
+
+fn validate_pe_machine(path: &str, machine_expected: u16) -> bool {
+    let mut b = [0u8; 512];
+    let n = match crate::fs::read_large(path, &mut b) {
+        Some(n) if n >= 0x90 => n,
+        _ => return false,
+    };
+    if b[0] != b'M' || b[1] != b'Z' { return false; }
+    let pe = read32(&b, 0x3c) as usize;
+    if pe + 24 > n || b[pe] != b'P' || b[pe + 1] != b'E' {
+        return false;
+    }
+    let machine = read16(&b, pe + 4);
+    let sections = read16(&b, pe + 6);
+    let optional = read16(&b, pe + 20);
+    let magic = read16(&b, pe + 24);
+    machine == machine_expected && sections > 0 && optional == if machine_expected == 0x014c { 0xE0 } else { 0xF0 }
+        && magic == if machine_expected == 0x014c { 0x10B } else { 0x20B }
+}
+
+pub fn launch_winamp() -> bool {
+    let ok = validate_pe_machine("/winamp.exe", 0x014c);
+    unsafe { WINAMP_VALID = ok; }
+    if ok {
+        crate::serial::write_str("[WIN32] real Winamp.exe PE32/x86 recognized; safe compatibility window\n");
+    } else {
+        crate::serial::write_str("[WIN32] Winamp.exe PE32/x86 validation FAILED\n");
+    }
+    ok
 }

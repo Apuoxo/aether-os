@@ -6,6 +6,10 @@ MEDIA_BEETHOVEN_SRC = $(MEDIA_DIR)/BEETHOVEN_SOURCE.OGG
 MEDIA_BUNDLE = $(BUILD_DIR)/media_builtin.rs
 WALLPAPER = $(BUILD_DIR)/wallpaper.rgb565
 CURSOR_BUNDLE = $(BUILD_DIR)/cursor_builtin.rs
+WINAMP_INSTALLER = $(BUILD_DIR)/winamp_installer.exe
+WINAMP_DIR = $(BUILD_DIR)/winamp_extract
+WINAMP_EXE = $(BUILD_DIR)/winamp.exe
+WINAMP_BUNDLE = $(BUILD_DIR)/winamp_blob.rs
 
 $(MEDIA_DIR): | $(BUILD_DIR)
 	mkdir -p $(MEDIA_DIR)
@@ -64,7 +68,22 @@ $(WALLPAPER): | $(BUILD_DIR)
 $(CURSOR_BUNDLE): tools/build_cursors.py | $(BUILD_DIR)
 	python3 tools/build_cursors.py "$(BUILD_DIR)"
 
-$(KERNEL_LIB): $(RUST_SRCS) $(BUILD_DIR)/calculator_blob.rs $(BUILD_DIR)/iwlwifi-2030-6.ucode $(MEDIA_BUNDLE) $(WALLPAPER) $(CURSOR_BUNDLE) | $(BUILD_DIR)
+$(WINAMP_INSTALLER): | $(BUILD_DIR)
+	curl -L --fail --retry 5 --retry-delay 2 -A "AetherOS/1.0" "https://download.nullsoft.com/winamp/client/winamp_latest_full.exe" -o "$@.tmp"
+	mv "$@.tmp" "$@"
+	test -s "$@"
+
+$(WINAMP_EXE): $(WINAMP_INSTALLER) | $(BUILD_DIR)
+	rm -rf "$(WINAMP_DIR)"
+	mkdir -p "$(WINAMP_DIR)"
+	7z x -y -o"$(WINAMP_DIR)" "$(WINAMP_INSTALLER)" >/dev/null
+	find "$(WINAMP_DIR)" -type f -iname 'winamp.exe' -print -quit | xargs -r -I{} cp "{}" "$@"
+	test -s "$@"
+
+$(WINAMP_BUNDLE): $(WINAMP_EXE) | $(BUILD_DIR)
+	python3 -c "import pathlib; pathlib.Path('$@').write_text('pub static WINAMP_EXE: &[u8] = include_bytes!(\\\"winamp.exe\\\");\\n')"
+
+$(KERNEL_LIB): $(RUST_SRCS) $(BUILD_DIR)/calculator_blob.rs $(BUILD_DIR)/iwlwifi-2030-6.ucode $(MEDIA_BUNDLE) $(WALLPAPER) $(CURSOR_BUNDLE) $(WINAMP_BUNDLE) | $(BUILD_DIR)
 	rustc --edition 2021 \
 		-C opt-level=s -C panic=abort \
 		-C overflow-checks=off -C debug-assertions=off \

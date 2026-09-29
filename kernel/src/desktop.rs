@@ -43,7 +43,7 @@ const COL_BTN_FACE: u32 = 0x00D4D0C8;
 const COL_MENU_BG: u32 = 0x00FFFFFF;
 const COL_MENU_HDR: u32 = 0x001665CA;
 
-const MAX_WIN: usize = 14;
+const MAX_WIN: usize = 15;
 const TITLE_H: i32 = 26;
 const TASKBAR_H: usize = 30;
 
@@ -63,6 +63,7 @@ enum WinKind {
     Keyboard,
     Alarm,
     HelloExe,
+    WinampExe,
 }
 
 struct Window {
@@ -110,6 +111,8 @@ static mut WINS: [Window; MAX_WIN] = [
         minimized: false, maximized: false, rx: 120, ry: 55, rw: 470, rh: 360 },
     Window { x: 220, y: 120, w: 430, h: 250, kind: WinKind::HelloExe, visible: false, z: 14,
         minimized: false, maximized: false, rx: 220, ry: 120, rw: 430, rh: 250 },
+    Window { x: 300, y: 120, w: 500, h: 300, kind: WinKind::WinampExe, visible: false, z: 15,
+        minimized: false, maximized: false, rx: 300, ry: 120, rw: 500, rh: 300 },
 ];
 
 static mut FOCUS: usize = 0; // terminal
@@ -1057,6 +1060,7 @@ fn win_title(kind: WinKind) -> &'static str {
         WinKind::Keyboard => "On-Screen Keyboard",
         WinKind::Alarm => "Alarm Clock",
         WinKind::HelloExe => "Hello.exe",
+        WinKind::WinampExe => "Winamp.exe",
     }
 }
 
@@ -1145,7 +1149,7 @@ fn draw_desktop_icons() {
     use crate::gui::font;
     use crate::gui::theme;
     // Classic desktop layout: column of icons with labels
-    let items: [(IconId, usize); 8] = [
+    let items: [(IconId, usize); 9] = [
         (IconId::MyComputer, 7),
         (IconId::MyDocuments, 5),
         (IconId::Terminal, 0),
@@ -1154,15 +1158,16 @@ fn draw_desktop_icons() {
         (IconId::RecycleBin, 99),
         (IconId::File, 10),
         (IconId::File, 13), // first Windows PE target
+        (IconId::File, 14), // real third-party Winamp target
     ];
     let mut i = 0usize;
-    while i < 8 {
+    while i < 9 {
         let (id, _slot) = items[i];
-        let x = if i == 7 { 104usize } else { 24usize };
-        let y = if i == 7 { 36usize } else { 36 + i * 72 };
+        let x = if i >= 7 { 104usize + (i - 7) * 80 } else { 24usize };
+        let y = if i >= 7 { 36usize } else { 36 + i * 72 };
         let sel = unsafe { SELECTED_ICON == i };
         icon::blit(id, x, y, sel);
-        let lab = if i == 7 { "Hello.exe" } else { icon::label(id) };
+        let lab = if i == 7 { "Hello.exe" } else if i == 8 { "Winamp.exe" } else { icon::label(id) };
         let tw = lab.len() * 8;
         let lx = if tw < 48 { x + (48 - tw) / 2 } else { x };
         font::draw_shadowed(lx, y + theme::ICON_SIZE + 4, lab, 0x00FFFFFF, 0x00404040);
@@ -1176,6 +1181,9 @@ fn hit_desktop_icon(mx: i32, my: i32) -> Option<usize> {
     // it cannot overlap the taskbar on the 600px AH532 desktop.
     if mx >= 96 && mx < 160 && my >= 36 && my < 100 {
         return Some(7);
+    }
+    if mx >= 176 && mx < 240 && my >= 36 && my < 100 {
+        return Some(8);
     }
     let mut i = 0usize;
     while i < 7 {
@@ -1212,6 +1220,7 @@ fn draw_taskbar_buttons(w: usize, h: usize) {
                     WinKind::Keyboard => "Keyboard",
                     WinKind::Alarm => "Alarm",
                     WinKind::HelloExe => "Hello",
+                    WinKind::WinampExe => "Winamp",
                 };
                 let bw = short.len() * 8 + 20;
                 if x + bw > w.saturating_sub(100) {
@@ -1768,6 +1777,11 @@ fn handle_mouse_buttons(buttons: u8) {
                         7 => {
                             if crate::pe::launch_hello() {
                                 open_win(13);
+                            }
+                        },
+                        8 => {
+                            if crate::winamp::launch() {
+                                open_win(14);
                             }
                         },
                         _ => {}
@@ -2391,6 +2405,16 @@ fn draw_window(idx: usize) {
                 graphics::draw_str(wx + 24, wy + 132, "Entry RVA: 0x1000", 0x00404040);
                 graphics::draw_str(wx + 24, wy + 156, "This is the first safe PE launch.", 0x00404040);
                 graphics::draw_str(wx + 24, wy + 180, "Native code execution comes next.", 0x00800000);
+            }
+            WinKind::WinampExe => {
+                graphics::fill_rect(wx + 3, wy + TITLE_H as usize, ww - 6,
+                    wh - TITLE_H as usize - 3, 0x00F4F4F4);
+                graphics::draw_str(wx + 24, wy + 58, "Winamp 5.9.2", 0x00000000);
+                graphics::draw_str(wx + 24, wy + 84, "Real downloaded Winamp executable", 0x00404040);
+                graphics::draw_str(wx + 24, wy + 110, "PE32 / x86: DETECTED", 0x00008000);
+                graphics::draw_str(wx + 24, wy + 136, "Third-party binary: NOT recreated", 0x00404040);
+                graphics::draw_str(wx + 24, wy + 162, "x86 Win32 execution layer is next.", 0x00800000);
+                graphics::draw_str(wx + 24, wy + 188, "No emulator or Windows OS is used.", 0x00404040);
             }
             WinKind::About => {
                                 graphics::fill_rect(

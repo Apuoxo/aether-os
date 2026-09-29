@@ -223,3 +223,10 @@ Every significant change should be followed by:
 - Added a desktop `Hello.exe` icon and double-click path into the PE compatibility layer.
 - Safety invariant: boot and native Desktop paths are unchanged; the PE milestone validates MZ/PE64 headers and opens an Aether window, but deliberately does not execute foreign machine code yet.
 - Next milestone: connect validated PE images to the already-isolated Ring3 process path, then implement the first minimal Win32 API needed by a real external Windows program.
+
+
+### 2026-09-29 — Real Winamp target
+- The Windows target now downloads the real official Winamp desktop installer during CI and extracts the original `winamp.exe`; Aether does not recreate or rewrite the player.
+- Added a desktop `Winamp.exe` icon and a safe PE32/x86 recognition window.
+- Winamp 5.9.x is a 32-bit Windows application, so this target deliberately exposes the next required runtime boundary: x86 PE + Win32 API execution on x86_64 Aether.
+- Safety invariant: the existing boot/framebuffer/Desktop path remains unchanged; this milestone only packages and recognizes the real third-party executable.
