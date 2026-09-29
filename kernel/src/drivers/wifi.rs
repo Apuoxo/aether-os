@@ -1195,41 +1195,32 @@ fn load_firmware_stage(init: bool) -> bool {
             pos = next;
         }
 
-        // Diagnostic only: independently verify the target SRAM contents after
-        // the FH service DMA reports completion. Linux uses HBUS_TARG_MEM_RADDR
-        // followed by HBUS_TARG_MEM_RDAT for this exact uCode-memory readback.
-        // Do not alter firmware state here; this separates a bad DMA transfer
-        // from a firmware-start/ALIVE problem.
+        // Minimal INIT firmware verification: show only the selected TLV source bytes
+        // and the corresponding target SRAM readback. This is diagnostic-only.
         let read_targ = |addr: u32| -> u32 {
             unsafe {
                 core::ptr::write_volatile((MMIO + HBUS_TARG_MEM_RADDR) as *mut u32, addr);
                 core::ptr::read_volatile((MMIO + HBUS_TARG_MEM_RDAT) as *const u32)
             }
         };
+        let inst_src0 = fw_le32(IWL2030_FW, 96);
+        let inst_src4 = fw_le32(IWL2030_FW, 100);
+        let data_src0 = if size_b >= 4 { fw_le32(IWL2030_FW, 0) } else { 0 };
         let inst0 = read_targ(IWLAGN_RTC_INST_LOWER_BOUND);
         let inst4 = read_targ(IWLAGN_RTC_INST_LOWER_BOUND + 4);
         let data0 = read_targ(IWLAGN_RTC_DATA_LOWER_BOUND);
-        let data4 = read_targ(IWLAGN_RTC_DATA_LOWER_BOUND + 4);
-        let expected_inst0 = fw_le32(IWL2030_FW, 96);
-        let expected_inst4 = fw_le32(IWL2030_FW, 100);
-        let mut verify_ok = true;
-        if inst0 != expected_inst0 || inst4 != expected_inst4 {
-            verify_ok = false;
-        }
-        diag_write_str("[WIFI] FW VERIFY INIT INST0=");
+        diag_write_str("[WIFI] FW VERIFY SRC INST0=");
+        diag_write_hex(inst_src0 as usize);
+        diag_write_str(" INST4=");
+        diag_write_hex(inst_src4 as usize);
+        diag_write_str(" DATA0=");
+        diag_write_hex(data_src0 as usize);
+        diag_write_str(" DST INST0=");
         diag_write_hex(inst0 as usize);
-        diag_write_str(" EXP=");
-        diag_write_hex(expected_inst0 as usize);
         diag_write_str(" INST4=");
         diag_write_hex(inst4 as usize);
-        diag_write_str(" EXP=");
-        diag_write_hex(expected_inst4 as usize);
         diag_write_str(" DATA0=");
         diag_write_hex(data0 as usize);
-        diag_write_str(" DATA4=");
-        diag_write_hex(data4 as usize);
-        diag_write_str(" RESULT=");
-        diag_write_str(if verify_ok { "MATCH" } else { "MISMATCH" });
         diag_write_str("\n");
 
         if !seen_a || !seen_b {
