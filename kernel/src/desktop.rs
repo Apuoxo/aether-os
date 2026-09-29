@@ -3728,6 +3728,14 @@ fn handle_key(ch: u8) {
 }
 
 pub fn run() -> ! {
+    // Use the same guarded mode-application path as the Graphics panel.
+    // Apply the AH532 native panel mode only after the desktop framebuffer is
+    // fully initialized; the previous pre-desktop call caused scanout artifacts.
+    if crate::drivers::video::modeset_to(1366, 768) {
+        serial::write_str("[DESKTOP] startup resolution=1366x768\n");
+    } else {
+        serial::write_str("[DESKTOP] startup resolution restore=FAILED\n");
+    }
     unsafe {
         let sw = graphics::width() as i32;
         let sh = graphics::height() as i32;
