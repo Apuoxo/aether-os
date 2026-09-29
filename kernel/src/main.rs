@@ -195,6 +195,19 @@ pub extern "C" fn kernel_main(mbi: usize) -> ! {
     vga_mark(8, b'U');
     serial::write_str("[OK] USER\n");
 
+    // The IA-32e compatibility probe must be an actual boot-stage call,
+    // not merely a declared/linked entry point. Run it only after the user
+    // code/stack mappings and IDT/GDT/TSS are fully initialized.
+    serial::write_str("[IA32E] compatibility-mode probe START\n");
+    let compat_rc = unsafe { enter_compat_self_test() };
+    if compat_rc == 0xC032 {
+        serial::write_str("[IA32E] compatibility-mode probe PASS\n");
+    } else {
+        serial::write_str("[IA32E] compatibility-mode probe FAIL rc=");
+        serial::write_hex(compat_rc);
+        serial::write_str("\n");
+    }
+
     drivers::ps2::init();
     vga_mark(9, b'Y');
     unsafe {
