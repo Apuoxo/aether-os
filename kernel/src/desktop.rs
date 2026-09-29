@@ -1979,36 +1979,26 @@ fn handle_mouse_buttons(buttons: u8) {
                     let nx = WINS[idx].x;
                     let ny = WINS[idx].y;
                     let nw = WINS[idx].w;
-                    let list_y = ny + TITLE_H + 130;
-                    let button_y = list_y + 166 + 10;
-                    let list_x = nx + 170;
-
-                    // Refresh is a real UI request. It does not fabricate networks:
-                    // the driver must later consume this request and return real scan results.
-                    if mx >= list_x && mx < list_x + 92
-                        && my >= button_y && my < button_y + 26
-                    {
-                        WIFI_UI_SCAN_REQUESTED = true;
-                        WIFI_UI_STATUS = 1;
-                        DIRTY_WINDOW = idx as i16;
-                    }
-                    // Connect only operates on a real selected scan result.
-                    if mx >= list_x + 102 && mx < list_x + 206
-                        && my >= button_y && my < button_y + 26
-                    {
-                        if WIFI_UI_SELECTED >= 0 {
-                            WIFI_UI_CONNECT_DIALOG = true;
-                            WIFI_UI_PASSWORD_LEN = 0;
+                    let nh = WINS[idx].h;
+                    let body_y = ny + TITLE_H;
+                    let lx = nx + 212;
+                    let ly = body_y + 76;
+                    let lh = nh.saturating_sub(TITLE_H + 122);
+                    let by = ly + lh.saturating_sub(38);
+                    if mx >= lx && mx < lx + 112 && my >= by && my < by + 28 {
+                        if crate::drivers::wifi::found()
+                            && crate::drivers::wifi::mmio_ready()
+                            && crate::drivers::wifi::alive_seen()
+                            && crate::drivers::wifi::command_queue_ready()
+                        {
+                            WIFI_UI_SELECTED = -1;
+                            WIFI_UI_SCAN_REQUESTED = true;
+                            WIFI_UI_STATUS = 1;
+                            DIRTY_WINDOW = idx as i16;
+                        } else {
+                            WIFI_UI_STATUS = 3;
                             DIRTY_WINDOW = idx as i16;
                         }
-                    }
-                    // Disconnect is deliberately a no-op until the native association
-                    // backend exists; never pretend that a click disconnected hardware.
-                    if mx >= list_x + 214 && mx < list_x + 308
-                        && my >= button_y && my < button_y + 26
-                    {
-                        WIFI_UI_STATUS = 0;
-                        DIRTY_WINDOW = idx as i16;
                     }
                 } else if WINS[idx].kind == WinKind::MyComputer
                     && my >= WINS[idx].y + TITLE_H
@@ -2609,89 +2599,108 @@ fn draw_window(idx: usize) {
                 graphics::draw_str(wx + 12, wy + 64, "Native kernel UI", COL_TEXT_DIM);
             }
             WinKind::Network => {
-                // Windows 7 Network Connections-inspired surface:
-                // light glass/Aero header, navigation pane, network list,
-                // signal/security glyphs, and action buttons.
-                graphics::fill_rect(wx + 3, wy + TITLE_H as usize, ww - 6, wh - TITLE_H as usize - 3, 0x00F4F7FB);
+                // Native Aether Wi-Fi surface. Values come from the driver;
+                // no SSID, signal or connection state is fabricated.
+                graphics::fill_rect(wx + 3, wy + TITLE_H as usize, ww - 6,
+                    wh - TITLE_H as usize - 3, 0x00F4F7FB);
+                let body_y = wy + TITLE_H as usize;
+                graphics::fill_rect(wx + 3, body_y, ww - 6, 62, 0x00EAF2FB);
+                graphics::fill_rect(wx + 3, body_y + 61, ww - 6, 1, 0x00B7C9DE);
+                graphics::draw_str(wx + 18, body_y + 14, "Wi-Fi", 0x001F4E79);
+                graphics::draw_str(wx + 18, body_y + 34,
+                    "Intel Centrino Wireless-N 2230", 0x00444F5C);
 
-                // Header / task area
-                graphics::fill_rect(wx + 3, wy + TITLE_H as usize, ww - 6, 58, 0x00EAF2FB);
-                graphics::fill_rect(wx + 3, wy + TITLE_H as usize + 57, ww - 6, 1, 0x00B7C9DE);
-                graphics::draw_str(wx + 18, wy + TITLE_H as usize + 13, "Connect to a network", 0x001F4E79);
-                graphics::draw_str(wx + 18, wy + TITLE_H as usize + 31,
-                    "Choose a wireless network to connect to.", 0x00444F5C);
+                let card_x = wx + 14;
+                let card_y = body_y + 76;
+                let card_w = 184usize;
+                let card_h = wh.saturating_sub(TITLE_H as usize + 122);
+                graphics::fill_rect(card_x, card_y, card_w, card_h, 0x00E8EEF5);
+                graphics::border_rect(card_x, card_y, card_w, card_h, 0x00C7D2DF);
+                graphics::draw_str(card_x + 14, card_y + 16, "ADAPTER", 0x00606A73);
 
-                // Left navigation pane
-                graphics::fill_rect(wx + 10, wy + TITLE_H as usize + 68, 142, wh - TITLE_H as usize - 112, 0x00E8EEF5);
-                graphics::border_rect(wx + 10, wy + TITLE_H as usize + 68, 142, wh - TITLE_H as usize - 112, 0x00C7D2DF);
-                graphics::draw_str(wx + 22, wy + TITLE_H as usize + 88, "Network", 0x001F4E79);
-                graphics::draw_str(wx + 22, wy + TITLE_H as usize + 111, "Wireless", 0x00333333);
-                graphics::draw_str(wx + 22, wy + TITLE_H as usize + 132, "Intel 2230", 0x005A6673);
-                graphics::draw_str(wx + 22, wy + TITLE_H as usize + 164, "Network settings", 0x001E5AA8);
-                graphics::draw_str(wx + 22, wy + TITLE_H as usize + 186, "Adapter properties", 0x001E5AA8);
+                let found = crate::drivers::wifi::found();
+                let alive = crate::drivers::wifi::alive_seen();
+                let mmio = crate::drivers::wifi::mmio_ready();
+                let cmdq = crate::drivers::wifi::command_queue_ready();
+                let scan_seen = crate::drivers::wifi::ui_scan_notification_seen();
+                let status = unsafe { WIFI_UI_STATUS };
+                let state_text = if !found { "Not detected" }
+                    else if !mmio { "PCI found / MMIO offline" }
+                    else if !alive { "Firmware not alive" }
+                    else if !cmdq { "Firmware alive / command queue offline" }
+                    else if status == 1 { "Scanning..." }
+                    else if status == 3 { "Scan request failed" }
+                    else if scan_seen { "Scan notifications received" }
+                    else { "Ready" };
+                let state_col = if !found || !mmio { 0x00800000 }
+                    else if !alive || !cmdq { 0x00B06000 }
+                    else if status == 1 { 0x001E5AA8 }
+                    else { 0x00008000 };
+                graphics::draw_str(card_x + 14, card_y + 40, state_text, state_col);
+                graphics::draw_str(card_x + 14, card_y + 70, "PCI", 0x00717D89);
+                graphics::draw_str(card_x + 58, card_y + 70, if found { "8:0.0" } else { "--" }, 0x00333333);
+                graphics::draw_str(card_x + 14, card_y + 90, "MMIO", 0x00717D89);
+                graphics::draw_str(card_x + 58, card_y + 90, if mmio { "READY" } else { "OFFLINE" }, 0x00333333);
+                graphics::draw_str(card_x + 14, card_y + 110, "CMDQ", 0x00717D89);
+                graphics::draw_str(card_x + 58, card_y + 110, if cmdq { "READY" } else { "OFFLINE" }, 0x00333333);
+                graphics::draw_str(card_x + 14, card_y + 130, "RF", 0x00717D89);
+                graphics::draw_str(card_x + 58, card_y + 130, if alive { "ALIVE" } else { "OFFLINE" }, 0x00333333);
 
-                // Adapter summary
-                graphics::draw_str(wx + 174, wy + TITLE_H as usize + 78, "Wireless Network Connection", 0x001F4E79);
-                if crate::drivers::wifi::found() {
-                    graphics::draw_str(wx + 174, wy + TITLE_H as usize + 96, "Intel Centrino Wireless-N 2230", 0x00333333);
-                    graphics::draw_str(wx + 174, wy + TITLE_H as usize + 112, "802.11 b/g/n  |  PCI 8:0.0  |  8086:0887", 0x00606A73);
-                } else {
-                    graphics::draw_str(wx + 174, wy + TITLE_H as usize + 96, "Wireless adapter not detected", 0x00800000);
-                }
-
-                // Network list
-                let lx = wx + 170;
-                let ly = wy + TITLE_H as usize + 130;
-                let lw = ww.saturating_sub(190);
-                let lh = 166usize;
+                let lx = wx + 212;
+                let ly = body_y + 76;
+                let lw = ww.saturating_sub(226);
+                let lh = wh.saturating_sub(TITLE_H as usize + 122);
                 graphics::fill_rect(lx, ly, lw, lh, 0x00FFFFFF);
                 graphics::border_rect(lx, ly, lw, lh, 0x00AAB7C5);
+                graphics::draw_str(lx + 14, ly + 16, "Wireless scan", 0x001F4E79);
 
-                if unsafe { WIFI_UI_STATUS == 1 } {
-                    graphics::draw_str(lx + 16, ly + 20, "Searching for wireless networks...", 0x00444F5C);
-                } else if unsafe { WIFI_UI_STATUS == 3 } {
-                    graphics::draw_str(lx + 16, ly + 20, "Native Wi-Fi scan is not ready.", 0x00800000);
-                    graphics::draw_str(lx + 16, ly + 38, "Run WF once, then press Refresh.", 0x00606A73);
+                let starts = crate::drivers::wifi::ui_scan_start_count();
+                let results = crate::drivers::wifi::ui_scan_results_count();
+                let completes = crate::drivers::wifi::ui_scan_complete_count();
+                let channels = crate::drivers::wifi::ui_scan_complete_channels();
+                let scan_status = crate::drivers::wifi::ui_scan_complete_status();
+                if status == 1 {
+                    graphics::draw_str(lx + 14, ly + 44, "Scanning 2.4 GHz channels 1-11...", 0x001E5AA8);
+                } else if status == 3 {
+                    graphics::draw_str(lx + 14, ly + 44, "The native scan did not complete.", 0x00800000);
+                } else if completes > 0 {
+                    graphics::draw_str(lx + 14, ly + 44, "Scan completed.", 0x00008000);
                 } else {
-                    graphics::draw_str(lx + 16, ly + 20, "No networks scanned yet.", 0x00606A73);
-                    graphics::draw_str(lx + 16, ly + 38, "Click Refresh to perform a native scan.", 0x00606A73);
+                    graphics::draw_str(lx + 14, ly + 44, "No scan has been completed yet.", 0x00606A73);
+                }
+                graphics::draw_str(lx + 14, ly + 72, "Scan starts", 0x00717D89);
+                draw_u32(lx + 110, ly + 72, starts, 0x00333333);
+                graphics::draw_str(lx + 14, ly + 92, "Result notifications", 0x00717D89);
+                draw_u32(lx + 154, ly + 92, results, 0x00333333);
+                graphics::draw_str(lx + 14, ly + 112, "Complete notifications", 0x00717D89);
+                draw_u32(lx + 154, ly + 112, completes, 0x00333333);
+                if completes > 0 {
+                    graphics::draw_str(lx + 14, ly + 140, "Channels reported", 0x00717D89);
+                    draw_u32(lx + 154, ly + 140, channels as u32, 0x00333333);
+                    graphics::draw_str(lx + 14, ly + 160, "Last status", 0x00717D89);
+                    draw_u32(lx + 154, ly + 160, scan_status as u32, 0x00333333);
+                } else {
+                    graphics::draw_str(lx + 14, ly + 140, "SSID list", 0x00717D89);
+                    graphics::draw_str(lx + 14, ly + 158,
+                        "Waiting for decoded 802.11 RX frames.", 0x00717D89);
                 }
 
-                // Selected network row / future real scan data area.
-                graphics::fill_rect(lx + 8, ly + 64, lw - 16, 44, 0x00F3F7FC);
-                graphics::border_rect(lx + 8, ly + 64, lw - 16, 44, 0x00D5DFEA);
-                graphics::draw_str(lx + 20, ly + 75, "SSID", 0x00717D89);
-                graphics::draw_str(lx + 20, ly + 91, "Security and signal information will appear here.", 0x00717D89);
+                let by = ly + lh.saturating_sub(38);
+                let enabled = found && mmio && alive && cmdq;
+                graphics::fill_rect(lx, by, 112, 28, if enabled { 0x00E8F2FA } else { 0x00E0E0E0 });
+                graphics::border_rect(lx, by, 112, 28, if enabled { 0x00316AC5 } else { 0x008A8A8A });
+                graphics::draw_str(lx + 28, by + 10, "Scan now",
+                    if enabled { 0x001E5AA8 } else { 0x00707070 });
+                graphics::draw_str(lx + 128, by + 10,
+                    if enabled { "Native driver" } else { "Driver not ready" }, 0x00717D89);
 
-                // Windows 7-style command buttons
-                let by = ly + lh + 10;
-                graphics::fill_rect(lx, by, 92, 26, 0x00F3F3F3);
-                graphics::border_rect(lx, by, 92, 26, 0x008A8A8A);
-                graphics::draw_str(lx + 22, by + 9, "Refresh", 0x00222222);
-
-                graphics::fill_rect(lx + 102, by, 104, 26, 0x00F3F3F3);
-                graphics::border_rect(lx + 102, by, 104, 26, 0x008A8A8A);
-                graphics::draw_str(lx + 25, by + 9, "Connect", 0x00222222);
-
-                graphics::fill_rect(lx + 214, by, 94, 26, 0x00F3F3F3);
-                graphics::border_rect(lx + 214, by, 94, 26, 0x008A8A8A);
-                graphics::draw_str(lx + 24, by + 9, "Disconnect", 0x00222222);
-
-                // Status bar
                 let sy = wy + wh - 34;
                 graphics::fill_rect(wx + 3, sy, ww - 6, 30, 0x00E8EDF3);
                 graphics::fill_rect(wx + 3, sy, ww - 6, 1, 0x00C0CBD7);
-                let status = unsafe { WIFI_UI_STATUS };
-                if status == 2 {
-                    graphics::draw_str(wx + 18, sy + 10, "Connected", 0x00008000);
-                } else if status == 1 {
-                    graphics::draw_str(wx + 18, sy + 10, "Scanning...", 0x001E5AA8);
-                } else {
-                    graphics::draw_str(wx + 18, sy + 10,
-                        if crate::drivers::wifi::needs_firmware() { "Ready for firmware bring-up" } else { "Adapter ready" },
-                        0x005A6673);
-                }
-                graphics::draw_str(wx + ww - 245, sy + 10, "Aether native Wi-Fi", 0x00717D89);
+                graphics::draw_str(wx + 18, sy + 10,
+                    if alive && cmdq { "Firmware + command transport active" }
+                    else if found { "Adapter detected; transport not ready" }
+                    else { "No Intel 2230 adapter detected" }, 0x005A6673);
             }
             WinKind::Sound => {
                 graphics::fill_rect(wx + 3, wy + TITLE_H as usize, ww - 6, wh - TITLE_H as usize - 3, COL_CLIENT);
@@ -3172,11 +3181,20 @@ fn draw_status_icons_and_clock(w: usize, h: usize) {
     let tray_x = if w > tray_w + 4 { w - tray_w - 4 } else { 4 };
     // background strip
     graphics::fill_rect(tray_x, cy - 1, tray_w, 18, 0x001C4F9C);
-    // Network icon (simple computer+link)
+    // Network icon reflects the real Intel 2230 state; never fake "connected".
     let nx = tray_x + 2;
-    graphics::fill_rect(nx + 2, cy + 3, 8, 6, 0x00C0C0C0);
-    graphics::fill_rect(nx + 3, cy + 4, 6, 4, 0x002060A0);
-    graphics::fill_rect(nx + 10, cy + 5, 4, 2, 0x00FFFFFF);
+    let wifi_found = crate::drivers::wifi::found();
+    let wifi_alive = crate::drivers::wifi::alive_seen();
+    let wifi_scan = unsafe { WIFI_UI_STATUS == 1 };
+    let wifi_col = if wifi_scan { 0x00FFD966 }
+        else if wifi_alive { 0x0047D147 }
+        else if wifi_found { 0x00D0D0D0 }
+        else { 0x00808080 };
+    graphics::fill_rect(nx + 3, cy + 8, 2, 3, wifi_col);
+    graphics::fill_rect(nx + 6, cy + 6, 2, 5, wifi_col);
+    graphics::fill_rect(nx + 9, cy + 4, 2, 7, wifi_col);
+    graphics::fill_rect(nx + 12, cy + 2, 2, 9, wifi_col);
+    graphics::fill_rect(nx + 1, cy + 11, 14, 1, 0x00505050);
     // Volume speaker
     let vx = tray_x + icon_slot + 2;
     graphics::fill_rect(vx + 2, cy + 5, 4, 6, 0x00E0E0E0);

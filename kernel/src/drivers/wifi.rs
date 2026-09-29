@@ -356,6 +356,13 @@ fn scan_start_count() -> u32 { unsafe { SCAN_START_COUNT } }
 fn scan_results_count() -> u32 { unsafe { SCAN_RESULTS_COUNT } }
 fn scan_complete_count() -> u32 { unsafe { SCAN_COMPLETE_COUNT } }
 
+pub fn ui_scan_start_count() -> u32 { unsafe { SCAN_START_COUNT } }
+pub fn ui_scan_results_count() -> u32 { unsafe { SCAN_RESULTS_COUNT } }
+pub fn ui_scan_complete_count() -> u32 { unsafe { SCAN_COMPLETE_COUNT } }
+pub fn ui_scan_complete_channels() -> u8 { unsafe { SCAN_COMPLETE_CHANNELS } }
+pub fn ui_scan_complete_status() -> u8 { unsafe { SCAN_COMPLETE_STATUS } }
+pub fn ui_scan_notification_seen() -> bool { unsafe { SCAN_NOTIFICATION_SEEN } }
+
 pub fn wf_post_scan_diagnostics() {
     unsafe {
         if !MMIO_MAPPED || MMIO == 0 {
