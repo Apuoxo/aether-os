@@ -200,3 +200,11 @@ Every significant change should be followed by:
 - Corrected stale source-snapshot, build, Wi-Fi, Media Player, video-status, native-app-contract, audit-baseline, vision and roadmap wording.
 - Historical audit material is retained, but current implementation claims are routed through docs/STATUS.md and the current source tree.
 - CI for documentation commit 0bb996ed5ab809ae6c73709262ea964e7c3f3224 includes Aether OS build #699, which was in progress at audit time.
+
+
+### 2026-09-29 — Desktop restoration after Linux runtime integration
+- User reported that build #705 still boots the starter/test screen and does not reach the native Aether Desktop.
+- Source audit of commit 7aa10aacbfcad5adaeb73545d1807a87802cb077 found that the earlier fix only removed `mod runtime;`; it did not remove the boot-time `start_capability_ring3_test()` foreground transition.
+- `kernel_main()` therefore still entered the Ring3 capability test before the desktop block. The desktop was only reachable after that path returned, which is incompatible with the required architecture: Aether Desktop must remain the host and compatibility personalities must launch inside it.
+- Corrective change: defer the Ring3 capability regression during boot and continue directly to the existing native Desktop initialization. The test remains available as an explicit test path rather than a mandatory boot stage.
+- Required validation: one green GitHub Actions build, then AH532 boot verification that the normal Aether Desktop appears before any Linux-personality work is resumed.

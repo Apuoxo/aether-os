@@ -249,10 +249,10 @@ pub extern "C" fn kernel_main(mbi: usize) -> ! {
     } else {
         serial::write_str("[INIT] Calculator ELF not bundled\n");
     }
-    serial::write_str("[CAP-RING3] starting real allow/deny regression\\n");
-    if !arch::x86_64::handlers::start_capability_ring3_test() {
-        serial::write_str("[CAP-RING3] launch failed; continuing normal boot\\n");
-    }
+    // Capability Ring3 regression remains available as an explicit test, but it
+    // must never be a foreground boot stage. Aether Desktop is the host UI and
+    // must start directly after framebuffer/storage initialization.
+    serial::write_str("[CAP-RING3] boot test deferred; starting native desktop\\n");
 
     // If enter_user returned (should not) or load failed:
     vga_mark(16, b'G');
