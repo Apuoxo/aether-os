@@ -218,6 +218,8 @@ const CSR_RESET: usize = 0x020;
 const CSR_RESET_SW_RESET: u32 = 0x0000_0080;
 const CSR_GP_CNTRL: usize = 0x024;
 const CSR_GP_CNTRL_INIT_DONE: u32 = 0x0000_0004;
+const CSR_GP_CNTRL_MAC_ACCESS_REQ: u32 = 0x0000_0008;
+const CSR_GP_CNTRL_GOING_TO_SLEEP: u32 = 0x0000_0010;
 const CSR_GP_CNTRL_MAC_CLOCK_READY: u32 = 0x0000_0001;
 
 static mut ACTIVATE_ATTEMPTED: bool = false;
@@ -1113,6 +1115,31 @@ fn load_firmware_stage(init: bool) -> bool {
                 core::ptr::write_volatile((dma_phys as *mut u8).add(i), src[i]);
                 i += 1;
             }
+            // Linux iwlwifi grabs NIC access before touching the internal
+            // service-DMA engine. CSR registers remain accessible without it,
+            // but FH SRAM/DMA resources require the MAC to stay awake.
+            let gp = (MMIO + CSR_GP_CNTRL) as *mut u32;
+            let gp_before = core::ptr::read_volatile(gp);
+            core::ptr::write_volatile(gp, gp_before | CSR_GP_CNTRL_MAC_ACCESS_REQ);
+            let mut gp_ready = gp_before | CSR_GP_CNTRL_MAC_ACCESS_REQ;
+            let mut gp_poll = 0usize;
+            while gp_poll < 50_000_000 {
+                gp_ready = core::ptr::read_volatile(gp);
+                if (gp_ready & CSR_GP_CNTRL_MAC_CLOCK_READY) != 0 &&
+                   (gp_ready & CSR_GP_CNTRL_GOING_TO_SLEEP) == 0 { break; }
+                core::hint::spin_loop();
+                gp_poll += 1;
+            }
+            if (gp_ready & CSR_GP_CNTRL_MAC_CLOCK_READY) == 0 ||
+               (gp_ready & CSR_GP_CNTRL_GOING_TO_SLEEP) != 0 {
+                diag_write_str("[WIFI] FW DMA MAC_ACCESS=FAILED GP=");
+                diag_write_hex(gp_ready as usize);
+                diag_write_str("\n");
+                return false;
+            }
+            diag_write_str("[WIFI] FW DMA MAC_ACCESS=READY GP=");
+            diag_write_hex(gp_ready as usize);
+            diag_write_str("\n");
             core::ptr::write_volatile((MMIO + CSR_INT_MASK) as *mut u32, CSR_INT_BIT_FH_TX);
             core::ptr::write_volatile((MMIO + CSR_FH_INT_STATUS) as *mut u32, CSR_FH_INT_TX_MASK);
             core::ptr::write_volatile((MMIO + CSR_INT) as *mut u32, CSR_INT_BIT_FH_TX);
@@ -1131,11 +1158,21 @@ fn load_firmware_stage(init: bool) -> bool {
                 if (inta & CSR_INT_BIT_FH_TX) != 0 {
                     core::ptr::write_volatile((MMIO + CSR_FH_INT_STATUS) as *mut u32, CSR_FH_INT_TX_MASK);
                     core::ptr::write_volatile((MMIO + CSR_INT) as *mut u32, CSR_INT_BIT_FH_TX);
+                    let gp_release = core::ptr::read_volatile(gp);
+                    core::ptr::write_volatile(gp, gp_release & !CSR_GP_CNTRL_MAC_ACCESS_REQ);
+                    diag_write_str("[WIFI] FW DMA COMPLETE GP_RELEASE=");
+                    diag_write_hex(gp_release as usize);
+                    diag_write_str("\n");
                     return true;
                 }
                 core::hint::spin_loop();
                 n += 1;
             }
+            let gp_release = core::ptr::read_volatile(gp);
+            core::ptr::write_volatile(gp, gp_release & !CSR_GP_CNTRL_MAC_ACCESS_REQ);
+            diag_write_str("[WIFI] FW DMA TIMEOUT GP_RELEASE=");
+            diag_write_hex(gp_release as usize);
+            diag_write_str("\n");
             false
         };
 
