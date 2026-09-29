@@ -1115,6 +1115,22 @@ fn load_firmware_stage(init: bool) -> bool {
                 core::ptr::write_volatile((dma_phys as *mut u8).add(i), src[i]);
                 i += 1;
             }
+            // Diagnostic snapshot: prove the CPU-visible physical DMA buffer
+            // contains the firmware bytes before the device is started.
+            let dma_src0 = if src.len() >= 4 {
+                core::ptr::read_volatile(dma_phys as *const u32)
+            } else { 0 };
+            let dma_src4 = if src.len() >= 8 {
+                core::ptr::read_volatile((dma_phys + 4) as *const u32)
+            } else { 0 };
+            diag_write_str("[WIFI] FW DMA SRC_PHYS=");
+            diag_write_hex(dma_phys as usize);
+            diag_write_str(" WORD0=");
+            diag_write_hex(dma_src0 as usize);
+            diag_write_str(" WORD4=");
+            diag_write_hex(dma_src4 as usize);
+            diag_write_str("\n");
+
             // Linux iwlwifi grabs NIC access before touching the internal
             // service-DMA engine. CSR registers remain accessible without it,
             // but FH SRAM/DMA resources require the MAC to stay awake.
@@ -1152,6 +1168,21 @@ fn load_firmware_stage(init: bool) -> bool {
                 FH_TCSR_TB_NUM | FH_TCSR_TB_IDX | FH_TCSR_TFDB_VALID);
             core::ptr::write_volatile((MMIO + FH_TCSR_CONFIG_SRVC) as *mut u32,
                 FH_TCSR_DMA_ENABLE | FH_TCSR_CIRQ_HOST_ENDTFD);
+
+            // Diagnostic snapshot: capture the exact service-DMA programming
+            // that the hardware sees. No register values are changed here.
+            diag_write_str("[WIFI] FW DMA ARMED SRAM=");
+            diag_write_hex(core::ptr::read_volatile((MMIO + FH_SRVC_SRAM_ADDR) as *const u32) as usize);
+            diag_write_str(" CTRL0=");
+            diag_write_hex(core::ptr::read_volatile((MMIO + FH_TFDIB_CTRL0_SRVC) as *const u32) as usize);
+            diag_write_str(" CTRL1=");
+            diag_write_hex(core::ptr::read_volatile((MMIO + FH_TFDIB_CTRL1_SRVC) as *const u32) as usize);
+            diag_write_str(" BSTS=");
+            diag_write_hex(core::ptr::read_volatile((MMIO + FH_TCSR_BUF_STS_SRVC) as *const u32) as usize);
+            diag_write_str(" TCSR=");
+            diag_write_hex(core::ptr::read_volatile((MMIO + FH_TCSR_CONFIG_SRVC) as *const u32) as usize);
+            diag_write_str("\n");
+
             let mut n = 0usize;
             while n < 50_000_000 {
                 let inta = core::ptr::read_volatile((MMIO + CSR_INT) as *const u32);
@@ -1162,6 +1193,14 @@ fn load_firmware_stage(init: bool) -> bool {
                     core::ptr::write_volatile(gp, gp_release & !CSR_GP_CNTRL_MAC_ACCESS_REQ);
                     diag_write_str("[WIFI] FW DMA COMPLETE GP_RELEASE=");
                     diag_write_hex(gp_release as usize);
+                    diag_write_str(" CTRL0=");
+                    diag_write_hex(core::ptr::read_volatile((MMIO + FH_TFDIB_CTRL0_SRVC) as *const u32) as usize);
+                    diag_write_str(" CTRL1=");
+                    diag_write_hex(core::ptr::read_volatile((MMIO + FH_TFDIB_CTRL1_SRVC) as *const u32) as usize);
+                    diag_write_str(" BSTS=");
+                    diag_write_hex(core::ptr::read_volatile((MMIO + FH_TCSR_BUF_STS_SRVC) as *const u32) as usize);
+                    diag_write_str(" TCSR=");
+                    diag_write_hex(core::ptr::read_volatile((MMIO + FH_TCSR_CONFIG_SRVC) as *const u32) as usize);
                     diag_write_str("\n");
                     return true;
                 }
