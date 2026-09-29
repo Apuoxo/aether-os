@@ -101,6 +101,9 @@ const FH_SRVC_SRAM_ADDR: usize = FH_MEM_LOWER_BOUND + 0x9C8;
 const FH_MEM_TFDIB_REG1_ADDR_BITSHIFT: u32 = 28;
 const FH_MEM_TB_MAX_LENGTH: usize = 0x0002_0000;
 const FH_TCSR_DMA_ENABLE: u32 = 0x8000_0000;
+// Legacy iwlwifi service-DMA requires credit accounting to be disabled while
+// a firmware section is pushed directly into NIC SRAM.
+const FH_TCSR_DMA_CREDIT_DISABLE: u32 = 0x0000_0004;
 const FH_TCSR_CIRQ_HOST_ENDTFD: u32 = 0x0010_0000;
 const FH_TCSR_TFDB_VALID: u32 = 0x0000_0003;
 const FH_TCSR_TB_NUM: u32 = 1 << 20;
@@ -1184,7 +1187,8 @@ fn load_firmware_stage(init: bool) -> bool {
             core::ptr::write_volatile((MMIO + FH_TCSR_BUF_STS_SRVC) as *mut u32,
                 FH_TCSR_TB_NUM | FH_TCSR_TB_IDX | FH_TCSR_TFDB_VALID);
             core::ptr::write_volatile((MMIO + FH_TCSR_CONFIG_SRVC) as *mut u32,
-                FH_TCSR_DMA_ENABLE | FH_TCSR_CIRQ_HOST_ENDTFD);
+                FH_TCSR_DMA_ENABLE | FH_TCSR_DMA_CREDIT_DISABLE |
+                FH_TCSR_CIRQ_HOST_ENDTFD);
 
             // Diagnostic snapshot: capture the exact service-DMA programming
             // that the hardware sees. No register values are changed here.
