@@ -872,6 +872,24 @@ fn term_putc(ch:u8) {
     }
 }
 
+fn term_write_usize(mut v: usize) {
+    if v == 0 {
+        term_putc(b'0');
+        return;
+    }
+    let mut digits = [0u8; 20];
+    let mut n = 0usize;
+    while v > 0 && n < digits.len() {
+        digits[n] = b'0' + (v % 10) as u8;
+        v /= 10;
+        n += 1;
+    }
+    while n > 0 {
+        n -= 1;
+        term_putc(digits[n]);
+    }
+}
+
 fn term_write_hex(mut v: usize) {
     if v == 0 {
         term_putc(b'0');
@@ -3592,20 +3610,20 @@ pub fn run() -> ! {
     terminal_write(if wd.file_found { "[WINAMP] FILE=FOUND\n" } else { "[WINAMP] FILE=NOT_FOUND\n" });
     terminal_write(if wd.mz_valid { "[WINAMP] MZ=VALID\n" } else { "[WINAMP] MZ=INVALID\n" });
     terminal_write("[WINAMP] HEADER_BYTES=");
-    terminal_write_usize(wd.header_bytes);
+    term_write_usize(wd.header_bytes);
     terminal_write("\n");
     terminal_write(if wd.pe_valid { "[WINAMP] PE=VALID\n" } else { "[WINAMP] PE=INVALID\n" });
     if wd.pe_valid {
         terminal_write("[WINAMP] PE_OFFSET=0x");
-        terminal_write_hex(wd.pe_offset as usize);
+        term_write_hex(wd.pe_offset as usize);
         terminal_write("\n[WINAMP] MACHINE=0x");
-        terminal_write_hex(wd.machine as usize);
+        term_write_hex(wd.machine as usize);
         terminal_write("\n[WINAMP] SECTIONS=");
-        terminal_write_usize(wd.sections as usize);
+        term_write_usize(wd.sections as usize);
         terminal_write("\n[WINAMP] OPTIONAL_SIZE=0x");
-        terminal_write_hex(wd.optional_size as usize);
+        term_write_hex(wd.optional_size as usize);
         terminal_write("\n[WINAMP] OPTIONAL_MAGIC=0x");
-        terminal_write_hex(wd.optional_magic as usize);
+        term_write_hex(wd.optional_magic as usize);
         terminal_write("\n");
     }
     terminal_write(if wd.pe32_x86 {
