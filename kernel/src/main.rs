@@ -5,6 +5,7 @@ mod serial;
 mod mm;
 mod capability;
 mod personality;
+mod pe;
 mod process;
 mod sched;
 mod graphics;
@@ -207,6 +208,13 @@ pub extern "C" fn kernel_main(mbi: usize) -> ! {
     storage_hw_diag::run();
     let _ahci = drivers::ahci::init();
     storage::init();
+    // Install the first external Windows target without changing the boot path.
+    // The desktop remains the next foreground stage exactly as before.
+    if pe::install_hello() {
+        serial::write_str("[WIN32] installed /hello.exe\n");
+    } else {
+        serial::write_str("[WIN32] could not install /hello.exe\n");
+    }
     vga_mark(15, b'D');
     unsafe {
         let msg = if stor_ok {
