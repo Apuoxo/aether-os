@@ -7,6 +7,7 @@ mod capability;
 mod personality;
 mod pe;
 mod winamp;
+mod win32_runtime;
 mod winamp_builtin { include!("../build/winamp_blob.rs"); }
 mod process;
 mod sched;
