@@ -105,7 +105,7 @@ static mut WINS: [Window; MAX_WIN] = [
         minimized: false, maximized: false, rx: 120, ry: 50, rw: 500, rh: 410 },
     Window { x: 70, y: 70, w: 660, h: 390, kind: WinKind::MediaPlayer, visible: false, z: 11,
         minimized: false, maximized: false, rx: 70, ry: 70, rw: 660, rh: 390 },
-    Window { x: 30, y: 275, w: 740, h: 295, kind: WinKind::Keyboard, visible: false, z: 12,
+    Window { x: 525, y: 40, w: 230, h: 145, kind: WinKind::Keyboard, visible: false, z: 12,
         minimized: false, maximized: false, rx: 30, ry: 275, rw: 740, rh: 295 },
     Window { x: 120, y: 55, w: 470, h: 360, kind: WinKind::Alarm, visible: false, z: 13,
         minimized: false, maximized: false, rx: 120, ry: 55, rw: 470, rh: 360 },
@@ -1531,6 +1531,8 @@ fn keyboard_emit(label:&str){
         }else if let Some(ch)=keyboard_key_to_ascii(label,KEYBOARD_SHIFT,KEYBOARD_CAPS){
             handle_key(ch);if KEYBOARD_SHIFT{KEYBOARD_SHIFT=false;}
         }
+        // Force the terminal input row to repaint immediately while the keyboard remains open.
+        DIRTY_FULL=true;
         FOCUS=old;DIRTY_FULL=true;
     }
 }
@@ -1538,7 +1540,7 @@ fn keyboard_emit(label:&str){
 fn handle_keyboard_click(mx:i32,my:i32)->bool{
     unsafe{
         if FOCUS>=MAX_WIN||WINS[FOCUS].kind!=WinKind::Keyboard{return false;}
-        let kx=WINS[FOCUS].x+10;let ky=WINS[FOCUS].y+TITLE_H+42;
+        let kx=WINS[FOCUS].x+5;let ky=WINS[FOCUS].y+TITLE_H+30;
         let rows:[&[&str];5]=[
             &["ESC","F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"],
             &["1","2","3","4","5","6","7","8","9","0","-","=","BACK"],
@@ -1546,18 +1548,23 @@ fn handle_keyboard_click(mx:i32,my:i32)->bool{
             &["CAPS","a","s","d","f","g","h","j","k","l",";","'","ENTER"],
             &["SHIFT","z","x","c","v","b","n","m",",",".","/","UP","DOWN"]
         ];
-        let widths:[i32;13]=[46,50,50,50,50,50,50,50,50,50,50,50,92];
+        let widths:[i32;13]=[15,15,15,15,15,15,15,15,15,15,15,15,28];
         let mut r=0usize;
         while r<rows.len(){
-            let mut x=kx;let y=ky+(r as i32)*36;let mut c=0usize;
+            let mut x=kx;let y=ky+(r as i32)*17;let mut c=0usize;
             while c<rows[r].len(){
-                let w=widths[c];if mx>=x&&mx<x+w&&my>=y&&my<y+30{keyboard_emit(rows[r][c]);return true;}
-                x+=w+3;c+=1;
+                let w=widths[c];
+                if mx>=x&&mx<x+w&&my>=y&&my<y+14{keyboard_emit(rows[r][c]);return true;}
+                x+=w+2;c+=1;
             }r+=1;
         }
-        let y=ky+180;let bottom:[(&str,i32);8]=[("CTRL",66),("ALT",66),("SPACE",270),("LEFT",60),("RIGHT",60),("HOME",60),("END",60),("DEL",60)];
+        let y=ky+85;
+        let bottom:[(&str,i32);8]=[("CTRL",24),("ALT",24),("SPACE",62),("LEFT",20),("RIGHT",20),("HOME",20),("END",20),("DEL",20)];
         let mut x=kx;let mut i=0usize;
-        while i<bottom.len(){let(label,w)=bottom[i];if mx>=x&&mx<x+w&&my>=y&&my<y+30{keyboard_emit(label);return true;}x+=w+3;i+=1;}
+        while i<bottom.len(){let(label,w)=bottom[i];
+            if mx>=x&&mx<x+w&&my>=y&&my<y+14{keyboard_emit(label);return true;}
+            x+=w+2;i+=1;
+        }
         false
     }
 }
@@ -2406,28 +2413,44 @@ fn draw_window(idx: usize) {
                 crate::alarm::alarm_draw(wx as i32 + 3, wy as i32 + TITLE_H);
             }
             WinKind::Keyboard => {
-                let ky=wy+TITLE_H as usize+42;let kx=wx+10;
+                let ky=wy+TITLE_H as usize+30;let kx=wx+5;
                 graphics::fill_rect(wx+3,wy+TITLE_H as usize,ww-6,wh-TITLE_H as usize-3,0x00ECE9D8);
-                graphics::draw_str(wx+14,wy+32,"Click keys to type into the previously focused window",COL_TEXT_DIM);
-                let rows:[&[&str];5]=[&["ESC","F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"],&["1","2","3","4","5","6","7","8","9","0","-","=","BACK"],&["TAB","q","w","e","r","t","y","u","i","o","p","[","]"],&["CAPS","a","s","d","f","g","h","j","k","l",";","'","ENTER"],&["SHIFT","z","x","c","v","b","n","m",",",".","/","UP","DOWN"]];
-                let widths:[i32;13]=[46,50,50,50,50,50,50,50,50,50,50,50,92];
+                graphics::draw_str(wx+8,wy+25,"Terminal keyboard",COL_TEXT_DIM);
+                let rows:[&[&str];5]=[
+                    &["ESC","F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"],
+                    &["1","2","3","4","5","6","7","8","9","0","-","=","BACK"],
+                    &["TAB","q","w","e","r","t","y","u","i","o","p","[","]"],
+                    &["CAPS","a","s","d","f","g","h","j","k","l",";","'","ENTER"],
+                    &["SHIFT","z","x","c","v","b","n","m",",",".","/","UP","DOWN"]
+                ];
+                let widths:[i32;13]=[15,15,15,15,15,15,15,15,15,15,15,15,28];
                 let mut r=0usize;
-                while r<rows.len(){let mut x=kx;let y=ky+r*36;let mut c=0usize;
+                while r<rows.len(){let mut x=kx;let y=ky+r*17;let mut c=0usize;
                     while c<rows[r].len(){let label=rows[r][c];let w=widths[c] as usize;
-                        let active=unsafe{(label=="SHIFT"&&KEYBOARD_SHIFT)||(label=="CAPS"&&KEYBOARD_CAPS)||(label=="CTRL"&&KEYBOARD_CTRL)||(label=="ALT"&&KEYBOARD_ALT)};
-                        graphics::fill_rect(x as usize,y,w,30,if active{0x00B8D4FF}else{COL_BTN_FACE});
-                        graphics::border_rect(x as usize,y,w,30,0x00606060);
-                        graphics::draw_str(x as usize+(w.saturating_sub(label.len()*8))/2,y+10,label,COL_TEXT);
-                        x+=(widths[c] as usize)+3;c+=1;}
+                        let active=unsafe{(label=="SHIFT"&&KEYBOARD_SHIFT)||(label=="CAPS"&&KEYBOARD_CAPS)};
+                        graphics::fill_rect(x as usize,y,w,14,if active{0x00B8D4FF}else{COL_BTN_FACE});
+                        graphics::border_rect(x as usize,y,w,14,0x00606060);
+                        let short=match label {
+                            "BACK"=>"BK","ENTER"=>"EN","SHIFT"=>"SH","CAPS"=>"CA","TAB"=>"T","ESC"=>"E",
+                            "F10"=>"10","F11"=>"11","F12"=>"12","UP"=>"^","DOWN"=>"v",_=>label
+                        };
+                        let tw=short.len()*8;
+                        if tw<=w { graphics::draw_str(x as usize+(w-tw)/2,y+3,short,COL_TEXT); }
+                        else if short.len()==1 { graphics::draw_char(x as usize+3,y+3,short.as_bytes()[0],COL_TEXT); }
+                        x+=(w)+2;c+=1;}
                     r+=1;
                 }
-                let y=ky+180;let bottom:[(&str,i32);8]=[("CTRL",66),("ALT",66),("SPACE",270),("LEFT",60),("RIGHT",60),("HOME",60),("END",60),("DEL",60)];
+                let y=ky+85;
+                let bottom:[(&str,i32);8]=[("CTRL",24),("ALT",24),("SPACE",62),("LEFT",20),("RIGHT",20),("HOME",20),("END",20),("DEL",20)];
                 let mut x=kx;let mut i=0usize;
-                while i<bottom.len(){let(label,w)=bottom[i];let active=unsafe{(label=="CTRL"&&KEYBOARD_CTRL)||(label=="ALT"&&KEYBOARD_ALT)};
-                    graphics::fill_rect(x as usize,y,w as usize,30,if active{0x00B8D4FF}else{COL_BTN_FACE});
-                    graphics::border_rect(x as usize,y,w as usize,30,0x00606060);
-                    graphics::draw_str(x as usize+((w as usize).saturating_sub(label.len()*8))/2,y+10,label,COL_TEXT);
-                    x+=(w as usize)+3;i+=1;}
+                while i<bottom.len(){let(label,w)=bottom[i];
+                    let active=unsafe{(label=="CTRL"&&KEYBOARD_CTRL)||(label=="ALT"&&KEYBOARD_ALT)};
+                    graphics::fill_rect(x as usize,y,w as usize,14,if active{0x00B8D4FF}else{COL_BTN_FACE});
+                    graphics::border_rect(x as usize,y,w as usize,14,0x00606060);
+                    let short=match label {"CTRL"=>"C","ALT"=>"A","SPACE"=>"_","LEFT"=>"<","RIGHT"=>">","HOME"=>"H","END"=>"E","DEL"=>"D",_=>label};
+                    let tw=short.len()*8;
+                    if tw<=w as usize { graphics::draw_str(x as usize+((w as usize-tw)/2),y+3,short,COL_TEXT); }
+                    x+=(w as usize)+2;i+=1;}
             }
             WinKind::HelloExe => {
                 graphics::fill_rect(wx + 3, wy + TITLE_H as usize, ww - 6,
