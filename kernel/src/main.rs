@@ -204,7 +204,7 @@ pub extern "C" fn kernel_main(mbi: usize) -> ! {
         serial::write_str("[IA32E] compatibility-mode probe PASS\n");
     } else {
         serial::write_str("[IA32E] compatibility-mode probe FAIL rc=");
-        serial::write_hex(compat_rc);
+        serial::write_hex(compat_rc as usize);
         serial::write_str("\n");
     }
 
