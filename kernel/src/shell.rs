@@ -875,6 +875,12 @@ fn run_line(line: &[u8], len: usize) {
         cmd_video_mode(1366, 768);
     } else if eq(line, s, clen, b"V800") || eq(line, s, clen, b"v800") {
         cmd_video_mode(800, 600);
+    } else if eq(line, s, clen, b"WINAMP") || eq(line, s, clen, b"winamp") {
+        write_str("======== WINAMP LAUNCH GATE ========\\n");
+        let ok = crate::win32_runtime::launch_winamp("/winamp.exe");
+        write_str("RESULT=");
+        write_str(if ok { "EXECUTION-STARTED" } else { "EXECUTION-BLOCKED" });
+        write_str("\\n======== WINAMP END ========\\n");
     } else if eq(line, s, clen, b"WF") || eq(line, s, clen, b"wf") {
         cmd_wf();
     } else if eq(line, s, clen, b"MOUS") || eq(line, s, clen, b"mous") {
