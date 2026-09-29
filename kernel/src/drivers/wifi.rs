@@ -1106,7 +1106,14 @@ fn load_firmware_stage(init: bool) -> bool {
             }
         };
         let dma_base = dma_phys as u64;
-        let load_chunk = |dst: u32, src: &[u8]| -> bool {
+        // Read back target SRAM immediately after each completed DMA chunk.
+        // This keeps source, descriptor programming, and destination evidence
+        // tied to the same transfer instead of inspecting only the final chunk.
+        let read_targ = |addr: u32| -> u32 {
+            core::ptr::write_volatile((MMIO + HBUS_TARG_MEM_RADDR) as *mut u32, addr);
+            core::ptr::read_volatile((MMIO + HBUS_TARG_MEM_RDAT) as *const u32)
+        };
+        let load_chunk = |chunk_no: usize, dst: u32, src: &[u8]| -> bool {
             if src.is_empty() || src.len() > FH_MEM_TB_MAX_LENGTH || (src.len() & 3) != 0 {
                 return false;
             }
@@ -1123,11 +1130,21 @@ fn load_firmware_stage(init: bool) -> bool {
             let dma_src4 = if src.len() >= 8 {
                 core::ptr::read_volatile((dma_phys + 4) as *const u32)
             } else { 0 };
-            diag_write_str("[WIFI] FW DMA SRC_PHYS=");
+            diag_write_str("[WIFI] FW DMA CHUNK=");
+            diag_write_usize(chunk_no);
+            diag_write_str(" DST=");
+            diag_write_hex(dst as usize);
+            diag_write_str(" LEN=");
+            diag_write_usize(src.len());
+            diag_write_str(" SRC0=");
+            diag_write_hex(fw_le32(src, 0) as usize);
+            diag_write_str(" SRC4=");
+            diag_write_hex(if src.len() >= 8 { fw_le32(src, 4) } else { 0 } as usize);
+            diag_write_str(" DMA_PHYS=");
             diag_write_hex(dma_phys as usize);
-            diag_write_str(" WORD0=");
+            diag_write_str(" DMA0=");
             diag_write_hex(dma_src0 as usize);
-            diag_write_str(" WORD4=");
+            diag_write_str(" DMA4=");
             diag_write_hex(dma_src4 as usize);
             diag_write_str("\n");
 
@@ -1191,7 +1208,9 @@ fn load_firmware_stage(init: bool) -> bool {
                     core::ptr::write_volatile((MMIO + CSR_INT) as *mut u32, CSR_INT_BIT_FH_TX);
                     let gp_release = core::ptr::read_volatile(gp);
                     core::ptr::write_volatile(gp, gp_release & !CSR_GP_CNTRL_MAC_ACCESS_REQ);
-                    diag_write_str("[WIFI] FW DMA COMPLETE GP_RELEASE=");
+                    diag_write_str("[WIFI] FW DMA COMPLETE CHUNK=");
+                    diag_write_usize(chunk_no);
+                    diag_write_str(" GP_RELEASE=");
                     diag_write_hex(gp_release as usize);
                     diag_write_str(" CTRL0=");
                     diag_write_hex(core::ptr::read_volatile((MMIO + FH_TFDIB_CTRL0_SRVC) as *const u32) as usize);
@@ -1201,6 +1220,10 @@ fn load_firmware_stage(init: bool) -> bool {
                     diag_write_hex(core::ptr::read_volatile((MMIO + FH_TCSR_BUF_STS_SRVC) as *const u32) as usize);
                     diag_write_str(" TCSR=");
                     diag_write_hex(core::ptr::read_volatile((MMIO + FH_TCSR_CONFIG_SRVC) as *const u32) as usize);
+                    diag_write_str(" DST0=");
+                    diag_write_hex(read_targ(dst) as usize);
+                    diag_write_str(" DST4=");
+                    diag_write_hex(if src.len() >= 8 { read_targ(dst + 4) } else { 0 } as usize);
                     diag_write_str("\n");
                     return true;
                 }
@@ -1263,7 +1286,7 @@ fn load_firmware_stage(init: bool) -> bool {
                     let remaining = tlv_len - off;
                     let mut chunk = core::cmp::min(FH_MEM_TB_MAX_LENGTH, remaining) & !3usize;
                     if chunk == 0 { return false; }
-                    if !load_chunk(dst + off as u32,
+                    if !load_chunk(off / FH_MEM_TB_MAX_LENGTH, dst + off as u32,
                                    &IWL2030_FW[data_start + off..data_start + off + chunk]) {
                         diag_write_str("[WIFI] FW STAGE DMA TIMEOUT dst=");
                         diag_write_hex((dst + off as u32) as usize);
@@ -1283,14 +1306,8 @@ fn load_firmware_stage(init: bool) -> bool {
             pos = next;
         }
 
-        // Minimal INIT firmware verification: show only the selected TLV source bytes
-        // and the corresponding target SRAM readback. This is diagnostic-only.
-        let read_targ = |addr: u32| -> u32 {
-            unsafe {
-                core::ptr::write_volatile((MMIO + HBUS_TARG_MEM_RADDR) as *mut u32, addr);
-                core::ptr::read_volatile((MMIO + HBUS_TARG_MEM_RDAT) as *const u32)
-            }
-        };
+        // Final TLV verification is retained as a cross-check; per-chunk
+        // readback above is now the primary DMA evidence.
         let inst_src0 = if size_a >= 4 { fw_le32(IWL2030_FW, src_a_start) } else { 0 };
         let inst_src4 = if size_a >= 8 { fw_le32(IWL2030_FW, src_a_start + 4) } else { 0 };
         let data_src0 = if size_b >= 4 { fw_le32(IWL2030_FW, src_b_start) } else { 0 };
