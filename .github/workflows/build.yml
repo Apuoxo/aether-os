@@ -54,3 +54,4 @@ jobs:
 
 # Build trigger: package current main revision.
 # Build trigger: validate latest HDA output-stream descriptor fix.
+# Build trigger: validate runtime resolver revision.
