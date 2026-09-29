@@ -66,8 +66,10 @@ const IWL2030_FW_PREFIX: &str = "iwlwifi-2030-";
 const IWL2030_FW: &[u8] = include_bytes!("../../build/iwlwifi-2030-6.ucode");
 const IWLAGN_RTC_INST_LOWER_BOUND: u32 = 0x000000;
 const IWLAGN_RTC_DATA_LOWER_BOUND: u32 = 0x800000;
+const HBUS_TARG_MEM_RADDR: usize = 0x40C;
 const HBUS_TARG_MEM_WADDR: usize = 0x410;
 const HBUS_TARG_MEM_WDAT: usize = 0x418;
+const HBUS_TARG_MEM_RDAT: usize = 0x41C;
 
 const CSR_INT: usize = 0x008;
 const CSR_INT_MASK: usize = 0x00C;
@@ -1192,6 +1194,43 @@ fn load_firmware_stage(init: bool) -> bool {
             }
             pos = next;
         }
+
+        // Diagnostic only: independently verify the target SRAM contents after
+        // the FH service DMA reports completion. Linux uses HBUS_TARG_MEM_RADDR
+        // followed by HBUS_TARG_MEM_RDAT for this exact uCode-memory readback.
+        // Do not alter firmware state here; this separates a bad DMA transfer
+        // from a firmware-start/ALIVE problem.
+        let read_targ = |addr: u32| -> u32 {
+            unsafe {
+                core::ptr::write_volatile((MMIO + HBUS_TARG_MEM_RADDR) as *mut u32, addr);
+                core::ptr::read_volatile((MMIO + HBUS_TARG_MEM_RDAT) as *const u32)
+            }
+        };
+        let inst0 = read_targ(IWLAGN_RTC_INST_LOWER_BOUND);
+        let inst4 = read_targ(IWLAGN_RTC_INST_LOWER_BOUND + 4);
+        let data0 = read_targ(IWLAGN_RTC_DATA_LOWER_BOUND);
+        let data4 = read_targ(IWLAGN_RTC_DATA_LOWER_BOUND + 4);
+        let expected_inst0 = fw_le32(IWL2030_FW, 96);
+        let expected_inst4 = fw_le32(IWL2030_FW, 100);
+        let mut verify_ok = true;
+        if inst0 != expected_inst0 || inst4 != expected_inst4 {
+            verify_ok = false;
+        }
+        diag_write_str("[WIFI] FW VERIFY INIT INST0=");
+        diag_write_hex(inst0 as usize);
+        diag_write_str(" EXP=");
+        diag_write_hex(expected_inst0 as usize);
+        diag_write_str(" INST4=");
+        diag_write_hex(inst4 as usize);
+        diag_write_str(" EXP=");
+        diag_write_hex(expected_inst4 as usize);
+        diag_write_str(" DATA0=");
+        diag_write_hex(data0 as usize);
+        diag_write_str(" DATA4=");
+        diag_write_hex(data4 as usize);
+        diag_write_str(" RESULT=");
+        diag_write_str(if verify_ok { "MATCH" } else { "MISMATCH" });
+        diag_write_str("\n");
 
         if !seen_a || !seen_b {
             diag_write_str("[WIFI] FW STAGE=");
