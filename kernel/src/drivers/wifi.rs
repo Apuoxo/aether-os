@@ -125,6 +125,9 @@ const SCD_CHAINEXT_EN: u32 = SCD_BASE + 0x244;
 const SCD_QUEUE_STATUS_BITS: u32 = SCD_BASE + 0x10C + (IWL_DEFAULT_CMD_QUEUE_NUM as u32 * 4);
 const SCD_QUEUE_CTX: u32 = 0x0600 + (IWL_DEFAULT_CMD_QUEUE_NUM as u32 * 8);
 const FH_TSSR_TX_STATUS_REG: usize = FH_MEM_LOWER_BOUND + 0xEB0;
+const FH_TX_TRB_BASE: usize = FH_MEM_LOWER_BOUND + 0x958;
+const FH_TX_CHICKEN_BITS: usize = FH_MEM_LOWER_BOUND + 0xE98;
+const FH_TX_CHICKEN_BITS_SCD_AUTO_RETRY_EN: u32 = 0x0000_0002;
 const FH_TX_CHANNEL_COUNT: usize = 8;
 const SCD_QUEUE_ACTIVE: u32 = 1 << 3;
 const SCD_QUEUE_WSL: u32 = 1 << 4;
@@ -579,7 +582,7 @@ pub fn send_command(cmd: u8, payload: &[u8]) -> bool {
         // not the host doorbell used to submit the command.
         core::ptr::write_volatile((MMIO + 0x60) as *mut u32,
             (next as u32 & 0xFF) | ((IWL_DEFAULT_CMD_QUEUE_NUM as u32) << 8));
-        CMD_WRITE_PTR = next;
+        // Diagnostic only: do not change hardware state here. Linux exposes the\n        // FH TX TRB and SCD status when a legacy queue is stuck; we mirror that\n        // telemetry so the next AH532 run tells us whether FH consumed the TFD.\n        let _auto_retry = FH_TX_CHICKEN_BITS_SCD_AUTO_RETRY_EN;\n        CMD_WRITE_PTR = next;
         CMD_SEQ = CMD_SEQ.wrapping_add(1);
         diag_write_str("[WIFI] CMD TX id=");
         diag_write_hex(cmd as usize);
@@ -591,11 +594,20 @@ pub fn send_command(cmd: u8, payload: &[u8]) -> bool {
         diag_write_usize(bc_bytes);
         let tssr = core::ptr::read_volatile((MMIO + FH_TSSR_TX_STATUS_REG) as *const u32);
         let tcsr4 = core::ptr::read_volatile((MMIO + FH_TCSR_CONFIG_CMD) as *const u32);
+        let fh_trb = core::ptr::read_volatile((MMIO + FH_TX_TRB_BASE + IWL_CMD_FIFO_NUM as usize * 4) as *const u32);
+        let chicken = core::ptr::read_volatile((MMIO + FH_TX_CHICKEN_BITS) as *const u32);
+        let scd_status = prph_read(SCD_QUEUE_STATUS_BITS);
         let scd_rd = prph_read(SCD_QUEUE_RDPTR);
         diag_write_str(" KICK TSSR=");
         diag_write_hex(tssr as usize);
         diag_write_str(" TCSR4=");
         diag_write_hex(tcsr4 as usize);
+        diag_write_str(" TRB7=");
+        diag_write_hex(fh_trb as usize);
+        diag_write_str(" CHICKEN=");
+        diag_write_hex(chicken as usize);
+        diag_write_str(" SCD_ST=");
+        diag_write_hex(scd_status as usize);
         diag_write_str(" SCD_RD=");
         diag_write_hex(scd_rd as usize);
         diag_write_str("\n");
