@@ -35,7 +35,6 @@ mod log;
 mod shell;
 mod userspace;
 mod elf;
-mod runtime;
 mod elf_blobs;
 mod drivers { pub mod intel_igpu; pub mod intel_kms; pub mod ps2; pub mod xhci; pub mod ata; pub mod ahci; pub mod pci_usb_diag; pub mod video; pub mod audio; pub mod net; pub mod wifi; }
 mod personalities {
