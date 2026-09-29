@@ -19,12 +19,14 @@ pub struct GdtPointer {
     pub base: u64,
 }
 
-static mut GDT: [u64; 7] = [
+static mut GDT: [u64; 9] = [
     0x0000000000000000,
     0x00AF9A000000FFFF,
     0x00CF92000000FFFF,
     0x00AFFA000000FFFF,
     0x00CFF2000000FFFF,
+    0x00CFFA000000FFFF, // USER32_CS: L=0, D=1, DPL=3
+    0x00CFF2000000FFFF, // USER32_DS: D=1, DPL=3
     0,
     0,
 ];
@@ -50,18 +52,15 @@ pub fn init(kernel_stack_top: u64) {
         let base = &TSS as *const Tss as u64;
         let limit = (core::mem::size_of::<Tss>() - 1) as u64;
 
-        // Intel 64: a TSS descriptor is 16 bytes. GDT[5] is the
-        // low 8-byte descriptor; GDT[6] contains Base[63:32].
         let low =
             (limit & 0xFFFF)
             | ((base & 0xFFFFFF) << 16)
             | (0x89u64 << 40)
             | (((limit >> 16) & 0xF) << 48)
             | (((base >> 24) & 0xFF) << 56);
-        let high = (base >> 32) & 0xFFFF_FFFF;
 
-        GDT[5] = low;
-        GDT[6] = high;
+        GDT[7] = low;
+        GDT[8] = (base >> 32) & 0xFFFF_FFFF;
 
         GDTR.limit = (core::mem::size_of_val(&GDT) - 1) as u16;
         GDTR.base = &GDT as *const _ as u64;
@@ -73,7 +72,7 @@ pub fn init(kernel_stack_top: u64) {
         );
 
         core::arch::asm!(
-            "mov ax, 0x28",
+            "mov ax, 0x38",
             "ltr ax",
             options(nostack, preserves_flags)
         );
@@ -92,3 +91,5 @@ pub const KERNEL_CS: u16 = 0x08;
 pub const KERNEL_DS: u16 = 0x10;
 pub const USER_CS: u16 = 0x18 | 3;
 pub const USER_DS: u16 = 0x20 | 3;
+pub const USER32_CS: u16 = 0x28 | 3;
+pub const USER32_DS: u16 = 0x30 | 3;
