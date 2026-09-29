@@ -215,3 +215,11 @@ Every significant change should be followed by:
 - `graphics::put_pixel()` then rendered the Desktop into `BACKBUFFER`, while the visible Multiboot LFB was not updated by the Desktop render loop. This left the visible screen showing the earlier framebuffer/test contents, making it appear that Desktop never started.
 - Corrective change: restore the known-good direct-LFB rendering path by disabling the incomplete backbuffer experiment at initialization. The backbuffer storage and API remain for future complete present-pipeline work, but it is no longer selected by default.
 - This is the first fix in this sequence that addresses the actual rendering path rather than merely changing boot-stage ordering.
+
+
+### 2026-09-29 — First Windows EXE desktop target
+- Architecture goal changed: Aether will directly launch applications from Windows, Linux, and Android ecosystems; the previous Personality-based model is no longer the target architecture.
+- Added the first safe Windows target: `/hello.exe`, a real PE32+ AMD64-formatted test image installed during storage initialization.
+- Added a desktop `Hello.exe` icon and double-click path into the PE compatibility layer.
+- Safety invariant: boot and native Desktop paths are unchanged; the PE milestone validates MZ/PE64 headers and opens an Aether window, but deliberately does not execute foreign machine code yet.
+- Next milestone: connect validated PE images to the already-isolated Ring3 process path, then implement the first minimal Win32 API needed by a real external Windows program.

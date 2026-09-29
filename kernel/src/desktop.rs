@@ -43,7 +43,7 @@ const COL_BTN_FACE: u32 = 0x00D4D0C8;
 const COL_MENU_BG: u32 = 0x00FFFFFF;
 const COL_MENU_HDR: u32 = 0x001665CA;
 
-const MAX_WIN: usize = 13;
+const MAX_WIN: usize = 14;
 const TITLE_H: i32 = 26;
 const TASKBAR_H: usize = 30;
 
@@ -62,6 +62,7 @@ enum WinKind {
     MediaPlayer,
     Keyboard,
     Alarm,
+    HelloExe,
 }
 
 struct Window {
@@ -107,6 +108,8 @@ static mut WINS: [Window; MAX_WIN] = [
         minimized: false, maximized: false, rx: 30, ry: 275, rw: 740, rh: 295 },
     Window { x: 120, y: 55, w: 470, h: 360, kind: WinKind::Alarm, visible: false, z: 13,
         minimized: false, maximized: false, rx: 120, ry: 55, rw: 470, rh: 360 },
+    Window { x: 220, y: 120, w: 430, h: 250, kind: WinKind::HelloExe, visible: false, z: 14,
+        minimized: false, maximized: false, rx: 220, ry: 120, rw: 430, rh: 250 },
 ];
 
 static mut FOCUS: usize = 0; // terminal
@@ -1053,6 +1056,7 @@ fn win_title(kind: WinKind) -> &'static str {
         WinKind::MediaPlayer => "Aether Media Player",
         WinKind::Keyboard => "On-Screen Keyboard",
         WinKind::Alarm => "Alarm Clock",
+        WinKind::HelloExe => "Hello.exe",
     }
 }
 
@@ -1141,7 +1145,7 @@ fn draw_desktop_icons() {
     use crate::gui::font;
     use crate::gui::theme;
     // Classic desktop layout: column of icons with labels
-    let items: [(IconId, usize); 7] = [
+    let items: [(IconId, usize); 8] = [
         (IconId::MyComputer, 7),
         (IconId::MyDocuments, 5),
         (IconId::Terminal, 0),
@@ -1149,16 +1153,16 @@ fn draw_desktop_icons() {
         (IconId::Settings, 4),
         (IconId::RecycleBin, 99),
         (IconId::File, 10),
+        (IconId::File, 13), // first Windows PE target
     ];
     let mut i = 0usize;
-    while i < 7 {
+    while i < 8 {
         let (id, _slot) = items[i];
-        let x = 24usize;
-        let y = 36 + i * 72;
+        let x = if i == 7 { 104usize } else { 24usize };
+        let y = if i == 7 { 36usize } else { 36 + i * 72 };
         let sel = unsafe { SELECTED_ICON == i };
         icon::blit(id, x, y, sel);
-        // label under icon (white with shadow like XP)
-        let lab = icon::label(id);
+        let lab = if i == 7 { "Hello.exe" } else { icon::label(id) };
         let tw = lab.len() * 8;
         let lx = if tw < 48 { x + (48 - tw) / 2 } else { x };
         font::draw_shadowed(lx, y + theme::ICON_SIZE + 4, lab, 0x00FFFFFF, 0x00404040);
@@ -1168,12 +1172,16 @@ fn draw_desktop_icons() {
 
 
 fn hit_desktop_icon(mx: i32, my: i32) -> Option<usize> {
-    // Must match draw_desktop_icons: 7 icons, y = 36 + i*72
+    // Must match draw_desktop_icons. Hello.exe occupies a second column so
+    // it cannot overlap the taskbar on the 600px AH532 desktop.
+    if mx >= 96 && mx < 160 && my >= 36 && my < 100 {
+        return Some(7);
+    }
     let mut i = 0usize;
     while i < 7 {
         let y = 36 + (i as i32) * 72;
         if mx >= 16 && mx < 80 && my >= y && my < y + 64 {
-            return Some(i); // index into items list
+            return Some(i);
         }
         i += 1;
     }
@@ -1203,6 +1211,7 @@ fn draw_taskbar_buttons(w: usize, h: usize) {
                     WinKind::MediaPlayer => "Media",
                     WinKind::Keyboard => "Keyboard",
                     WinKind::Alarm => "Alarm",
+                    WinKind::HelloExe => "Hello",
                 };
                 let bw = short.len() * 8 + 20;
                 if x + bw > w.saturating_sub(100) {
@@ -1756,6 +1765,11 @@ fn handle_mouse_buttons(buttons: u8) {
                         3 => open_win(2),
                         4 => open_win(9),
                         6 => open_win(10),
+                        7 => {
+                            if crate::pe::launch_hello() {
+                                open_win(13);
+                            }
+                        },
                         _ => {}
                     }
                     LAST_DESKTOP_ICON = usize::MAX;
@@ -2367,6 +2381,16 @@ fn draw_window(idx: usize) {
                     graphics::border_rect(x as usize,y,w as usize,30,0x00606060);
                     graphics::draw_str(x as usize+((w as usize).saturating_sub(label.len()*8))/2,y+10,label,COL_TEXT);
                     x+=(w as usize)+3;i+=1;}
+            }
+            WinKind::HelloExe => {
+                graphics::fill_rect(wx + 3, wy + TITLE_H as usize, ww - 6,
+                    wh - TITLE_H as usize - 3, 0x00F4F4F4);
+                graphics::draw_str(wx + 24, wy + 58, "Hello from Windows EXE", 0x00000000);
+                graphics::draw_str(wx + 24, wy + 84, "Aether PE64 compatibility", 0x00404040);
+                graphics::draw_str(wx + 24, wy + 108, "MZ + PE64 + AMD64: VALID", 0x00008000);
+                graphics::draw_str(wx + 24, wy + 132, "Entry RVA: 0x1000", 0x00404040);
+                graphics::draw_str(wx + 24, wy + 156, "This is the first safe PE launch.", 0x00404040);
+                graphics::draw_str(wx + 24, wy + 180, "Native code execution comes next.", 0x00800000);
             }
             WinKind::About => {
                                 graphics::fill_rect(
