@@ -1,111 +1,274 @@
 # Aether Laboratory Status
 
-## Status basis
+**Status basis:** source code + CI evidence + documented real-hardware tests.  
+**Last reviewed:** 2026-09-29.
 
-This file is a laboratory status document, not a release-version identifier. Historical version strings in the repository must not override source/runtime evidence.
+This is the current engineering status. It deliberately separates implemented infrastructure from incomplete or planned functionality.
 
-## Current engineering state — 2026-09-24
+## 1. Executive status
 
-Aether currently has a working x86_64 native kernel/userspace foundation with:
+Aether is a bootable native x86_64 Rust operating system in active hardware development.
 
-- physical memory management;
-- paging and separate user/kernel address spaces;
-- Ring3 ELF execution path;
-- AetherFS RAM storage path;
-- read-only storage diagnostics and AHCI probing infrastructure;
-- PS/2 input;
-- Multiboot framebuffer graphics;
-- XP-style desktop/windowing work;
-- a staged Intel Sandy Bridge Gen6 video-driver layer;
-- QEMU CI/smoke-test infrastructure.
+It is no longer a design-only kernel. The repository contains a working kernel/userspace foundation, storage stack, graphics/desktop stack, applications and several real hardware-driver bring-up paths.
 
-## Kernel correctness repair progress
+The long-term polymorphic Personality architecture is present as a kernel foundation, but Linux, Android and Windows are not yet complete compatibility personalities.
 
-Current P0 repair progress:
+## 2. Kernel foundation
 
-- Process objects now carry an explicit PersonalityId owner; personality attach/detach hooks are tied to process lifetime.
-- Per-process capability infrastructure now exists: rights constants, validation, derivation without privilege escalation, lookup, checking, and revocation.
-- Exposed Ring3 syscalls now perform capability checks for write, read/list/input, and graphics operations.
-- The packaged calculator userspace ABI was corrected to match the canonical R10 fourth-argument convention.
+### Implemented / present
 
+- x86_64 native kernel runtime;
+- physical page allocation;
+- paging;
+- separate user/kernel address spaces;
+- Ring3 ELF execution infrastructure;
+- process objects;
+- cooperative scheduler;
+- process-owned Personality ID;
+- syscall ABI infrastructure;
+- per-process capability tables;
+- capability validation, derivation and revocation primitives;
+- kernel serial diagnostics.
 
-The first P0 source-repair pass is applied:
+### Incomplete
 
-- Syscall ABI is canonicalized to `RAX=nr, RDI=a1, RSI=a2, RDX=a3, R10=a4, R8=a5`; syscall return is restored through saved RAX.
-- The x86_64 TSS descriptor is encoded as a true 16-byte descriptor across GDT slots 5–6.
+- deterministic full syscall/TSS runtime evidence for all paths;
+- complete object-authority capability model;
+- preemptive scheduler;
+- full thread model;
+- SMP;
+- complete IPC subsystem;
+- final stable syscall ABI coverage.
 
-These are **not yet complete**: deterministic QEMU evidence must still prove syscall arguments/return values and CPL3→CPL0 TSS/RSP0 entry. Capability enforcement is partially implemented; the Ring3 write allow/revoke regression now has CI-verified evidence, while the full object-authority model remains pending.
+## 3. Storage
 
-## Graphics status
+### Implemented / present
 
-Target hardware: Fujitsu LIFEBOOK AH532 with Intel HD Graphics 3000, PCI 8086:0116, Gen6.
+- AetherFS/RAM storage path;
+- FAT support;
+- partition/storage diagnostics;
+- AHCI probing/infrastructure;
+- NTFS mounting and directory visibility on the tested AH532 environment;
+- Explorer integration.
 
-Confirmed/implemented stages:
+### Incomplete
 
-1. Multiboot framebuffer is usable.
-2. 800x600 desktop path is stable.
-3. Framebuffer geometry is handled dynamically.
-4. Intel display PCI function is discovered.
-5. BAR0 MMIO access is guarded.
-6. Gen6 display registers can be snapshotted read-only.
-7. Existing hardware scanout can be compared against the Multiboot framebuffer.
-8. GMBUS/EDID support exists as an explicit, non-automatic path.
-9. Safe video diagnostic command vdiag exists.
-10. A verified 45-page FH6/FH6C HM70 schematic has been added and read page-by-page.
-11. Physical LCD/LVDS and HDMI/DDI-B display-routing information is now documented.
+- final VFS/device boundary;
+- complete write support and recovery semantics across all filesystems;
+- comprehensive storage regression suite.
 
-Not complete:
+## 4. Graphics and desktop
 
-- full cold-boot native Intel modeset independent of firmware-provided scanout;
+### Verified on target hardware
+
+Target: Fujitsu LIFEBOOK AH532, Intel HD Graphics 3000, PCI 8086:0116, Gen6.
+
+Implemented:
+
+1. Multiboot framebuffer;
+2. dynamic framebuffer geometry;
+3. Intel display PCI discovery;
+4. guarded BAR0 MMIO access;
+5. Gen6 register diagnostics;
+6. framebuffer/scanout comparison infrastructure;
+7. GMBUS/EDID diagnostic path;
+8. desktop/window manager;
+9. cursor and mouse handling;
+10. localized window redraws for input/mouse updates;
+11. terminal and multiple native desktop applications.
+
+### Incomplete
+
+- independent cold-boot native Intel modeset;
 - safe GGTT/GSM initialization;
 - hardware-accelerated rendering;
-- complete connector/power-management handling;
+- complete connector/power management;
 - verified real-AH532 EDID acquisition;
-- complete native Intel display driver.
+- complete production Intel display driver.
 
-The GGTT/GSM region around physical 0xDF800000 remains blocked because previous mapping attempts rebooted the AH532.
+Safety constraint: previous GGTT/GSM mapping experiments rebooted the AH532. The stable framebuffer path must remain intact until the mapping is understood.
 
-## Verified schematic status
+Detailed display status: docs/VIDEO_DRIVER_STATUS.md.
 
-The repository now contains:
+## 5. Desktop applications
 
-- `Fujitsu_FH6C_FH6_hm70_r0c_mb_0522 SKCLAPPY.IN.pdf`
-- 1,498,316 bytes
-- SHA-256 `8011b1775a403b5d62ff816c278412f62c2e3d7873b955f2721fa664528badbc`
-- 45 pages.
+Current native desktop/application code includes:
 
-The document is a verified FH6/FH6C HM70-family board/variant schematic. It explicitly contains Ivy Bridge and optional N13P discrete-GPU variants, so it is used for physical board-family signal routing and not as proof of the exact installed GPU.
+- Terminal;
+- Explorer;
+- Calculator;
+- Settings;
+- Alarm;
+- Media Player.
 
-The actual tested machine remains authoritative: Sandy Bridge HD Graphics 3000, 8086:0116.
+These applications are real kernel-integrated/native components, but individual features may still depend on unfinished storage, audio, networking or GUI infrastructure.
 
-Detailed display routing: `docs/AH532-SCHEMATIC_DISPLAY_SIGNAL_MAP.md`.
+## 6. Audio
 
-## Previous schematic correction
+### Implemented / present
 
-The older PDF extracted from `DA0FH6MB6E0 rev E PDF .rar` is a 34-page FH2/Arrandale/HM55 document and remains REFERENCE-MISMATCH. It must not be used as AH532 electrical evidence.
+- HDA PCI discovery;
+- BAR0 MMIO mapping;
+- HDA reset sequence;
+- codec state discovery;
+- CORB/RIRB transport;
+- codec verb diagnostics;
+- stream/PCM data structures;
+- PCM buffering;
+- WAV parsing;
+- MP3 decoding;
+- Media Player control path;
+- volume/mute/repeat/shuffle/seek state.
 
-## Next controlled stage
+### Current blocker
 
-The next graphics stage is explicit read-only EDID/GMBUS validation on QEMU where applicable and then real AH532.
+End-to-end HDA speaker playback is not yet verified on the AH532.
 
-The test must preserve the stable framebuffer and must not:
+The important distinction is:
 
-- map GGTT/GSM;
-- automatically change display mode;
-- replace framebuffer ownership;
-- perform speculative power sequencing.
+HDA controller detected != PCM stream running != audible playback.
 
-Detailed status: `docs/VIDEO_DRIVER_STATUS.md`.
+Current work must concentrate on:
 
+HDA stream setup -> BDL/DMA -> RUN -> LPIB progress -> codec output -> audible PCM.
 
-## Work log — 2026-09-24
+## 7. Wi-Fi
 
-### Repository/CI verification
-- Request: continue the controlled Aether engineering work after the G6-EDID-1 diagnostic hardening.
-- Verified `main` HEAD: `0f9b19b1197accd769b7c4e4d420671d525b7cec`.
-- Verified GitHub Actions for that exact commit:
-  - `Aether OS build` run #124: **success**.
-  - `Unpack Aether source archive` run #63: **success**.
-- Result: the current documented video diagnostic changes are build-clean in CI; no new graphics-risky operation was introduced.
-- Capability note: CI already verifies the Ring3 capability write allow/revoke evidence added in the preceding P0 repair pass; the remaining gap is the full object-authority model and deterministic runtime evidence for syscall/TSS paths.
-- Next controlled graphics action remains explicit `vedid`/GMBUS validation on QEMU where applicable and then the real AH532. No GGTT/GSM mapping, automatic modeset, framebuffer takeover, or speculative power sequencing is authorized.
+Target: Intel Centrino Wireless-N 2230, PCI 8086:0887.
+
+Current state:
+
+- PCI discovery: implemented;
+- BAR/MMIO: implemented;
+- firmware contract/firmware loading path: implemented to bring-up level;
+- ALIVE: observed;
+- command queue: initialized;
+- TX/SCD consumption: not yet proven;
+- scan/association/network stack: not complete.
+
+Current diagnostic focus is the SCD/TFD ownership/consumption path rather than a general driver rewrite.
+
+## 8. Personality system
+
+### Implemented foundation
+
+- PersonalityId values for Linux, Android and Windows;
+- process ownership of a Personality ID;
+- attach/detach lifecycle hooks;
+- Personality Manager state;
+- unload protection based on process ownership.
+
+### Not yet implemented as promised by the architecture
+
+- external/loadable personality binary format;
+- executable personality code/data sections;
+- real syscall table registration per personality;
+- complete memory reclamation of personality modules;
+- Linux syscall compatibility layer;
+- Android Binder/ART/runtime integration;
+- Windows PE/NT compatibility layer.
+
+Therefore the correct status is:
+
+**Personality architecture: foundation implemented.  
+Full personalities: not implemented.**
+
+## 9. Scheduler
+
+The current scheduler is cooperative/basic.
+
+This is sufficient for the present bring-up environment but is not the final scheduler model.
+
+Future work:
+
+- kernel threads;
+- timer-driven preemption;
+- context switching;
+- SMP;
+- CPU affinity;
+- scheduler accounting.
+
+## 10. AI / persistent development infrastructure
+
+The repository contains groundwork for future native development/agent functionality.
+
+It is not currently a core dependency of boot, scheduling, storage or desktop operation.
+
+The project must not describe Aether as an AI operating system until an actual native AI subsystem is implemented and verified.
+
+## 11. Hardware evidence
+
+The tested AH532 remains authoritative over generic hardware documentation.
+
+The repository also contains the verified FH6/FH6C HM70-family schematic:
+
+- 45 pages;
+- SHA-256 8011b1775a403b5d62ff816c278412f62c2e3d7873b955f2721fa664528badbc.
+
+It is used for board-family signal routing, not as proof of the exact installed GPU.
+
+## 12. CI / build identity
+
+CI is the reproducible build gate.
+
+The repository must treat:
+
+- Git commit SHA;
+- GitHub Actions run;
+- generated ISO/artifact;
+- embedded Aether build identity
+
+as one evidence chain.
+
+The current kernel contains historical build/version strings that are not sufficient to identify an ISO uniquely. A future build-identity cleanup must expose the exact commit/run identity inside the OS and artifact metadata.
+
+## 13. Current priority order
+
+### P0 — kernel correctness
+
+- deterministic Ring3/syscall/TSS evidence;
+- capability enforcement;
+- process/thread foundation.
+
+### P1 — device architecture
+
+- common device/resource/IRQ/DMA model;
+- clean driver binding.
+
+### P1 — audio
+
+- finish HDA PCM DMA playback;
+- verify audible playback on AH532;
+- then close the Media Player hardware dependency.
+
+### P1 — networking
+
+- prove Wi-Fi TX/SCD consumption;
+- RX;
+- scan;
+- association;
+- network stack integration.
+
+### P2 — VFS/storage
+
+- stabilize filesystem/device boundaries;
+- expand NTFS regression coverage.
+
+### P2 — Personality
+
+- turn the manager foundation into a real loadable personality mechanism;
+- then implement the first actual personality.
+
+## 14. Definition of reality
+
+Use these status words consistently:
+
+- **Verified** — reproduced by an explicit test and evidence exists.
+- **Implemented** — source implementation exists, but hardware/runtime proof may still be incomplete.
+- **Bring-up** — actively being made functional on hardware.
+- **Partial** — meaningful implementation exists but required pieces are missing.
+- **Planned** — design/roadmap only.
+- **Blocked** — a known technical blocker prevents completion.
+- **Historical** — retained for record; not current behavior.
+
+Never mark a feature Verified merely because a source file or UI exists.
