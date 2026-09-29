@@ -3584,6 +3584,36 @@ pub fn run() -> ! {
     } else {
         "AUDIO: HDA startup WAV open failed\n"
     });
+
+    // Automatic Winamp diagnostic: runs once at desktop startup so the user
+    // can see exactly how far the real PE32 target gets without entering a command.
+    terminal_write("\n======== WINAMP AUTO DIAGNOSTIC ========\n");
+    let wd = crate::winamp::diagnose();
+    terminal_write(if wd.file_found { "[WINAMP] FILE=FOUND\n" } else { "[WINAMP] FILE=NOT_FOUND\n" });
+    terminal_write(if wd.mz_valid { "[WINAMP] MZ=VALID\n" } else { "[WINAMP] MZ=INVALID\n" });
+    terminal_write("[WINAMP] HEADER_BYTES=");
+    terminal_write_usize(wd.header_bytes);
+    terminal_write("\n");
+    terminal_write(if wd.pe_valid { "[WINAMP] PE=VALID\n" } else { "[WINAMP] PE=INVALID\n" });
+    if wd.pe_valid {
+        terminal_write("[WINAMP] PE_OFFSET=0x");
+        terminal_write_hex(wd.pe_offset as usize);
+        terminal_write("\n[WINAMP] MACHINE=0x");
+        terminal_write_hex(wd.machine as usize);
+        terminal_write("\n[WINAMP] SECTIONS=");
+        terminal_write_usize(wd.sections as usize);
+        terminal_write("\n[WINAMP] OPTIONAL_SIZE=0x");
+        terminal_write_hex(wd.optional_size as usize);
+        terminal_write("\n[WINAMP] OPTIONAL_MAGIC=0x");
+        terminal_write_hex(wd.optional_magic as usize);
+        terminal_write("\n");
+    }
+    terminal_write(if wd.pe32_x86 {
+        "[WINAMP] FORMAT=PE32/x86\n[WINAMP] EXECUTION=NOT_ATTEMPTED\n[WINAMP] RESULT=SAFE_DIAGNOSTIC_ONLY\n"
+    } else {
+        "[WINAMP] FORMAT=UNKNOWN_OR_UNSUPPORTED\n[WINAMP] EXECUTION=NOT_ATTEMPTED\n[WINAMP] RESULT=VALIDATION_STOP\n"
+    });
+    terminal_write("========================================\n");
     terminal_write("\x1b[32maether>\x1b[0m ");
     unsafe {
         DIRTY_FULL = true;

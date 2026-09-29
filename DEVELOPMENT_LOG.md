@@ -230,3 +230,10 @@ Every significant change should be followed by:
 - Added a desktop `Winamp.exe` icon and a safe PE32/x86 recognition window.
 - Winamp 5.9.x is a 32-bit Windows application, so this target deliberately exposes the next required runtime boundary: x86 PE + Win32 API execution on x86_64 Aether.
 - Safety invariant: the existing boot/framebuffer/Desktop path remains unchanged; this milestone only packages and recognizes the real third-party executable.
+
+
+### 2026-09-29 — Automatic Winamp startup diagnostic
+- Added a non-interactive Winamp PE diagnostic to the native Desktop startup path.
+- The diagnostic runs automatically after the terminal is initialized; no command input is required.
+- It reports file presence, MZ/PE validity, PE offset, machine, section count, optional-header size/magic, PE32/x86 classification, and explicitly states that foreign code execution was not attempted.
+- The existing Winamp icon path remains unchanged; the diagnostic is read-only and does not execute Win32 code.
