@@ -265,6 +265,14 @@ pub extern "C" fn kernel_main(mbi: usize) -> ! {
     if fb::init_from_mbi(mbi) {
         serial::write_str("[APP-DISPLAY] framebuffer ready before Ring3\n");
         let _ = drivers::video::init();
+        // AH532 desktop startup: restore the user's native panel mode automatically.
+        // The active Sandy Bridge path keeps firmware timing/link state and retargets
+        // the existing primary plane to the known-good 1366x768 scanout.
+        if drivers::video::modeset_to(1366, 768) {
+            serial::write_str("[DESKTOP] startup resolution=1366x768\n");
+        } else {
+            serial::write_str("[DESKTOP] startup resolution restore=FAILED\n");
+        }
     } else {
         serial::write_str("[APP-DISPLAY] framebuffer unavailable; apps remain headless\n");
     }
