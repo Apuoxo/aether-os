@@ -1586,7 +1586,7 @@ fn draw_terminal_keyboard(idx:usize){
         let row_h=((kh.saturating_sub(32))/6).max(18);
         let gap=3usize;
         let inner_w=ww.saturating_sub(20);
-        let unit=(inner_w.saturating_sub(12*gap))/13;
+        let unit=(inner_w.saturating_sub(14*gap))/15;
         let mut r=0usize;
         while r<rows.len(){
             let mut x=wx+10;
@@ -1636,7 +1636,7 @@ fn handle_terminal_keyboard_click(mx:i32,my:i32)->bool{
         let row_h=((kh as usize-32)/6).max(18);
         let gap=3i32;
         let inner_w=(ww as usize).saturating_sub(20);
-        let unit=(inner_w.saturating_sub(12*(gap as usize)))/13;
+        let unit=(inner_w.saturating_sub(14*(gap as usize)))/15;
         let mut r=0usize;
         while r<rows.len(){
             let y=panel_y+26+(r*row_h) as i32;
@@ -3959,4 +3959,3 @@ pub fn run() -> ! {
         }
     }
 }
-
