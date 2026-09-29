@@ -101,7 +101,11 @@ pub unsafe extern "C" fn bcmp(a: *const u8, b: *const u8, n: usize) -> i32 {
 #[no_mangle]
 pub extern "C" fn rust_eh_personality() {}
 
-extern "C" { fn enter_user_mode(entry: u64, stack: u64) -> !; static __kernel_end: u8; }
+extern "C" {
+    fn enter_user_mode(entry: u64, stack: u64) -> !;
+    fn enter_compat_self_test() -> u64;
+    static __kernel_end: u8;
+}
 
 
 /// VGA text marker at column `col` (0..80), white on black — visible on real BIOS

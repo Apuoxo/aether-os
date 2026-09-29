@@ -57,6 +57,10 @@ isr_syscall:
     jne .normal_syscall
     mov rax, 0xC032
     mov rsp, [rel compat_saved_rsp]
+    mov ax, 0x10
+    mov ds, ax
+    mov es, ax
+    mov ss, ax
     sti
     ret
 
