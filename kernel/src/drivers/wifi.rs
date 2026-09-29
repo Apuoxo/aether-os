@@ -1095,14 +1095,22 @@ fn load_firmware_stage(init: bool) -> bool {
             return false;
         }
 
-        let dma_base = (&FW_DMA_BUF.0 as *const u8) as u64;
+        // Linux uses a coherent physically-addressable staging buffer for firmware DMA.
+        let dma_phys = match crate::mm::alloc_pages((FH_MEM_TB_MAX_LENGTH + 4095) / 4096) {
+            Some(p) => p,
+            None => {
+                diag_write_str("[WIFI] FW DMA BUFFER ALLOC=FAILED\\n");
+                return false;
+            }
+        };
+        let dma_base = dma_phys as u64;
         let load_chunk = |dst: u32, src: &[u8]| -> bool {
             if src.is_empty() || src.len() > FH_MEM_TB_MAX_LENGTH || (src.len() & 3) != 0 {
                 return false;
             }
             let mut i = 0usize;
             while i < src.len() {
-                FW_DMA_BUF.0[i] = src[i];
+                core::ptr::write_volatile((dma_phys as *mut u8).add(i), src[i]);
                 i += 1;
             }
             core::ptr::write_volatile((MMIO + CSR_INT_MASK) as *mut u32, CSR_INT_BIT_FH_TX);
@@ -1213,7 +1221,7 @@ fn load_firmware_stage(init: bool) -> bool {
         let inst0 = read_targ(IWLAGN_RTC_INST_LOWER_BOUND);
         let inst4 = read_targ(IWLAGN_RTC_INST_LOWER_BOUND + 4);
         let data0 = read_targ(IWLAGN_RTC_DATA_LOWER_BOUND);
-        diag_write_str("[WIFI] FW VERIFY DMA_BASE=");
+        diag_write_str("[WIFI] FW VERIFY DMA_PHYS=");
         diag_write_hex(dma_base as usize);
         diag_write_str(" SRC_OFF INST=");
         diag_write_hex(src_a_start);
