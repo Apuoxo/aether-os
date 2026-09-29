@@ -11,6 +11,15 @@ This file is the persistent engineering log for the Aether OS repository.
 - Current graphics hardware: Intel Sandy Bridge HD Graphics 3000, PCI 8086:0116, Gen6.
 - GGTT/GSM physical region 0xDF800000 is currently considered unsafe on AH532 after mapping attempts caused reboot. Do not re-enable such mapping without a new, justified test plan.
 
+## Rules
+
+- Do not claim a subsystem is complete without runtime evidence.
+- Record source changes, build results, hardware results, failures, and the next controlled step.
+- Preserve known-good states and avoid repeating experiments already shown unsafe.
+- AH532 is a real-hardware validation target; QEMU success is not equivalent to AH532 success.
+- Current graphics hardware: Intel Sandy Bridge HD Graphics 3000, PCI 8086:0116, Gen6.
+- GGTT/GSM physical region 0xDF800000 is currently considered unsafe on AH532 after mapping attempts caused reboot. Do not re-enable such mapping without a new, justified test plan.
+
 ## Current State — 2026-09-23
 
 ### Build / CI
@@ -91,7 +100,6 @@ Every significant change should be followed by:
 - No PANIC or user page-fault kill was observed in the smoke test.
 - This is QEMU evidence only; AH532 hardware validation remains required, especially PS/2 keyboard interaction and the already-known Gen6 display path.
 
-
 ### 2026-09-24 — AH532 boot failure: GRUB video mode
 - Real-hardware validation of build #139 on Fujitsu AH532 failed before Aether OS kernel startup with the reported message: "Error: no suitable video mode found".
 - This is currently classified as a bootloader/GRUB video-mode failure, not evidence of a Ring3 or userspace failure.
@@ -100,7 +108,6 @@ Every significant change should be followed by:
 - No code or graphics-driver changes were made in response to this report yet.
 - Next controlled step: inspect the GRUB/Multiboot boot path and make the smallest change that allows AH532 to enter the kernel without assuming a firmware-supported graphics mode; then rebuild and retest QEMU before another AH532 run.
 
-
 ### 2026-09-24 — Controlled GRUB text-mode fix for AH532 boot failure
 - Root symptom under real AH532: GRUB reported "Error: no suitable video mode found" before kernel startup.
 - Source inspection found the ISO Makefile generated a minimal GRUB configuration without explicit text-mode/gfxpayload settings.
@@ -108,7 +115,6 @@ Every significant change should be followed by:
 - No kernel, Intel driver, framebuffer ownership, GGTT/GSM, Ring3, storage, or Wi-Fi code was changed.
 - Commit: 3c60f7ca5cabd61346b5077542a6123a288b6455.
 - Runtime result: not yet verified. Required next step is GitHub CI build + QEMU smoke test, then a fresh ISO must be tested on AH532.
-
 
 ### 2026-09-24 — AH532 retry: GRUB text-mode settings did not resolve failure
 - Real AH532 retest of build #142 still reports the same "Error: no suitable video mode found" before Aether startup.
@@ -119,15 +125,13 @@ Every significant change should be followed by:
 - No kernel, graphics-driver, GGTT/GSM, Ring3, storage, or Wi-Fi code was changed.
 - Next step: verify CI/QEMU build, then test the resulting ISO on AH532. If the same GRUB error persists, inspect the GRUB image/modules and boot path rather than making further blind kernel changes.
 
-
 ### 2026-09-24 — AH532 retry #2: GRUB console-only config still fails
 - Real AH532 retest of build #144 still reports the same "Error: no suitable video mode found" before Aether startup.
 - Build #144 was independently inspected: the published artifact contains a 12,953,600-byte ISO, and its embedded grub.cfg contains only `set timeout=0`, `set default=0`, `terminal_output console`, and the Multiboot2 entry. This confirms the failure is not caused by the previously removed gfxmode/gfxpayload directives.
-- GNU GRUB documentation confirms `terminal_output console` is a valid native console output and that `grub-mkrescue --install-modules=...` can restrict installed modules and their dependencies. citeturn1search0turn1search1
+- GNU GRUB documentation confirms `terminal_output console` is a valid native console output and that `grub-mkrescue --install-modules=...` can restrict installed modules and their dependencies. 
 - Applied the next controlled bootloader experiment: restrict the ISO to the minimum GRUB modules needed for legacy BIOS ISO9660 + Multiboot2 + normal/terminal boot, and remove installed themes/fonts/locales. The kernel and runtime code are unchanged.
 - Commit: 0c79ad9da5e698b5f70412dd6339f36384b6bcac.
 - No claim of AH532 success yet. Required next step: CI build/QEMU smoke test, then fresh ISO on AH532. If the same error persists, the next investigation is the GRUB platform image/core path rather than further kernel changes.
-
 
 ### 2026-09-24 — Explorer architecture correction: logical volumes vs physical partitions
 - Current task owned by Virt: finish the Windows 7-style Explorer so its UI semantics match the storage/filesystem architecture instead of exposing raw partition enumeration as the contents of Local Disk (C:).
@@ -148,8 +152,6 @@ Every significant change should be followed by:
 - The same rule applies to diagnostic commands such as `77` and `dsk`: verify the actual GUI dispatch path before changing command behavior.
 - Terminal-capacity finding: the GUI terminal keeps only 16 visible rows and scrolls older lines out of its buffer; it also limits each line to 52 columns. Long diagnostics must therefore be designed/validated with this constraint in mind.
 
-
-
 ### 2026-09-28 — Native 1366x768 nature wallpaper graphics check
 - User-requested graphics validation: replace the procedural desktop background with a photographic nature image at exactly 1366x768.
 - Selected Wikimedia Commons image: “Comeragh Mountains Lake.jpg” by Mik Herman (Citarny), 1920x1080 source, licensed CC BY-SA 3.0.
@@ -158,13 +160,11 @@ Every significant change should be followed by:
 - The wallpaper is rendered through the existing framebuffer path; no Intel KMS/GGTT/GSM behavior is changed.
 - Required validation: green GitHub Actions build, then boot the new ISO on AH532 at 1366x768 and visually inspect image sharpness, full-screen coverage, color conversion, and stability during window movement.
 
-
 ### 2026-09-28 — Wallpaper CI correction
 - First wallpaper commit 900d147078ff215ddb42594550c111ea493d48ea downloaded the source and converted it successfully, but the Makefile size check was malformed by Make variable expansion (`test "" -eq 2098176`).
 - No ISO was published from that failed run.
 - Corrected only the shell/Makefile size validation; wallpaper source, rendering path, resolution, and graphics driver code are unchanged.
 - Next required evidence: green build run and AH532 visual test at 1366x768.
-
 
 ### 2026-09-28 — Native cursor library and Settings → Mouse → Cursor
 - Integrated Phinger Cursors by Philipp Schaffrath (CC BY-SA 4.0).
@@ -172,3 +172,93 @@ Every significant change should be followed by:
 - Settings → Mouse → Cursor now presents a real 24-item preview/selection grid with Apply and Cancel.
 - Applying a selection changes the actual native desktop cursor renderer immediately.
 - KMS/GGTT/GSM and framebuffer paths are unchanged.
+
+### 2026-09-28 — Explorer MP3 double-click autoplay
+- Control baseline: build #672, commit 386110499f45fa4c8fc9aba8241c3adb206a5d06.
+- Explorer at this baseline already detects .mp3 files and routes them to desktop::open_media_path(), which opens the file and adds it to the Media Player playlist.
+- The missing step was playback start: open_media_path() did not call media_player::play().
+- Controlled change: call the existing media_player::play() after a successful open and playlist insertion. No decoder, HDA, storage, or graphics code changed.
+- Acceptance: double-clicking an MP3 in AetherFS Explorer brings the Media Player forward and immediately starts playback through the existing native MP3/HDA path.
+
+### 2026-09-28 — CI trigger retry for Explorer MP3 autoplay
+- Source remains based directly on control baseline build #672.
+- No runtime/source behavior changed; this log-only commit exists to retrigger the pull-request workflow for the already-reviewed MP3 autoplay change.
+- The functional change remains exactly the prior commit: c025e53ac492ff6f3d92eaa9c1c5d22fe1a949ee.
+
+
+### 2026-09-28 — Explorer HDD/NTFS MP3 autoplay
+- Root cause: NTFS Explorer double-click stopped at `NTFS file preview not implemented`; AetherFS already used the media-player handoff.
+- Added bounded NTFS file-data reads, an NTFS MP3 source in the native player, and NTFS `.mp3` double-click routing through the existing media-player handoff.
+- No graphics, HDA, partition mounting, or decoder changes.
+
+
+### 2026-09-28 — HDA playback cushion for Explorer UI load
+- User observed a short digital `bebe`/glitch in ongoing MP3 playback when opening Explorer or clicking inside it.
+- Source inspection found the HDA PCM ring is serviced from the desktop polling loop; the previous 8-period / 32 KiB ring could be exhausted during a synchronous Explorer redraw or filesystem operation.
+- Increased the cyclic PCM DMA ring from 8 to 16 periods (64 KiB), with matching 16-entry BDL, CBL and LVI configuration.
+- MP3 decoding, NTFS routing, Explorer behavior, graphics, and codec setup are unchanged.
+- Acceptance: continuous MP3 playback while opening/clicking Explorer must remain clean.
+
+
+### 2026-09-28 — NTFS Unicode filename preservation
+- Source audit confirmed the NTFS directory parser was converting every non-ASCII UTF-16 filename code unit to '?' before Explorer received it.
+- Replaced that lossy ASCII conversion with bounded UTF-8 encoding, including surrogate-pair handling, while keeping the existing fixed-size NtfsEntry ABI.
+- Explorer, Media Player, filesystem reads, and HDA code were not changed in this step.
+- Acceptance: Cyrillic and other Unicode NTFS filenames must reach the Explorer renderer intact instead of appearing as '?'.
+
+
+### 2026-09-28 — Media/Explorer stabilization plan: RAM first, then audio/UI
+- User test after the HDA buffer increase still reports a short CD-like playback stutter when actively navigating/clicking in Explorer. The previous harsher digital `bebe` artifact is reduced, but the interruption remains.
+- Before changing the audio architecture, the next controlled step is RAM/memory diagnostics: establish what physical memory Aether detects, what portion is usable by the kernel, and current heap/allocator usage.
+- Planned `MEM` diagnostic should report, within the existing GUI terminal's 16-row/52-column constraints where applicable: total RAM, usable RAM, kernel/heap totals and usage, free memory, and relevant DMA/PCM allocations.
+- Do not assume the machine's physical 16 GiB is fully available to Aether until runtime evidence confirms the memory map and allocator state.
+- After RAM evidence, planned fixes remain:
+  1. diagnose and fix the `Artist - Song.mp3` NTFS Explorer open failure (with spaces around the hyphen);
+  2. show current playing filename in Media Player;
+  3. add real playback elapsed/total timing;
+  4. add a visible playback progress indicator;
+  5. decouple audio refill/service from the desktop/Explorer polling path so filesystem/UI activity cannot starve PCM playback;
+  6. replace the temporary Explorer→Media Player synthetic-path coupling with a proper Open/FileObject/application-association layer.
+- Rule for this sequence: one focused commit at a time, green CI before AH532 testing, and no speculative audio/GUI refactor before the RAM evidence is collected.
+
+
+### 2026-09-28 — Multiboot2 RAM discovery / RAM command
+- Added Multiboot2 memory-map discovery and the RAM terminal diagnostic.
+- PMM remains unchanged at 64 MiB until runtime RAM output is verified on real hardware.
+
+
+### 2026-09-28 — Range-based PMM from Multiboot2 map
+- Replaced the fixed 64 MiB PMM bitmap with a range-based physical page allocator driven by Multiboot2 type-1 usable ranges.
+- Keeps non-usable ranges out of the allocator and reserves the Multiboot information block and Multiboot module payloads.
+- Preserves contiguous allocation for existing page users while allowing physical RAM above 4 GiB.
+- Commit requested as `diag: Ram`; CI must pass before further PMM changes or hardware testing.
+
+- Added RAMTEST PMM regression command: alloc_page/write-read/free, alloc_pages(4)/write-read/free, and free-count restoration checks.
+
+- CI #688 failed because RAMTEST source was emitted with literal escape characters; corrected in the next commit without changing PMM logic.
+
+- 2026-09-28: переименован диагностический тест PMM `RAMTEST` в `RAM2`, без изменения логики теста.
+
+## 2026-09-28 — Memory GUI real-time Overview
+- Reused the existing desktop real-time clock tick (`LAST_SEC`) instead of adding a new timer subsystem.
+- Memory window now requests a local redraw once per second while visible.
+- Overview continues to read live PMM totals/free pages; subsystem category values remain explicit placeholders until allocation accounting exists.
+
+
+## 2026-09-28 — Aether Memory Manager accounting
+- Added a minimal global AMM accounting layer on top of the existing range-based PMM.
+- PMM remains the physical allocator; AMM tracks allocated pages by owner category.
+- Existing allocation entry points remain behavior-compatible and are accounted as Kernel until subsystem call sites opt into explicit owner tags.
+- Memory GUI component cards now read AMM counters instead of displaying fixed placeholder sizes.
+- No VMM, paging policy, heap, audio, graphics, or storage behavior was changed.
+- Next step: migrate selected subsystem allocations to explicit owner tags, then add real application/process accounting.
+
+
+## 2026-09-28 — Memory window title controls
+- Hardware test found Memory could not be minimized, closed, or moved.
+- Increased caption hit targets for close/minimize/maximize to tolerate physical mouse positioning; painted controls remain unchanged.
+- No Memory/PMM/AMM logic changed.
+## 2026-09-28 — Fix desktop repaint after window drag
+- Root cause: drag redraw restored only the wallpaper region, then redrew windows; desktop icons and taskbar content underneath the old window footprint were not restored.
+- Fixed the common drag repaint path so covered desktop-owned UI is restored before windows are redrawn.
+- Applies to all desktop windows; no Memory/PMM/AMM logic changed.

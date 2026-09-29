@@ -1,4 +1,5 @@
 //! Aether Desktop v1.1 XP complete UI — Windows XP Luna visual style (homage)
+//! 2026-09-28: added Aether Memory GUI v1 (real PMM summary + visual placeholders).
 
 use crate::graphics;
 use crate::drivers::ps2;
@@ -43,7 +44,7 @@ const COL_BTN_FACE: u32 = 0x00D4D0C8;
 const COL_MENU_BG: u32 = 0x00FFFFFF;
 const COL_MENU_HDR: u32 = 0x001665CA;
 
-const MAX_WIN: usize = 13;
+const MAX_WIN: usize = 14;
 const TITLE_H: i32 = 26;
 const TASKBAR_H: usize = 30;
 
@@ -62,6 +63,7 @@ enum WinKind {
     MediaPlayer,
     Keyboard,
     Alarm,
+    Memory,
 }
 
 struct Window {
@@ -107,6 +109,10 @@ static mut WINS: [Window; MAX_WIN] = [
         minimized: false, maximized: false, rx: 30, ry: 275, rw: 740, rh: 295 },
     Window { x: 120, y: 55, w: 470, h: 360, kind: WinKind::Alarm, visible: false, z: 13,
         minimized: false, maximized: false, rx: 120, ry: 55, rw: 470, rh: 360 },
+    // Aether Memory: first GUI surface uses real PMM totals/free pages and
+    // intentionally keeps subsystem accounting as visual placeholders.
+    Window { x: 120, y: 48, w: 620, h: 430, kind: WinKind::Memory, visible: false, z: 14,
+        minimized: false, maximized: false, rx: 120, ry: 48, rw: 620, rh: 430 },
 ];
 
 static mut FOCUS: usize = 0; // terminal
@@ -963,17 +969,17 @@ fn in_title(idx: usize, mx: i32, my: i32) -> bool {
 fn in_max(idx: usize, mx: i32, my: i32) -> bool {
     unsafe {
         let w = &WINS[idx];
-        let cx = w.x + w.w - 42;
-        let cy = w.y + 4;
-        mx >= cx && mx < cx + 16 && my >= cy && my < cy + 16
+        let cx = w.x + w.w - 44;
+        let cy = w.y + 2;
+        mx >= cx && mx < cx + 20 && my >= cy && my < cy + 20
     }
 }
 fn in_min(idx: usize, mx: i32, my: i32) -> bool {
     unsafe {
         let w = &WINS[idx];
-        let cx = w.x + w.w - 62;
-        let cy = w.y + 4;
-        mx >= cx && mx < cx + 16 && my >= cy && my < cy + 16
+        let cx = w.x + w.w - 64;
+        let cy = w.y + 2;
+        mx >= cx && mx < cx + 20 && my >= cy && my < cy + 20
     }
 }
 
@@ -991,9 +997,7 @@ fn toggle_maximize(idx: usize) {
             WINS[idx].rx = WINS[idx].x;
             WINS[idx].ry = WINS[idx].y;
             WINS[idx].rw = WINS[idx].w;
-            WINS[idx].rh = WINS[idx].h;
-            WINS[idx].x = 0;
-            WINS[idx].y = 30;
+            WINS[idx].rh = WINS[idx].h;            WINS[idx].x = 0;            WINS[idx].y = 30;
             WINS[idx].w = sw;
             WINS[idx].h = sh - 70;
             WINS[idx].maximized = true;
@@ -1053,6 +1057,7 @@ fn win_title(kind: WinKind) -> &'static str {
         WinKind::MediaPlayer => "Aether Media Player",
         WinKind::Keyboard => "On-Screen Keyboard",
         WinKind::Alarm => "Alarm Clock",
+        WinKind::Memory => "Memory",
     }
 }
 
@@ -1061,6 +1066,7 @@ pub fn open_media_path(path:&str)->bool {
         return false;
     }
     let _=crate::media_player::add_to_playlist(path);
+    crate::media_player::play();
     // Media Player is window slot 10. Keep the Explorer in the background.
     unsafe {
         WINS[10].minimized=false;
@@ -1203,6 +1209,7 @@ fn draw_taskbar_buttons(w: usize, h: usize) {
                     WinKind::MediaPlayer => "Media",
                     WinKind::Keyboard => "Keyboard",
                     WinKind::Alarm => "Alarm",
+                    WinKind::Memory => "Memory",
                 };
                 let bw = short.len() * 8 + 20;
                 if x + bw > w.saturating_sub(100) {
@@ -1252,9 +1259,9 @@ fn hit_taskbar(mx: i32, my: i32) -> Option<usize> {
 fn in_close(idx: usize, mx: i32, my: i32) -> bool {
     unsafe {
         let w = &WINS[idx];
-        let cx = w.x + w.w - 22;
-        let cy = w.y + 4;
-        mx >= cx && mx < cx + 16 && my >= cy && my < cy + 16
+        let cx = w.x + w.w - 24;
+        let cy = w.y + 2;
+        mx >= cx && mx < cx + 20 && my >= cy && my < cy + 20
     }
 }
 
@@ -1305,10 +1312,10 @@ fn apply_mouse_delta(dx: i32, dy: i32) {
         // terminal is focused. A moving cursor is a cursor-only change; the
         // previous full repaint here could coincide with keyboard input and
         // make every typed character visibly flash.
-        if FOCUS < MAX_WIN && WINS[FOCUS].visible && WINS[FOCUS].kind == WinKind::Terminal {
+        if FOCUS < MAX_WIN && WINS[FOCUS].visible {
+            // Mouse movement is a cursor-only change for every application.
+            // Avoid full desktop redraws that visibly flash on the real LFB.
             DIRTY_CURSOR = true;
-        } else {
-            DIRTY_FULL = true;
         }
     }
 }
@@ -1467,10 +1474,10 @@ fn keyboard_key_to_ascii(label:&str,shift:bool,caps:bool)->Option<u8>{
 fn keyboard_emit(label:&str){
     unsafe{
         let target=KEYBOARD_TARGET;if target>=MAX_WIN||!WINS[target].visible{return;}
-        if label=="SHIFT"{KEYBOARD_SHIFT=!KEYBOARD_SHIFT;DIRTY_FULL=true;return;}
-        if label=="CAPS"{KEYBOARD_CAPS=!KEYBOARD_CAPS;DIRTY_FULL=true;return;}
-        if label=="CTRL"{KEYBOARD_CTRL=!KEYBOARD_CTRL;DIRTY_FULL=true;return;}
-        if label=="ALT"{KEYBOARD_ALT=!KEYBOARD_ALT;DIRTY_FULL=true;return;}
+        if label=="SHIFT"{KEYBOARD_SHIFT=!KEYBOARD_SHIFT;DIRTY_WINDOW=target as i16;return;}
+        if label=="CAPS"{KEYBOARD_CAPS=!KEYBOARD_CAPS;DIRTY_WINDOW=target as i16;return;}
+        if label=="CTRL"{KEYBOARD_CTRL=!KEYBOARD_CTRL;DIRTY_WINDOW=target as i16;return;}
+        if label=="ALT"{KEYBOARD_ALT=!KEYBOARD_ALT;DIRTY_WINDOW=target as i16;return;}
         let old=FOCUS;FOCUS=target;
         if label=="ENTER"{handle_key(b'\n');}
         else if label=="BACK"{handle_key(0x08);}
@@ -1495,7 +1502,10 @@ fn keyboard_emit(label:&str){
         }else if let Some(ch)=keyboard_key_to_ascii(label,KEYBOARD_SHIFT,KEYBOARD_CAPS){
             handle_key(ch);if KEYBOARD_SHIFT{KEYBOARD_SHIFT=false;}
         }
-        FOCUS=old;DIRTY_FULL=true;
+        FOCUS=old;
+        if target < MAX_WIN && WINS[target].visible && !WINS[target].minimized {
+            DIRTY_WINDOW=target as i16;
+        }
     }
 }
 
@@ -1705,6 +1715,7 @@ fn handle_mouse_buttons(buttons: u8) {
                         7 => open_win(11), // On-Screen Keyboard
                         8 => open_win(12), // Alarm Clock
                         9 => open_win(99), // Recycle Bin
+                        10 => open_win(13), // Memory
                         _ => {}
                     }
                 } else if my >= 28 {
@@ -1987,10 +1998,8 @@ fn handle_mouse_buttons(buttons: u8) {
                     if my >= cy+240 && my < cy+240+48 {
                         let row=((my-(cy+240))/16) as usize;
                         if row < crate::media_player::builtin_count() && mx >= bx+18 && mx < bx+300 {
-                            let _=crate::media_player::select_builtin(row);
-                            let _=crate::media_player::open_builtin(row);
-                            DIRTY_WINDOW=idx as i16;
-                        }
+                            let _=crate::media_player::select_builtin(row);                            let _=crate::media_player::open_builtin(row);
+                            DIRTY_WINDOW=idx as i16;                        }
                     } else if my >= py && my < py+28 {
                         if mx >= bx+24 && mx < bx+96 {
                             let _=crate::media_player::previous();
@@ -2340,6 +2349,93 @@ fn draw_window(idx: usize) {
                 }
                 graphics::draw_str(wx+330,cy+248,"Select a track, then Play",COL_TEXT_DIM);
                 graphics::draw_str(wx+330,cy+264,"MP3: native decoder",COL_TEXT_DIM);
+            }
+            WinKind::Memory => {
+                // Aether Memory v1: clean system monitor surface. PMM data is
+                // real; subsystem rows remain deliberate placeholders until
+                // the allocator gains tagged accounting.
+                graphics::fill_rect(wx + 3, wy + TITLE_H as usize, ww - 6,
+                    wh - TITLE_H as usize - 3, 0x00F4F6F9);
+
+                graphics::draw_str(wx + 18, wy + 44, "MEMORY", 0x001F4E79);
+                graphics::draw_str(wx + 18, wy + 62,
+                    "Physical memory overview", 0x00606A73);
+
+                let total = crate::mm::total_count();
+                let free = crate::mm::free_count();
+                let used = total.saturating_sub(free);
+                let pct = if total == 0 { 0 } else { ((used as u64 * 100) / total as u64) as usize };
+
+                // Main usage bar.
+                let bx = wx + 18;
+                let by = wy + 82;
+                let bw = ww - 36;
+                graphics::fill_rect(bx, by, bw, 28, 0x00D8DDE3);
+                if total > 0 {
+                    let fill = ((bw as u64 * used as u64) / total as u64) as usize;
+                    graphics::fill_rect(bx, by, fill.min(bw), 28, 0x00316AC5);
+                }
+                graphics::border_rect(bx, by, bw, 28, 0x00808A94);
+
+                // Three large summary values.
+                graphics::draw_str(wx + 18, wy + 126, "TOTAL", 0x00717D89);
+                graphics::draw_str(wx + 210, wy + 126, "USED", 0x00717D89);
+                graphics::draw_str(wx + 402, wy + 126, "AVAILABLE", 0x00717D89);
+                let total_mib = (total as u64 * 4096) / (1024 * 1024);
+                let used_mib = (used as u64 * 4096) / (1024 * 1024);
+                let free_mib = (free as u64 * 4096) / (1024 * 1024);
+                draw_u32(wx + 18, wy + 145, total_mib.min(u32::MAX as u64) as u32, COL_TEXT);
+                draw_u32(wx + 210, wy + 145, used_mib.min(u32::MAX as u64) as u32, COL_TEXT);
+                draw_u32(wx + 402, wy + 145, free_mib.min(u32::MAX as u64) as u32, COL_TEXT);
+                graphics::draw_str(wx + 82, wy + 145, "MB", COL_TEXT_DIM);
+                graphics::draw_str(wx + 274, wy + 145, "MB", COL_TEXT_DIM);
+                graphics::draw_str(wx + 466, wy + 145, "MB", COL_TEXT_DIM);
+                draw_u32(wx + 18, wy + 166, pct as u32, 0x001F4E79);
+                graphics::draw_str(wx + 42, wy + 166, "% used", COL_TEXT_DIM);
+
+                // Component accounting is now sourced from AMM. Existing
+                // allocations default to Kernel until their subsystem call site
+                // opts into an explicit owner tag.
+                let owners = [
+                    crate::mm::MemoryOwner::Kernel,
+                    crate::mm::MemoryOwner::Drivers,
+                    crate::mm::MemoryOwner::Graphics,
+                    crate::mm::MemoryOwner::Audio,
+                    crate::mm::MemoryOwner::Services,
+                    crate::mm::MemoryOwner::Applications,
+                ];
+                let labels = ["KERNEL", "DRIVERS", "GRAPHICS", "AUDIO", "SERVICES", "APPLICATIONS"];
+                let mut i = 0usize;
+                while i < owners.len() {
+                    let col = i % 3;
+                    let row = i / 3;
+                    let cx = wx + 18 + col * 194;
+                    let cy = wy + 196 + row * 78;
+                    let bytes = crate::mm::owner_bytes(owners[i]);
+                    let mib = (bytes as u64 / (1024 * 1024)) as u32;
+                    let used_pages = crate::mm::owner_pages(owners[i]);
+                    graphics::fill_rect(cx, cy, 180, 66, 0x00FFFFFF);
+                    graphics::border_rect(cx, cy, 180, 66, 0x00C4CBD3);
+                    graphics::draw_str(cx + 10, cy + 10, labels[i], 0x001F4E79);
+                    draw_u32(cx + 10, cy + 28, mib, COL_TEXT);
+                    graphics::draw_str(cx + 58, cy + 28, "MB", COL_TEXT_DIM);
+                    if used_pages == 0 {
+                        graphics::draw_str(cx + 10, cy + 47, "NO ALLOCATIONS", 0x00717D89);
+                    } else {
+                        graphics::draw_str(cx + 10, cy + 47, "AMM ACCOUNTED", 0x00008000);
+                    }
+                    graphics::fill_rect(cx + 112, cy + 50, 56, 5, 0x00D8DDE3);
+                    let fill = if used == 0 { 0 } else {
+                        ((56u64 * bytes as u64) / (used as u64 * 4096)).min(56) as usize
+                    };
+                    graphics::fill_rect(cx + 112, cy + 50, fill, 5, 0x00316AC5);
+                    i += 1;
+                }
+
+                // Quiet footer: page structure is present without fake data.
+                graphics::draw_str(wx + 18, wy + wh - 30,
+                    "Overview    Processes    Physical    Virtual", 0x005A6673);
+                graphics::draw_str(wx + ww - 92, wy + wh - 30, "Refresh", 0x001E5AA8);
             }
             WinKind::Alarm => {
                 crate::alarm::alarm_draw(wx as i32 + 3, wy as i32 + TITLE_H);
@@ -2902,8 +2998,7 @@ fn cursor_save_and_draw(x: i32, y: i32) {
 }
 
 fn redraw_status_strip() {
-    let w = graphics::width();
-    let h = graphics::height();
+    let w = graphics::width();    let h = graphics::height();
     if w == 0 || h == 0 {
         return;
     }
@@ -2915,7 +3010,6 @@ fn redraw_status_strip() {
     draw_status_icons_and_clock(w, h);
     draw_start_button(w, h);
 }
-
 
 
 fn draw_start_button(_w: usize, h: usize) {
@@ -3041,6 +3135,17 @@ fn render_drag_step() {
         let oh = if bottom - top < 0 { 0 } else { (bottom - top) as usize + 6 };
         if !wallpaper::draw_region(ox, oy, ow, oh) {
             graphics::fill_rect(ox, oy, ow, oh, COL_BG);
+        }
+        // Restore desktop-owned content that was covered by the moving window.
+        // Windows are redrawn below, but desktop icons and taskbar content are not
+        // part of draw_window(), so without this they remain erased after a drag.
+        draw_desktop_icons();
+        if oy + oh > h.saturating_sub(TASKBAR_H) {
+            graphics::fill_rect(0, h.saturating_sub(TASKBAR_H), w, TASKBAR_H, COL_TASKBAR);
+            graphics::fill_rect(0, h.saturating_sub(TASKBAR_H), w, 2, COL_TASKBAR_TOP);
+            draw_taskbar_buttons(w, h);
+            draw_status_icons_and_clock(w, h);
+            draw_start_button(w, h);
         }
         // 2) If old rect hit panel/dock, restore strips
         if oy < 30 {
@@ -3204,7 +3309,7 @@ fn draw_start_menu() {
     use crate::gui::icon::{self, IconId};
     let h = graphics::height();
     let tb = TASKBAR_H;
-    let menu_h = 364usize;
+    let menu_h = 392usize;
     let menu_w = 220usize;
     let mx = 2usize;
     let my = h.saturating_sub(tb + menu_h);
@@ -3216,7 +3321,7 @@ fn draw_start_menu() {
     graphics::fill_rect(mx, my, menu_w, 28, 0x00245EDC);
     graphics::draw_str(mx + 12, my + 10, "Aether User", 0x00FFFFFF);
     // items with icons
-    let items: [(IconId, &str, usize); 10] = [
+    let items: [(IconId, &str, usize); 11] = [
         (IconId::Terminal, "Terminal", 0),
         (IconId::Folder, "Files", 5),
         (IconId::MyComputer, "My Computer", 7),
@@ -3227,9 +3332,10 @@ fn draw_start_menu() {
         (IconId::File, "On-Screen Keyboard", 11),
         (IconId::Settings, "Alarm Clock", 12),
         (IconId::RecycleBin, "Recycle Bin", 99),
+        (IconId::Settings, "Memory", 13),
     ];
     let mut i = 0usize;
-    while i < 10 {
+    while i < 11 {
         let (id, name, _) = items[i];
         let iy = my + 36 + i * 28;
         icon::blit(id, mx + 10, iy, false);
@@ -3247,7 +3353,7 @@ fn draw_start_menu() {
 fn hit_start_menu(mx: i32, my: i32) -> Option<usize> {
     let h = graphics::height() as i32;
     let tb = TASKBAR_H as i32;
-    let menu_h = 364i32;
+    let menu_h = 392i32;
     let menu_w = 220i32;
     let x0 = 2i32;
     let y0 = h - tb - menu_h;
@@ -3260,7 +3366,7 @@ fn hit_start_menu(mx: i32, my: i32) -> Option<usize> {
         return None;
     }
     let idx = (rel / 28) as usize;
-    if idx < 10 {
+    if idx < 11 {
         Some(idx)
     } else {
         None
@@ -3421,7 +3527,7 @@ fn handle_key(ch: u8) {
         }
         if WINS[FOCUS].kind == WinKind::Alarm {
             if crate::alarm::alarm_key(ch) {
-                DIRTY_FULL = true;
+                DIRTY_WINDOW = FOCUS as i16;
             }
             return;
         }
@@ -3678,6 +3784,11 @@ pub fn run() -> ! {
                     cursor_restore();
                     redraw_status_strip();
                     cursor_save_and_draw(MX, MY);
+                    // Memory Overview is a live system view: refresh its PMM
+                    // counters once per real-time second while the window is open.
+                    if WINS[13].visible && !WINS[13].minimized {
+                        DIRTY_WINDOW = 13;
+                    }
                 }
             }
             if DIRTY_FULL {
@@ -3702,4 +3813,3 @@ pub fn run() -> ! {
         }
     }
 }
-

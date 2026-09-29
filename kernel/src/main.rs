@@ -122,12 +122,13 @@ pub extern "C" fn kernel_main(mbi: usize) -> ! {
     // which caused early page allocations to overwrite the kernel itself.
     let kernel_end = unsafe { &__kernel_end as *const u8 as usize };
     let pmm_start = (kernel_end + 0x1F_FFFF) & !0x1F_FFFF;
+    unsafe { mm::discover_multiboot(mbi); }
     serial::write_str("[PMM] kernel_end=");
     serial::write_hex(kernel_end);
     serial::write_str(" start=");
     serial::write_hex(pmm_start);
     serial::write_str("\n");
-    mm::init(pmm_start, 64 * 1024 * 1024);
+    mm::init(pmm_start, 0);
     vga_mark(4, b'P'); // PMM
     serial::write_str("[OK] PMM\n");
     // Kernel stack must be large: rust_kernel_after_user has big locals; Ring3 TSS uses rsp0

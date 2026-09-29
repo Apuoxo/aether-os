@@ -676,17 +676,41 @@ fn parse_index_entries(rec: &[u8], mut off: usize, end: usize) -> usize {
             let mut name = [0u8; 48];
             let mut nl = 0usize;
             let mut c = 0usize;
-            while c < nlen && nl < 47 && name_bytes + c * 2 + 1 < off + entry_size {
-                let lo = rec[name_bytes + c * 2];
-                let hi = rec[name_bytes + c * 2 + 1];
-                if hi == 0 && lo >= 32 && lo < 127 {
-                    name[nl] = lo;
-                    nl += 1;
-                } else if hi == 0 && lo == 0 {
-                    break;
+            // NTFS stores file names as UTF-16LE. Preserve Unicode code points
+            // instead of collapsing every non-ASCII character to '?'.
+            while c < nlen && nl < 48 && name_bytes + c * 2 + 1 < off + entry_size {
+                let u = u16::from_le_bytes([
+                    rec[name_bytes + c * 2],
+                    rec[name_bytes + c * 2 + 1],
+                ]);
+                if u == 0 { break; }
+                let mut cp = u as u32;
+                if u >= 0xD800 && u <= 0xDBFF && c + 1 < nlen {
+                    let lo = u16::from_le_bytes([
+                        rec[name_bytes + (c + 1) * 2],
+                        rec[name_bytes + (c + 1) * 2 + 1],
+                    ]);
+                    if lo >= 0xDC00 && lo <= 0xDFFF {
+                        cp = 0x10000 + (((u as u32) - 0xD800) << 10) + ((lo as u32) - 0xDC00);
+                        c += 1;
+                    }
+                }
+                let need = if cp <= 0x7F { 1 } else if cp <= 0x7FF { 2 } else if cp <= 0xFFFF { 3 } else { 4 };
+                if nl + need > 48 { break; }
+                if cp <= 0x7F {
+                    name[nl] = cp as u8; nl += 1;
+                } else if cp <= 0x7FF {
+                    name[nl] = 0xC0 | ((cp >> 6) as u8);
+                    name[nl + 1] = 0x80 | ((cp & 0x3F) as u8); nl += 2;
+                } else if cp <= 0xFFFF {
+                    name[nl] = 0xE0 | ((cp >> 12) as u8);
+                    name[nl + 1] = 0x80 | (((cp >> 6) & 0x3F) as u8);
+                    name[nl + 2] = 0x80 | ((cp & 0x3F) as u8); nl += 3;
                 } else {
-                    name[nl] = b'?';
-                    nl += 1;
+                    name[nl] = 0xF0 | ((cp >> 18) as u8);
+                    name[nl + 1] = 0x80 | (((cp >> 12) & 0x3F) as u8);
+                    name[nl + 2] = 0x80 | (((cp >> 6) & 0x3F) as u8);
+                    name[nl + 3] = 0x80 | ((cp & 0x3F) as u8); nl += 4;
                 }
                 c += 1;
             }
@@ -729,6 +753,44 @@ pub fn entry(i: usize) -> Option<NtfsEntry> {
     }
 }
 
+
+pub fn read_file_range(mft_ref:u32, offset:u64, out:&mut [u8])->Option<usize> {
+    if !is_mounted() || out.is_empty() { return Some(0); }
+    let rec_size=unsafe{MFT_REC_SIZE as usize}; if rec_size>1024{return None;}
+    let mut rec=[0u8;1024]; if !read_mft_record(mft_ref,&mut rec[..rec_size]){return None;}
+    let mut ao=u16::from_le_bytes([rec[20],rec[21]]) as usize;
+    while ao+8<=rec_size {
+        let at=u32::from_le_bytes([rec[ao],rec[ao+1],rec[ao+2],rec[ao+3]]);
+        if at==0xFFFF_FFFF{break;}
+        let al=u32::from_le_bytes([rec[ao+4],rec[ao+5],rec[ao+6],rec[ao+7]]) as usize;
+        if al<16||ao+al>rec_size{break;}
+        if at==0x80 {
+            if rec[ao+8]==0 {
+                let vl=u32::from_le_bytes([rec[ao+16],rec[ao+17],rec[ao+18],rec[ao+19]]) as u64;
+                let vo=u16::from_le_bytes([rec[ao+20],rec[ao+21]]) as usize;
+                if offset>=vl{return Some(0);} let n=(out.len() as u64).min(vl-offset) as usize;
+                let src=ao+vo+offset as usize;if src+n>ao+al{return None;}
+                let mut i=0;while i<n{out[i]=rec[src+i];i+=1;}return Some(n);
+            }
+            let ds=u64::from_le_bytes([rec[ao+48],rec[ao+49],rec[ao+50],rec[ao+51],rec[ao+52],rec[ao+53],rec[ao+54],rec[ao+55]]);
+            if offset>=ds{return Some(0);} let n=(out.len() as u64).min(ds-offset) as usize;
+            let mut runs=[(0u64,0u64);32];let mut rc=0usize;parse_runlist(&rec,ao,al,&mut runs,&mut rc);if rc==0{return None;}
+            let bpc=unsafe{SPC as u64*512};let mut done=0usize;
+            while done<n {
+                let pos=offset+done as u64;let ci=pos/bpc;let intra=(pos%bpc) as usize;
+                let mut base=0u64;let mut l=None;let mut ri=0usize;
+                while ri<rc{let(x,c)=runs[ri];if ci<base+c{l=Some(x+(ci-base));break;}base+=c;ri+=1;}
+                let lcn=match l{Some(v)=>v,None=>return None};let mut sec=(intra/512) as u32;let mut off=intra%512;
+                while sec<unsafe{SPC as u32}&&done<n{
+                    let mut sb=[0u8;512];if !read_lba(unsafe{DISK},cluster_to_lba(lcn)+sec,&mut sb){return None;}
+                    let take=(512-off).min(n-done);let mut i=0;while i<take{out[done+i]=sb[off+i];i+=1;}done+=take;sec+=1;off=0;
+                }
+            }
+            return Some(done);
+        }
+        ao+=al;
+    } None
+}
 
 /// NTFS diagnostic for the GUI terminal (read-only).
 /// This intentionally exercises the filesystem parser path, not the DSK RAW/MBR probe.
