@@ -1133,6 +1133,8 @@ fn load_firmware_stage(init: bool) -> bool {
 
         let wanted_a = if init { 3u32 } else { 1u32 };
         let wanted_b = if init { 4u32 } else { 2u32 };
+        let mut src_a_start = 0usize;
+        let mut src_b_start = 0usize;
         let mut pos = 88usize;
         let mut seen_a = false;
         let mut seen_b = false;
@@ -1158,11 +1160,13 @@ fn load_firmware_stage(init: bool) -> bool {
             let dst = match tlv_type {
                 t if t == wanted_a && !seen_a => {
                     seen_a = true;
+                    src_a_start = data_start;
                     size_a = tlv_len;
                     IWLAGN_RTC_INST_LOWER_BOUND
                 }
                 t if t == wanted_b && !seen_b => {
                     seen_b = true;
+                    src_b_start = data_start;
                     size_b = tlv_len;
                     IWLAGN_RTC_DATA_LOWER_BOUND
                 }
@@ -1203,13 +1207,19 @@ fn load_firmware_stage(init: bool) -> bool {
                 core::ptr::read_volatile((MMIO + HBUS_TARG_MEM_RDAT) as *const u32)
             }
         };
-        let inst_src0 = fw_le32(IWL2030_FW, 96);
-        let inst_src4 = fw_le32(IWL2030_FW, 100);
-        let data_src0 = if size_b >= 4 { fw_le32(IWL2030_FW, 0) } else { 0 };
+        let inst_src0 = if size_a >= 4 { fw_le32(IWL2030_FW, src_a_start) } else { 0 };
+        let inst_src4 = if size_a >= 8 { fw_le32(IWL2030_FW, src_a_start + 4) } else { 0 };
+        let data_src0 = if size_b >= 4 { fw_le32(IWL2030_FW, src_b_start) } else { 0 };
         let inst0 = read_targ(IWLAGN_RTC_INST_LOWER_BOUND);
         let inst4 = read_targ(IWLAGN_RTC_INST_LOWER_BOUND + 4);
         let data0 = read_targ(IWLAGN_RTC_DATA_LOWER_BOUND);
-        diag_write_str("[WIFI] FW VERIFY SRC INST0=");
+        diag_write_str("[WIFI] FW VERIFY DMA_BASE=");
+        diag_write_hex(dma_base as usize);
+        diag_write_str(" SRC_OFF INST=");
+        diag_write_hex(src_a_start);
+        diag_write_str(" DATA=");
+        diag_write_hex(src_b_start);
+        diag_write_str(" SRC INST0=");
         diag_write_hex(inst_src0 as usize);
         diag_write_str(" INST4=");
         diag_write_hex(inst_src4 as usize);
