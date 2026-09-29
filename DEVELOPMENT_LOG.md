@@ -1,5 +1,15 @@
 # Aether OS Development Log
 
+## Current State — 2026-09-29
+
+- Documentation maintenance is based on the actual main tree at commit 0bb996ed5ab809ae6c73709262ea964e7c3f3224.
+- A full markdown inventory exposed several documents that still described superseded implementation stages.
+- Current live status is maintained in docs/STATUS.md; historical audits/log entries remain evidence but are not current state.
+- Current GUI terminal routing is in kernel/src/desktop.rs (run_cmd()).
+- Current hardware blockers remain HDA PCM playback and Intel 2230 SCD/TFD transport consumption.
+- The stable Intel framebuffer path remains protected from the known-unsafe GGTT/GSM region around 0xDF800000.
+
+
 This file is the persistent engineering log for the Aether OS repository.
 
 ## Rules
@@ -11,7 +21,7 @@ This file is the persistent engineering log for the Aether OS repository.
 - Current graphics hardware: Intel Sandy Bridge HD Graphics 3000, PCI 8086:0116, Gen6.
 - GGTT/GSM physical region 0xDF800000 is currently considered unsafe on AH532 after mapping attempts caused reboot. Do not re-enable such mapping without a new, justified test plan.
 
-## Current State — 2026-09-23
+## Historical State — 2026-09-23
 
 ### Build / CI
 
@@ -183,3 +193,10 @@ Every significant change should be followed by:
 - Revert commit: 28b4f0882a1c849544067abe98908fabdb8209c8; merged as 90196ab0daf5ef826ca9f63f23bd30758f3e9881.
 - No ISO is considered testable from this change until GitHub Actions verifies the merged state.
 - Next graphics investigation: inspect framebuffer allocation/mapping and boot-time memory setup, then design a complete rendering-target/present architecture rather than another partial backbuffer patch. Avoid static 8 MiB .bss framebuffer experiments.
+
+
+### 2026-09-29 — Documentation truth audit
+- Audited the repository markdown tree against the current source tree and latest recorded hardware evidence.
+- Corrected stale source-snapshot, build, Wi-Fi, Media Player, video-status, native-app-contract, audit-baseline, vision and roadmap wording.
+- Historical audit material is retained, but current implementation claims are routed through docs/STATUS.md and the current source tree.
+- CI for documentation commit 0bb996ed5ab809ae6c73709262ea964e7c3f3224 includes Aether OS build #699, which was in progress at audit time.

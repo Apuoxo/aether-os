@@ -1,108 +1,72 @@
-# Aether OS — Сеть / Wi‑Fi
+# Aether OS — Wi-Fi / Intel 2230
 
-## 1. Назначение
+## Current status
 
-Этот раздел собирает аппаратную и программную документацию по сетевой подсистеме целевого ноутбука **Fujitsu LIFEBOOK AH532**. Он является рабочей базой для нативной реализации Ethernet и Wi‑Fi в Aether OS.
+**Bring-up: firmware and command/TX transport are partially working; scan/networking are not complete.**
 
-Документ разделяет подтверждённые факты, результаты Aether на реальном AH532 и сведения, которые пока требуют проверки. Предположения не должны превращаться в аппаратные факты без измерения.
+Target hardware on the tested AH532:
 
-## 2. Целевой Wi‑Fi адаптер
-
-| Поле | Значение | Статус |
+| Field | Value | Status |
 |---|---|---|
-| Устройство | Intel Centrino Wireless‑N 2230 | DOC / AETHER target |
-| PCI Vendor | \`8086\` | DOC |
-| PCI Device | \`0887\` | DOC / driver target |
-| Subsystem | \`8086:4062\` | DOC / driver target |
-| PCI class | \`02:80\` | driver target |
-| Шина | PCI/PCIe | DOC / driver implementation |
-| MMIO | BAR0, ожидается 8 KiB | driver contract |
-| Linux driver family | \`iwlwifi\` | reference |
-| Firmware family | \`iwlwifi-2030-*\` | reference / driver contract |
+| Adapter | Intel Centrino Wireless-N 2230 | AH532 runtime target |
+| PCI | 8086:0887 | verified |
+| Subsystem | 8086:4062 | verified |
+| BDF | 08:00.0 | verified in recorded AH532 tests |
+| BAR0 | F0D00000 | verified in recorded AH532 tests |
+| Firmware | iwlwifi-2030 family | bring-up |
+| ALIVE | seen / valid | verified in recorded AH532 tests |
+| Command queue | initialized | verified |
+| RX ring | ready | verified |
+| TX/SCD consumption | not proven | blocker |
+| Scan results | not proven | incomplete |
+| Association/IP networking | not implemented to completion | incomplete |
 
-### Важное уточнение
+## What the current driver actually proves
 
-Aether уже содержит отдельный нативный драйвер \`kernel/src/drivers/wifi.rs\`. Текущая фаза выполняет поиск PCI-устройства, включает Memory Space/Bus Master, получает BAR0 и пытается выполнить MMIO mapping. Полноценный 802.11 стек, firmware loader, scan, association и передача данных ещё не считаются реализованными.
+Recorded AH532 tests established:
 
-## 3. Что уже заложено в Aether
+- PCI discovery and BAR0 MMIO mapping;
+- firmware loading with observed firmware version `12A80601`;
+- firmware ALIVE state;
+- command-queue initialization;
+- RX-ring setup;
+- scan submission;
+- interrupt activity.
 
-Текущий Wi‑Fi драйвер содержит:
+They did **not** establish successful scan-result delivery or working networking.
 
-- поиск Intel WLAN по PCI-шинам \`0..31\`;
-- приоритет точного Device ID \`8086:0887\`;
-- чтение Subsystem ID;
-- чтение и сохранение BAR0;
-- включение PCI Memory Space + Bus Master;
-- попытку отображения 8 KiB MMIO;
-- read-only проверку первого MMIO DWORD;
-- явный контракт firmware \`iwlwifi-2030-5.ucode\` / \`iwlwifi-2030-6.ucode\`;
-- флаг \`NEEDS_FW\`, пока firmware loader не реализован.
+The latest transport investigation focuses on the DVM scheduler/SCD/TFD ownership path. Do not replace the working firmware/ALIVE path with a broad driver rewrite.
 
-Это диагностическая/подготовительная стадия, а не готовый Wi‑Fi драйвер.
+## Current blocker
 
-## 4. План нативного поднятия Wi‑Fi
+The key unresolved transport question is whether the hardware consumes the submitted TFD through the scheduler and advances the corresponding SCD state.
 
-1. **PCI discovery** — подтвердить VID:DID, subsystem, BDF и BAR0 на реальном AH532.
-2. **PCI command/configuration** — проверить Memory Space и Bus Master без разрушительных операций.
-3. **MMIO** — подтвердить корректное отображение и безопасные регистровые чтения.
-4. **Reset / device state** — определить необходимую последовательность по документации Intel/iwlwifi.
-5. **Firmware loader** — реализовать нативную загрузку подходящей \`iwlwifi-2030\` firmware из доступного Aether storage. Никаких фиктивных firmware blobs.
-6. **Interrupt path** — определить и проверить механизм прерываний, необходимый устройству.
-7. **RX/TX rings** — выделение памяти, DMA-адреса, очереди и дескрипторы.
-8. **802.11 scan** — только после успешной инициализации firmware/hardware.
-9. **Authentication / association** — отдельный этап после scan.
-10. **IP networking** — DHCP/IPv4 и последующие сетевые сервисы после появления рабочего WLAN интерфейса.
-11. **AH532 validation** — каждый аппаратно-зависимый этап проверяется на реальном ноутбуке и фиксируется в журнале.
+Required evidence before declaring TX/scan functional:
 
-## 5. Безопасность разработки
+1. command TFD consumption;
+2. SCD read/consumer advancement;
+3. expected firmware command completion/notification;
+4. scan notification and/or actual SSID/BSSID/channel results.
 
-До появления полноценного firmware/driver state machine запрещены как обычная часть диагностики:
+## Next controlled stage
 
-- произвольная запись в неизвестные MMIO-регистры;
-- спекулятивная прошивка устройства;
-- TX до подтверждения корректной инициализации;
-- автоматическая association;
-- операции с диском ради эксперимента с Wi‑Fi.
+Continue from the existing DVM transport state:
 
-Диагностические команды должны по возможности оставаться read-only.
+1. verify the dedicated byte-count (BC) table is allocated and programmed separately from the TFD ring;
+2. populate the command queue BC entry using the correct legacy DVM format;
+3. log BC state together with SCD/CBBC/TCSR state;
+4. keep firmware loading, ALIVE handling and RX setup unchanged;
+5. rebuild and test on AH532;
+6. only after transport consumption is proven, advance to scan-result handling.
 
-## 6. Связь с остальной сетью AH532
+## Safety
 
-Целевая машина также имеет проводной Ethernet-контроллер семейства Realtek RTL8111/8168. Для него должен существовать отдельный документ и независимая последовательность инициализации. Wi‑Fi не должен зависеть от Ethernet-драйвера.
+No arbitrary MMIO writes, speculative firmware, automatic association, or disk operations should be introduced merely to diagnose Wi-Fi. Hardware-dependent claims must be backed by an AH532 result.
 
-Сетевой слой Aether должен в дальнейшем представлять Ethernet и WLAN как независимые native network devices поверх общего сетевого API.
+## Source references
 
-## 7. Что требуется дополнительно собрать по AH532
+- `kernel/src/drivers/wifi.rs`
+- `docs/WIFI_BRINGUP_LOG.md`
+- `docs/STATUS.md`
 
-- фактический BDF Wi‑Fi устройства на конкретном AH532;
-- фактический BAR0 и его размер;
-- PCI revision;
-- состояние PCI command/status;
-- interrupt line / MSI/MSI-X configuration;
-- точное состояние MMIO после включения устройства;
-- firmware revision после загрузки firmware;
-- физическая антенная/радиомодульная конфигурация;
-- BIOS/ACPI сведения, влияющие на radio enable/disable;
-- точный firmware blob и допустимая API-версия для установленной ревизии 2230;
-- реальные scan/association результаты.
-
-До получения этих данных соответствующие пункты помечаются \`UNKNOWN\`.
-
-## 8. Источники внутри проекта
-
-- \`docs/AETHER_HARDWARE_PROFILE_AH532.md\` — общий профиль AH532 и правила доказательности.
-- \`kernel/src/drivers/wifi.rs\` — текущий native Wi‑Fi PCI/MMIO этап.
-- \`kernel/src/drivers/net.rs\` — текущая проводная/сетевой слой диагностика.
-- \`docs/AH532-SCHEMATIC_DISPLAY_SIGNAL_MAP.md\` — пример формата аппаратной документации проекта.
-- Проверенные аппаратные документы AH532/FH6C/HM70 в корне репозитория используются только с учётом их variant qualification.
-
-## 9. Журнал статуса
-
-| Дата | Изменение |
-|---|---|
-| 2026-09-24 | Создан отдельный раздел Network/Wi‑Fi. Зафиксирован профиль Intel 2230 и текущая фаза native PCI/MMIO драйвера. |
-| 2026-09-24 | Определён пошаговый план от PCI/MMIO через firmware и RX/TX к scan/association/IP. |
-
-## 10. Правило обновления
-
-Каждый новый факт о AH532 добавляется сюда или в связанный аппаратный профиль с указанием происхождения: \`DOC\`, \`AETHER\`, \`INFERRED\` или \`UNKNOWN\`. Если документ относится к другой ревизии платы, он должен быть явно помечен как reference/variant mismatch и не использоваться как доказательство exact-machine hardware.
+The older description of this file as only a PCI/MMIO preparation stage was superseded by the later firmware/ALIVE/TX transport bring-up.

@@ -1,41 +1,37 @@
-# Aether application contract — first native app stage
+# Aether application contract — native app stage
 
-This document records the currently implemented boundary between the kernel and future native applications.
+## Current status
 
-## Evidence from source
+The Ring3/native-app path is implemented as an experimental kernel-mediated ABI. It is not yet a stable frozen application ABI.
 
-- kernel/src/elf.rs loads x86_64 ELF ET_EXEC images into a separate user CR3.
+## Current source boundary
+
+- kernel/src/elf.rs loads x86_64 ELF images into a separate user address space.
 - kernel/src/process.rs creates process records from loaded images.
-- kernel/src/input.rs already has a kernel input event queue.
+- kernel/src/input.rs provides the kernel input event queue.
 - kernel/src/gui/ and kernel/src/graphics.rs provide kernel-side drawing primitives.
-- kernel/src/main.rs currently enters the built-in /bin/init ELF path, but the Ring3 path is still a boot-stage mechanism rather than a stable application ABI.
+- kernel/src/main.rs enters the built-in userspace path.
 
-## Decision
+## Experimental syscall surface
 
-Do not expose guessed syscall numbers or direct kernel GUI calls to Calculator yet.
+The current int 0x80 path exposes:
+- 10 — poll keyboard event
+- 11 — draw NUL-terminated text
+- 12 — fill rectangle
+- 13 — yield
+- 60 — process exit
 
-The next kernel milestone is a minimal, explicit native-app ABI with:
-1. process exit;
-2. keyboard event polling;
-3. basic text drawing;
-4. basic rectangle/button drawing;
-5. a safe yield/wait primitive.
+The active register ABI is implemented by the current assembly/handler path and remains experimental until deterministic Ring3 regression evidence is complete. Display calls remain kernel-mediated; applications do not receive direct framebuffer/MMIO access.
 
-The ABI must be implemented and tested before aether-apps/apps/calculator/src/main.rs is connected to it.
+## Calculator
 
-## Calculator target
+Calculator is packaged as a separate native ELF from Apuoxo/aether-apps and is launched as an independent process after /bin/init.
 
-Calculator remains split into a pure no_std arithmetic engine, a thin Aether ABI adapter, and a GUI/input layer. This keeps arithmetic testable and prevents the app from depending on kernel internals.
+The historical instruction not to expose guessed syscall numbers is superseded by the implemented experimental ABI above. It remains valid that new application interfaces must be defined in source, tested, and documented here.
 
+## Remaining work
 
-## Implemented syscall surface (experimental)
-The kernel now exposes the first native-app calls on `int 0x80`:
-- `10` — poll keyboard event
-- `11` — draw NUL-terminated text
-- `12` — fill rectangle
-- `13` — yield
-- `60` — process exit
-
-The display calls remain kernel-mediated: applications do not receive direct framebuffer/MMIO access. The framebuffer is prepared before Ring3 using the existing Multiboot surface path; the Intel display driver remains read-only and no GGTT/GSM mapping is introduced.
-
-Calculator is packaged as a separate native ELF from Apuoxo/aether-apps and is launched as an independent process after `/bin/init`.
+- deterministic syscall argument/return-value regression;
+- deterministic CPL3 -> kernel entry/TSS evidence;
+- stable application ABI definition;
+- broader userspace resource/capability model.

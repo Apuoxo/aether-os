@@ -1,13 +1,19 @@
 # Aether OS — Current Source Snapshot
 
-This commit is an explicit snapshot marker for the current project sources.
+This file identifies the source tree that documentation describes.
 
-- Source tree baseline: `65ba2f861bb52fde609170361386f6a61fa19932`
-- Snapshot is taken from the current `main` tree, not from the original/base archive.
-- Current Explorer source: `kernel/src/files_mgr.rs`
-- Current desktop source: `kernel/src/desktop.rs`
-- Current NTFS source: `kernel/src/fs_ntfs.rs`
-- Current partition source: `kernel/src/part.rs`
-- Current shell source: `kernel/src/shell.rs`
+- Current `main` commit: `0bb996ed5ab809ae6c73709262ea964e7c3f3224`
+- Snapshot basis: current GitHub `main`, not the historical `aether-os-sources.zip`.
+- Current Explorer: `kernel/src/files_mgr.rs`
+- Current desktop: `kernel/src/desktop.rs`
+- Current NTFS: `kernel/src/fs_ntfs.rs`
+- Current partition layer: `kernel/src/part.rs`
+- Current shell: `kernel/src/shell.rs`
+- Current GUI-terminal command routing: `kernel/src/desktop.rs` (`run_cmd()`)
+- Current HDA/audio driver: `kernel/src/drivers/audio.rs`
+- Current Media Player: `kernel/src/media_player.rs`
+- Current MP3 decoder: `kernel/src/mp3_decoder/`
+- Current Wi-Fi driver: `kernel/src/drivers/wifi.rs`
+- Current Intel display paths: `kernel/src/drivers/intel_igpu.rs`, `intel_kms.rs`, `video.rs`
 
-No source rollback or substitution with the initial archive is intended by this marker.
+The historical source archive is not a substitute for the current tree. When a snapshot marker becomes stale, update this file in the same documentation-maintenance commit that establishes the new source baseline.

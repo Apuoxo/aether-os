@@ -1,81 +1,54 @@
 # Aether OS — Engineering Audit Baseline & Repair Plan
 
-Baseline: 2026-09-23
-Source of truth: current repository source + documented runtime evidence.
-Purpose: prevent repeated rediscovery of already-audited architectural/code defects.
+Baseline: 2026-09-23  
+Current-source refresh: 2026-09-29  
 
-This document is the persistent audit baseline. Future development must use it as the starting point and update findings when they are fixed or disproven.
+This document preserves architectural findings without allowing superseded findings to masquerade as current defects. Current truth is established by source, tests and docs/STATUS.md.
 
-## Repair progress — 2026-09-23
+## Corrected at source level
 
-### P0 syscall ABI
-**Source repair applied, runtime closure pending.**
-- Canonical ABI: RAX=nr, RDI=a1, RSI=a2, RDX=a3, R10=a4, R8=a5.
-- handlers.rs now reads the actual saved-register slots from isr.s.
-- isr.s now restores the syscall return value into saved RAX (frame slot 0).
-- A deterministic QEMU Ring3 regression test still needs to prove argument values and returned RAX.
+- Syscall frame/ABI mismatch: corrected in isr.s / handlers.rs; deterministic runtime closure is still pending.
+- 64-bit TSS descriptor encoding: corrected in gdt.rs; deterministic CPL3 runtime closure is still pending.
+- Process -> Personality ownership: implemented and corrected for the legacy constructor.
+- Capability handle generation: hardened against revoke/reuse ambiguity.
+- ELF page ownership bound: expanded and checked; loader arithmetic/file-size validation was added.
 
-### P0 64-bit TSS
-**Source repair applied, CPL3→CPL0 runtime closure pending.**
-- gdt.rs now represents the GDT as 8-byte descriptors and encodes the 64-bit TSS as the required 16-byte descriptor occupying GDT slots 5–6.
-- The high half contains Base[63:32].
-- A deterministic CPL3 transition/interrupt/syscall test still needs to prove that the TSS/RSP0 path is usable.
+## Still open
 
-These two items remain unchecked below until runtime evidence exists.
+- deterministic Ring3 syscall/TSS runtime evidence;
+- complete object-authority capability model;
+- actual timer-driven/preemptive scheduler and thread model;
+- strict separation of RAM AetherFS from any persistent disk-write path;
+- unified on-disk AetherFS/VFS model;
+- AHCI DMA/addressability limitations and broader storage regressions;
+- Multiboot memory-map-driven PMM;
+- complete current-address-space validation for userspace memory;
+- any remaining fixed display/mouse geometry assumptions;
+- Intel Gen6 display completion without unsafe GGTT/GSM access;
+- real loadable Personality modules and compatibility layers.
 
-## P0 — must fix before architectural expansion
+## Important documentation corrections
 
-- [ ] Syscall ABI mismatch: source mismatch repaired; regression evidence pending.
-- [ ] 64-bit TSS descriptor: descriptor repaired; runtime evidence pending.
-- [x] Process to Personality ownership: Process now stores PersonalityId, explicit creation can bind a personality, lifecycle attach/detach hooks are called, and count_by_personality() filters by owner.
-- [~] Capability enforcement: per-process CapTable, rights primitives, derive/revoke/check, and syscall checks are present. Runtime allow/deny proof and a global object-authority model remain pending.
+1. Aether is currently a native monolithic kernel with integrated desktop/storage/driver code, not yet the final microvisor-style modular architecture.
+2. Capabilities are real infrastructure, not yet universal object authority.
+3. Personality ownership is real; dynamically unloadable personality binaries are not.
+4. The scheduler remains cooperative/basic.
+5. QEMU Ring3 evidence is not equivalent to real-AH532 hardware evidence.
+6. The desktop GUI terminal is dispatched by kernel/src/desktop.rs; shell.rs must not be assumed to own those commands.
+7. HDA controller detection is not equivalent to audible PCM playback.
+8. Intel Wi-Fi firmware/ALIVE/TX transport bring-up is not equivalent to working scan/networking.
 
-## P1 — kernel correctness / safety
+## Repair discipline
 
-- [ ] Harden ELF loader: checked arithmetic, segment bounds, canonical user VA checks, overlap checks, PT_LOAD permissions.
-- [ ] Fix ELF page ownership accounting; LoadedImage.pages cannot represent all allocated pages.
-- [ ] Replace fixed user_ok() range checks with validation against the current process address space and required access rights.
-- [ ] Turn scheduler scaffolding into an actual timer-driven scheduler/context-switch path.
-- [ ] Separate RAM AetherFS from persistent disk-writing code. During hardware validation, no normal boot path may write host disks.
-- [ ] Define one AetherFS on-disk layout; remove conflicting/obsolete parsing formats.
-- [ ] Document/enforce current AHCI 32-bit DMA limitation.
-- [ ] Replace fixed 64 MiB PMM initialization with Multiboot memory-map based allocation.
-- [ ] Make framebuffer mapping report/handle mapping failures explicitly.
-- [ ] Replace fixed PS/2 mouse 799x599 bounds with current display geometry.
-- [ ] Continue Intel HD 3000 Gen6 driver conservatively: no GGTT/GSM mapping until independently justified and tested.
+For each hardware or kernel repair:
+1. inspect current source;
+2. make one controlled change;
+3. build/CI;
+4. run deterministic QEMU tests where applicable;
+5. test AH532 when hardware-dependent;
+6. update docs/STATUS.md and the relevant subsystem log;
+7. do not close a finding without matching source invariant and evidence.
 
-## P2 — architecture completion
+## Historical detailed findings
 
-- [ ] Replace Linux/Android/Windows personality stubs with the real personality/module architecture.
-- [ ] Implement actual personality lifecycle and unload semantics.
-- [ ] Build the capability-mediated resource model before expanding compatibility personalities.
-- [ ] Establish real scheduler/IPC/domain primitives needed by the long-term polymorphic architecture.
-- [ ] Keep native Intel display work staged; do not let GUI features substitute for the underlying driver milestones.
-
-## Documentation contradictions already identified
-
-1. Architecture describes a capability/polymorphic microvisor, while current code is still a monolithic native kernel with integrated drivers/desktop and stub personalities.
-2. Capability checks now exist on exposed syscall paths, but this is not yet a complete object-authority system.
-3. Personality ownership is now represented in Process and lifecycle hooks, but full unloadable module semantics remain absent.
-4. Personality unload is currently a state toggle, not actual module code/data unloading.
-5. Disk-write code conflicts with the current hardware-validation safety policy.
-6. README status is stale relative to docs/STATUS.md.
-7. Current PS/2 source may retain the old fixed 800x600 clamp despite dynamic geometry work elsewhere.
-8. QEMU CPL3/syscall smoke evidence must not be interpreted as proof of correct syscall argument semantics or capability denial; the packaged calculator ABI has been corrected, but runtime proof is still pending.
-
-## Development rule
-
-For every repair:
-1. change source;
-2. build;
-3. run deterministic QEMU test where applicable;
-4. generate explicit runtime evidence;
-5. test AH532 when hardware behavior is involved;
-6. update this document and docs/STATUS.md;
-7. only then mark the item complete.
-
-Do not remove a finding merely because the system boots. A finding is closed only when the relevant source invariant and runtime evidence agree.
-
-## Audit report
-
-Detailed findings and rationale are preserved in docs/AUDIT_2026-09-23.md.
+The original detailed findings remain in docs/AUDIT_2026-09-23.md. They are snapshots of the repository at that time, not a live defect tracker.

@@ -1,88 +1,72 @@
 # Aether Native Media Player
 
-Status: implementation started.
+## Current status
 
-The media player is a native Aether application, not a cosmetic desktop window. The final path is:
+**UI and media pipeline are implemented; end-to-end audible HDA playback is not yet verified on the AH532.**
 
-`VFS/file -> bounded demux/decoder -> PCM ring -> mixer -> HDA DMA -> codec/pin -> speakers`
+The intended native path is:
 
-## Current foundation
+`VFS/file -> MP3 decoder -> PCM ring -> HDA DMA -> codec/pin -> speakers`
 
-Commit `d6e48dc6c915ad410df72235a0cb2132f41f3607` extends the existing audio probe without touching HDA MMIO. It records the HDA controller BDF and BAR0 candidate and keeps the PC speaker strictly diagnostic.
+The project currently targets **MP3** for the native media-player work. Other formats are not a current acceptance requirement.
 
-This is deliberate: the next hardware stage needs an owned MMIO mapping and bounded controller initialization before CORB/RIRB or stream DMA can be touched.
+## Current implementation
 
-## Player architecture
+- native Media Player window;
+- playlist/file entries;
+- play/pause/stop state path;
+- seek/time state;
+- volume/mute/repeat/shuffle state;
+- bounded MP3 decoding through the vendored `minimp3` implementation;
+- PCM buffering structures;
+- HDA controller discovery and MMIO;
+- HDA reset/codec-verb infrastructure;
+- HDA stream/BDL/PCM bring-up code.
 
-### 1. Media library boundary
+## Current hardware blocker
 
-The decoder layer must be isolated from the kernel's hardware layer. Candidate reference: Symphonia 0.6.x, a pure-Rust demux/decoder framework supporting MP3, FLAC, OGG/Vorbis, WAV and additional formats. It is MPL-2.0.
+The latest AH532 `AUD` diagnostic reported:
 
-Do not copy decoder implementation from third-party projects. Integrate upstream crates where their no_std/alloc requirements can be satisfied; otherwise implement format-specific support from the relevant specifications or use an explicitly compatible implementation.
+- `HDA_FOUND=YES`
+- `MMIO=READY`
+- `BAR0=F1610000`
+- `STREAM_READY=NO`
+- `RUNNING=NO`
+- `BASE=0`
+- `FMT=0`
+- `CTL=0`
+- `STAT=0`
+- `LPIB=0`
+- `BDL=0`
+- `TOTAL=0`
+- `NEXT=0`
 
-### 2. Streaming
+Therefore controller detection is proven, but the playback stream is not yet running. Pressing Play cannot be treated as proof of audio output until the HDA stream state advances and the AH532 speakers produce PCM.
 
-No whole-file decode. The player uses bounded buffers:
-- input read window;
-- compressed packet queue;
-- decoded PCM ring;
-- HDA DMA period buffers.
+## Required next hardware sequence
 
-The decoder must be able to pause, resume, seek, and recover from malformed input without panicking.
+1. establish codec discovery/NID topology;
+2. allocate and verify BDL/DMA memory;
+3. configure a valid PCM stream format;
+4. program stream registers;
+5. start RUN;
+6. verify LPIB/position progress;
+7. verify codec output/pin path;
+8. hear and record actual PCM playback on AH532.
 
-### 3. HDA backend
+The existing diagnostic path must remain usable while this is implemented.
 
-The hardware sequence is:
-1. PCI discovery and BAR ownership.
-2. MMIO mapping.
-3. Controller reset and capability readout.
-4. CORB/RIRB command transport.
-5. Codec discovery.
-6. Widget/pin/path discovery.
-7. PCM format negotiation.
-8. BDL allocation.
-9. Output stream configuration.
-10. DMA start/stop/pause and position tracking.
-11. Interrupt-driven refill.
-12. Volume/mute through codec verbs where supported.
+## Acceptance
 
-Intel's HDA specification defines the CORB/RIRB command path and stream descriptors/BDLs used for DMA.
+For the current MP3 milestone, completion requires:
 
-### 4. Native GUI
-
-The player window will use Aether's existing compositor/window system rather than a second GUI framework.
-
-Required controls:
-- album art / track information;
-- playlist;
-- play/pause/stop;
-- previous/next;
-- seek bar;
-- elapsed/total time;
-- volume/mute;
-- repeat/shuffle;
-- file open;
-- decoder/output error state.
-
-The UI is functional only when its actions reach the player state machine and ultimately the audio backend.
-
-## Completion gates
-
-The feature is not considered complete until all of these are demonstrated:
-- clean kernel/ISO build;
-- QEMU boot regression;
-- AH532 HDA controller evidence;
-- actual PCM output on AH532;
-- WAV playback;
-- MP3 playback;
-- at least one lossless format;
+- green CI build;
+- QEMU boot/regression evidence where applicable;
+- AH532 HDA controller/codec evidence;
+- actual MP3 PCM output on AH532;
+- pause/resume/stop/restart;
 - seek;
-- pause/resume;
-- stop/restart;
-- volume/mute;
-- playlist transitions;
-- malformed/unsupported-file handling;
-- no host-disk writes;
-- bounded memory/resource report.
+- volume/mute state reaching the output path;
+- no host-disk writes.
 
-A window, command, fake progress bar, or PC-speaker beep is not accepted as evidence of a working media player.
+A player window, progress animation, or controller-detection message is not evidence of audible playback.
