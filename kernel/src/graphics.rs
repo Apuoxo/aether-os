@@ -32,7 +32,10 @@ pub fn init(addr: usize, width: usize, height: usize, pitch: usize, bpp: u8, sof
         FB.pitch = pitch;
         FB.bpp = bpp;
         FB.software = software;
-        BACKBUFFER_ACTIVE = bpp == 32 && pitch.saturating_mul(height) <= BACKBUFFER_BYTES;
+        // Keep the known-good AH532 direct-LFB path active. The backbuffer/present
+        // experiment is not a complete rendering pipeline and must not hide the
+        // desktop in an off-screen buffer.
+        BACKBUFFER_ACTIVE = false;
     }
 }
 

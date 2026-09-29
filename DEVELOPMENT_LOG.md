@@ -208,3 +208,10 @@ Every significant change should be followed by:
 - `kernel_main()` therefore still entered the Ring3 capability test before the desktop block. The desktop was only reachable after that path returned, which is incompatible with the required architecture: Aether Desktop must remain the host and compatibility personalities must launch inside it.
 - Corrective change: defer the Ring3 capability regression during boot and continue directly to the existing native Desktop initialization. The test remains available as an explicit test path rather than a mandatory boot stage.
 - Required validation: one green GitHub Actions build, then AH532 boot verification that the normal Aether Desktop appears before any Linux-personality work is resumed.
+
+
+### 2026-09-29 — Root cause found: Desktop rendered into hidden backbuffer
+- After the previous boot-flow fixes, source audit showed the Desktop path was actually reached, but `graphics::init()` enabled the 8 MiB software backbuffer whenever the 32bpp framebuffer fit.
+- `graphics::put_pixel()` then rendered the Desktop into `BACKBUFFER`, while the visible Multiboot LFB was not updated by the Desktop render loop. This left the visible screen showing the earlier framebuffer/test contents, making it appear that Desktop never started.
+- Corrective change: restore the known-good direct-LFB rendering path by disabling the incomplete backbuffer experiment at initialization. The backbuffer storage and API remain for future complete present-pipeline work, but it is no longer selected by default.
+- This is the first fix in this sequence that addresses the actual rendering path rather than merely changing boot-stage ordering.
