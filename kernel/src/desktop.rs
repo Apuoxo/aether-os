@@ -997,8 +997,7 @@ fn toggle_maximize(idx: usize) {
             WINS[idx].rx = WINS[idx].x;
             WINS[idx].ry = WINS[idx].y;
             WINS[idx].rw = WINS[idx].w;
-            WINS[idx].rh = WINS[idx].h;            WINS[idx].x = 0;
-            WINS[idx].y = 30;
+            WINS[idx].rh = WINS[idx].h;            WINS[idx].x = 0;            WINS[idx].y = 30;
             WINS[idx].w = sw;
             WINS[idx].h = sh - 70;
             WINS[idx].maximized = true;
@@ -1313,10 +1312,10 @@ fn apply_mouse_delta(dx: i32, dy: i32) {
         // terminal is focused. A moving cursor is a cursor-only change; the
         // previous full repaint here could coincide with keyboard input and
         // make every typed character visibly flash.
-        if FOCUS < MAX_WIN && WINS[FOCUS].visible && WINS[FOCUS].kind == WinKind::Terminal {
+        if FOCUS < MAX_WIN && WINS[FOCUS].visible {
+            // Mouse movement is a cursor-only change for every application.
+            // Avoid full desktop redraws that visibly flash on the real LFB.
             DIRTY_CURSOR = true;
-        } else {
-            DIRTY_FULL = true;
         }
     }
 }
@@ -1475,10 +1474,10 @@ fn keyboard_key_to_ascii(label:&str,shift:bool,caps:bool)->Option<u8>{
 fn keyboard_emit(label:&str){
     unsafe{
         let target=KEYBOARD_TARGET;if target>=MAX_WIN||!WINS[target].visible{return;}
-        if label=="SHIFT"{KEYBOARD_SHIFT=!KEYBOARD_SHIFT;DIRTY_FULL=true;return;}
-        if label=="CAPS"{KEYBOARD_CAPS=!KEYBOARD_CAPS;DIRTY_FULL=true;return;}
-        if label=="CTRL"{KEYBOARD_CTRL=!KEYBOARD_CTRL;DIRTY_FULL=true;return;}
-        if label=="ALT"{KEYBOARD_ALT=!KEYBOARD_ALT;DIRTY_FULL=true;return;}
+        if label=="SHIFT"{KEYBOARD_SHIFT=!KEYBOARD_SHIFT;DIRTY_WINDOW=target as i16;return;}
+        if label=="CAPS"{KEYBOARD_CAPS=!KEYBOARD_CAPS;DIRTY_WINDOW=target as i16;return;}
+        if label=="CTRL"{KEYBOARD_CTRL=!KEYBOARD_CTRL;DIRTY_WINDOW=target as i16;return;}
+        if label=="ALT"{KEYBOARD_ALT=!KEYBOARD_ALT;DIRTY_WINDOW=target as i16;return;}
         let old=FOCUS;FOCUS=target;
         if label=="ENTER"{handle_key(b'\n');}
         else if label=="BACK"{handle_key(0x08);}
@@ -1503,7 +1502,10 @@ fn keyboard_emit(label:&str){
         }else if let Some(ch)=keyboard_key_to_ascii(label,KEYBOARD_SHIFT,KEYBOARD_CAPS){
             handle_key(ch);if KEYBOARD_SHIFT{KEYBOARD_SHIFT=false;}
         }
-        FOCUS=old;DIRTY_FULL=true;
+        FOCUS=old;
+        if target < MAX_WIN && WINS[target].visible && !WINS[target].minimized {
+            DIRTY_WINDOW=target as i16;
+        }
     }
 }
 
@@ -1997,8 +1999,7 @@ fn handle_mouse_buttons(buttons: u8) {
                         let row=((my-(cy+240))/16) as usize;
                         if row < crate::media_player::builtin_count() && mx >= bx+18 && mx < bx+300 {
                             let _=crate::media_player::select_builtin(row);                            let _=crate::media_player::open_builtin(row);
-                            DIRTY_WINDOW=idx as i16;
-                        }
+                            DIRTY_WINDOW=idx as i16;                        }
                     } else if my >= py && my < py+28 {
                         if mx >= bx+24 && mx < bx+96 {
                             let _=crate::media_player::previous();
@@ -2997,8 +2998,7 @@ fn cursor_save_and_draw(x: i32, y: i32) {
 }
 
 fn redraw_status_strip() {
-    let w = graphics::width();
-    let h = graphics::height();
+    let w = graphics::width();    let h = graphics::height();
     if w == 0 || h == 0 {
         return;
     }
@@ -3527,7 +3527,7 @@ fn handle_key(ch: u8) {
         }
         if WINS[FOCUS].kind == WinKind::Alarm {
             if crate::alarm::alarm_key(ch) {
-                DIRTY_FULL = true;
+                DIRTY_WINDOW = FOCUS as i16;
             }
             return;
         }
