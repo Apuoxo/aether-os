@@ -5,7 +5,7 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 pub mod paging;
 
 const PAGE_SIZE: usize = 4096;
-const MAX_PAGES: usize = 32768;
+// Bitmap capacity: 64 GiB of physical-address coverage.\nconst MAX_PAGES: usize = 16 * 1024 * 1024;
 
 static mut BITMAP: [u64; MAX_PAGES / 64] = [0; MAX_PAGES / 64];
 static TOTAL: AtomicUsize = AtomicUsize::new(0);

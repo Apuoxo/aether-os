@@ -261,9 +261,9 @@ pub extern "C" fn kernel_main(mbi: usize) -> ! {
     serial::write_str(" start=");
     serial::write_hex(pmm_start);
     serial::write_str("\n");
-    mm::init(pmm_start, 64 * 1024 * 1024);
-    // Capture the real Multiboot RAM value for the graphical boot screen.
+    // Use the complete usable RAM reported by Multiboot instead of the old 64 MiB cap.
     let detected_ram_mib = multiboot_usable_memory_mib(mbi);
+    mm::init(pmm_start, (detected_ram_mib as usize).saturating_mul(1024 * 1024));
     let managed_ram_mib = (mm::total_count() as u64) / 256;
     vga_mark(4, b'P'); // PMM
     serial::write_str("[OK] PMM\n");
