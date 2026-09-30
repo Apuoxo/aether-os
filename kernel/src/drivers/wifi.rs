@@ -527,7 +527,7 @@ fn prph_read(addr: u32) -> u32 {
 pub fn init_command_queue() -> bool {
     unsafe {
         if !ALIVE_SEEN || !MMIO_MAPPED || MMIO == 0 { return false; }
-        let tfd_base = (&CMD_TFD_QUEUE.0 as *const u8) as u64;
+        let tfd_base = match dma_phys(&CMD_TFD_QUEUE.0 as *const _ as *const u8) { Some(p) => p, None => return false };
         let scd_sram = prph_read(SCD_SRAM_BASE_ADDR);
         if scd_sram == 0 || scd_sram == 0xFFFF_FFFF { 
             diag_write_str("[WIFI] CMDQ SCD_SRAM=INVALID\\n");
@@ -550,7 +550,7 @@ pub fn init_command_queue() -> bool {
         // SCD_DRAM_BASE_ADDR is the scheduler byte-count table base, not the
         // TFD ring base. Gen1/2 iwlwifi uses 320 u16 entries per queue and
         // indexes the table by queue number.
-        let bc_base = (&SCD_BC_TABLE.0 as *const u16) as u64;
+        let bc_base = match dma_phys(&SCD_BC_TABLE.0 as *const _ as *const u8) { Some(p) => p, None => return false };
         prph_write(SCD_DRAM_BASE_ADDR, (bc_base >> 10) as u32);
 
         // Clear queue #4 read/write pointers and status before activation.
@@ -596,7 +596,7 @@ pub fn init_command_queue() -> bool {
     }
 }
 
-fn cmd_tfd_set(buf: *mut u8, dma: u64, len: usize) {
+fn dma_phys(ptr: *const u8) -> Option<u64> {\n    unsafe { paging::virt_to_phys(ptr as usize) }\n}\n\nfn cmd_tfd_set(buf: *mut u8, dma: u64, len: usize) {
     unsafe {
         core::ptr::write_bytes(buf, 0, FH_TFD_SIZE);
         *buf.add(3) = 1;
@@ -628,7 +628,7 @@ pub fn send_command(cmd: u8, payload: &[u8]) -> bool {
         }
         let len = 4 + payload.len();
         let tfd = (&mut CMD_TFD_QUEUE.0[slot * FH_TFD_SIZE]) as *mut u8;
-        cmd_tfd_set(tfd, (&FW_DMA_BUF.0[0] as *const u8) as u64, len);
+        let fw_dma = match dma_phys(&FW_DMA_BUF.0[0] as *const u8) { Some(p) => p, None => return false };\n        cmd_tfd_set(tfd, fw_dma, len);
         // DVM SCD byte count is the transmitted command length plus the
         // 4-byte CRC and 4-byte delimiter. The legacy SCD table stores DW.
         // Do NOT add sizeof(struct iwl_tfd): the TFD is a descriptor, not

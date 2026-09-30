@@ -200,7 +200,7 @@ pub unsafe fn load_kernel_cr3() {
     }
 }
 
-pub unsafe fn debug_walk(pml4_phys: usize, virt: usize) {
+/// Translate a virtual address using the active x86-64 page tables.\npub unsafe fn virt_to_phys(virt: usize) -> Option<u64> {\n    let pml4 = &*(read_cr3() as *const PageTable);\n    let e4 = pml4.get((virt >> 39) & 0x1FF);\n    if e4 & PAGE_PRESENT == 0 { return None; }\n    let pdpt = &*((e4 & !0xFFF) as *const PageTable);\n    let e3 = pdpt.get((virt >> 30) & 0x1FF);\n    if e3 & PAGE_PRESENT == 0 { return None; }\n    if e3 & PAGE_HUGE != 0 { return Some((e3 & 0x000F_FFFF_C000_0000) | (virt as u64 & 0x3FFF_FFFF)); }\n    let pd = &*((e3 & !0xFFF) as *const PageTable);\n    let e2 = pd.get((virt >> 21) & 0x1FF);\n    if e2 & PAGE_PRESENT == 0 { return None; }\n    if e2 & PAGE_HUGE != 0 { return Some((e2 & 0x000F_FFFF_FFE0_0000) | (virt as u64 & 0x1F_FFFF)); }\n    let pt = &*((e2 & !0xFFF) as *const PageTable);\n    let e1 = pt.get((virt >> 12) & 0x1FF);\n    if e1 & PAGE_PRESENT == 0 { return None; }\n    Some((e1 & !0xFFF) | (virt as u64 & 0xFFF))\n}\n\npub unsafe fn debug_walk(pml4_phys: usize, virt: usize) {
     use crate::serial;
     let pml4 = &*(pml4_phys as *const PageTable);
     let i4 = (virt >> 39) & 0x1FF;
