@@ -110,6 +110,67 @@ extern "C" {
 
 
 /// VGA text marker at column `col` (0..80), white on black — visible on real BIOS
+fn multiboot_usable_memory_mib(mbi: usize) -> u64 {
+    if mbi == 0 { return 0; }
+    unsafe {
+        let total = core::ptr::read_unaligned(mbi as *const u32) as usize;
+        if total < 16 || total > 0x100000 { return 0; }
+        let mut off = 8usize;
+        let mut usable: u64 = 0;
+        while off + 8 <= total {
+            let tag_type = core::ptr::read_unaligned((mbi + off) as *const u32);
+            let tag_size = core::ptr::read_unaligned((mbi + off + 4) as *const u32) as usize;
+            if tag_size < 8 || off + tag_size > total { break; }
+            if tag_type == 0 { break; }
+            if tag_type == 6 && tag_size >= 16 {
+                let entry_size = core::ptr::read_unaligned((mbi + off + 8) as *const u32) as usize;
+                if entry_size < 24 { break; }
+                let mut p = off + 16;
+                while p + entry_size <= off + tag_size {
+                    let len = core::ptr::read_unaligned((mbi + p + 8) as *const u64);
+                    let typ = core::ptr::read_unaligned((mbi + p + 16) as *const u32);
+                    if typ == 1 { usable = usable.saturating_add(len); }
+                    p += entry_size;
+                }
+                break;
+            }
+            off = (off + tag_size + 7) & !7;
+        }
+        usable / (1024 * 1024)
+    }
+}
+
+fn vga_write_dec(row: usize, prefix: &[u8], value: u64, suffix: &[u8], color: u8) {
+    unsafe {
+        let base = 0xB8000 + row * 160;
+        let mut col = 0usize;
+        for &b in prefix {
+            if col >= 80 { return; }
+            *((base + col * 2) as *mut u16) = ((color as u16) << 8) | b as u16;
+            col += 1;
+        }
+        let mut digits = [0u8; 20];
+        let mut n = 0usize;
+        let mut v = value;
+        if v == 0 { digits[0] = b'0'; n = 1; }
+        while v != 0 && n < digits.len() {
+            digits[n] = b'0' + (v % 10) as u8;
+            v /= 10;
+            n += 1;
+        }
+        while n > 0 && col < 80 {
+            n -= 1;
+            *((base + col * 2) as *mut u16) = ((color as u16) << 8) | digits[n] as u16;
+            col += 1;
+        }
+        for &b in suffix {
+            if col >= 80 { return; }
+            *((base + col * 2) as *mut u16) = ((color as u16) << 8) | b as u16;
+            col += 1;
+        }
+    }
+}
+
 fn vga_mark(col: usize, ch: u8) {
     unsafe {
         let p = (0xB8000 + col * 2) as *mut u16;
@@ -136,6 +197,11 @@ pub extern "C" fn kernel_main(mbi: usize) -> ! {
     serial::write_hex(pmm_start);
     serial::write_str("\n");
     mm::init(pmm_start, 64 * 1024 * 1024);
+    // Early VGA visibility: show the RAM Multiboot detected and what PMM manages.
+    let detected_ram_mib = multiboot_usable_memory_mib(mbi);
+    let managed_ram_mib = (mm::total_count() as u64) / 256;
+    vga_write_dec(2, b"[RAM] detected usable=", detected_ram_mib, b" MiB", 0x0F);
+    vga_write_dec(3, b"[PMM] managed=", managed_ram_mib, b" MiB", 0x0F);
     vga_mark(4, b'P'); // PMM
     serial::write_str("[OK] PMM\n");
     // Kernel stack must be large: rust_kernel_after_user has big locals; Ring3 TSS uses rsp0
