@@ -261,25 +261,10 @@ pub extern "C" fn kernel_main(mbi: usize) -> ! {
     serial::write_str(" start=");
     serial::write_hex(pmm_start);
     serial::write_str("\n");
-    // Discover the real Multiboot2 memory map first. PMM then manages only
-    // type-1 ranges, including discontiguous RAM above 4 GiB, while reserving
-    // the Multiboot data/modules before allocations begin.
-    unsafe { mm::discover_multiboot(mbi); }
-    let detected_ram_mib = (mm::usable_ram_bytes() as u64) / (1024 * 1024);
-    mm::init(pmm_start, 0);
-    let managed_ram_mib = (mm::total_bytes() as u64) / (1024 * 1024);
-    serial::write_str("[RAM] SOURCE=Multiboot2 memory map\\n");
-    serial::write_str("[RAM] DETECTED=");
-    serial::write_usize(detected_ram_mib as usize);
-    serial::write_str(" MiB\\n");
-    serial::write_str("[RAM] PMM_MANAGED=");
-    serial::write_usize(managed_ram_mib as usize);
-    serial::write_str(" MiB\\n");
-    if detected_ram_mib == managed_ram_mib {
-        serial::write_str("[RAM] STATUS=OK\\n");
-    } else {
-        serial::write_str("[RAM] STATUS=RANGES/RESERVATIONS_DIFFER\\n");
-    }
+    mm::init(pmm_start, 64 * 1024 * 1024);
+    // Capture the real Multiboot RAM value for the graphical boot screen.
+    let detected_ram_mib = multiboot_usable_memory_mib(mbi);
+    let managed_ram_mib = (mm::total_count() as u64) / 256;
     vga_mark(4, b'P'); // PMM
     serial::write_str("[OK] PMM\n");
     // Kernel stack must be large: rust_kernel_after_user has big locals; Ring3 TSS uses rsp0

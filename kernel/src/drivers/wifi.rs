@@ -70,7 +70,6 @@ const HBUS_TARG_MEM_RADDR: usize = 0x40C;
 const HBUS_TARG_MEM_WADDR: usize = 0x410;
 const HBUS_TARG_MEM_WDAT: usize = 0x418;
 const HBUS_TARG_MEM_RDAT: usize = 0x41C;
-const HBUS_TARG_WRPTR: usize = 0x460;
 
 const CSR_INT: usize = 0x008;
 const CSR_INT_MASK: usize = 0x00C;
@@ -417,7 +416,7 @@ pub fn wf_post_scan_diagnostics() {
         diag_write_str(" cbbc="); diag_write_hex(core::ptr::read_volatile((MMIO + FH_MEM_CBBC_CMD) as *const u32) as usize);
         diag_write_str(" tcsr="); diag_write_hex(core::ptr::read_volatile((MMIO + FH_TCSR_CONFIG_CMD) as *const u32) as usize);
         diag_write_str(" tsts="); diag_write_hex(core::ptr::read_volatile((MMIO + FH_TCSR_BUF_STS_CMD) as *const u32) as usize);
-        diag_write_str(" hbus="); diag_write_hex(core::ptr::read_volatile((MMIO + HBUS_TARG_WRPTR) as *const u32) as usize); diag_write_str("\n");
+        diag_write_str(" hbus="); diag_write_hex(core::ptr::read_volatile((MMIO + 0x60) as *const u32) as usize); diag_write_str("\n");
 
         diag_write_str("[WIFI] WF-RX DESCRIPTORS");
         let mut i = 0usize;
@@ -583,9 +582,9 @@ pub fn send_command(cmd: u8, payload: &[u8]) -> bool {
         }
         let next = (slot + 1) & (FH_TFD_CMD_SLOTS - 1);
         // The DVM PCIe transport publishes the host TFD through
-        // HBUS_TARG_WRPTR (MMIO + HBUS_TARG_WRPTR). SCD_QUEUE_WRPTR is scheduler state,
+        // HBUS_TARG_WRPTR (MMIO + 0x60). SCD_QUEUE_WRPTR is scheduler state,
         // not the host doorbell used to submit the command.
-        core::ptr::write_volatile((MMIO + HBUS_TARG_WRPTR) as *mut u32,
+        core::ptr::write_volatile((MMIO + 0x60) as *mut u32,
             (next as u32 & 0xFF) | ((IWL_DEFAULT_CMD_QUEUE_NUM as u32) << 8));
         // Diagnostic only: do not change hardware state here. Linux exposes the\n        // FH TX TRB and SCD status when a legacy queue is stuck; we mirror that\n        // telemetry so the next AH532 run tells us whether FH consumed the TFD.\n        let _auto_retry = FH_TX_CHICKEN_BITS_SCD_AUTO_RETRY_EN;\n        CMD_WRITE_PTR = next;
         CMD_SEQ = CMD_SEQ.wrapping_add(1);
@@ -770,7 +769,7 @@ pub fn scan_24ghz() -> bool {
         diag_write_str(" TCSR_STS=");
         diag_write_hex(core::ptr::read_volatile((MMIO + FH_TCSR_BUF_STS_CMD) as *const u32) as usize);
         diag_write_str(" HBUS_WRPTR=");
-        diag_write_hex(core::ptr::read_volatile((MMIO + HBUS_TARG_WRPTR) as *const u32) as usize);
+        diag_write_hex(core::ptr::read_volatile((MMIO + 0x60) as *const u32) as usize);
         diag_write_str("\n");
 
         let mut line = [0u8; 192];
@@ -801,7 +800,7 @@ pub fn scan_24ghz() -> bool {
         push(&mut line, &mut n, b" TCSR_STS=");
         hex(&mut line, &mut n, core::ptr::read_volatile((MMIO + FH_TCSR_BUF_STS_CMD) as *const u32));
         push(&mut line, &mut n, b" HBUS_WRPTR=");
-        hex(&mut line, &mut n, core::ptr::read_volatile((MMIO + HBUS_TARG_WRPTR) as *const u32));
+        hex(&mut line, &mut n, core::ptr::read_volatile((MMIO + 0x60) as *const u32));
         push(&mut line, &mut n, b"\n");
         crate::desktop::terminal_write(core::str::from_utf8(&line[..n]).unwrap_or("[WIFI] TRANSPORT SNAPSHOT ERROR\\n"));
 
