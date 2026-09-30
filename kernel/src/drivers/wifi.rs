@@ -135,6 +135,24 @@ static mut SCD_BC_TABLE: ScdBcTable = ScdBcTable([0; SCD_QUEUE_COUNT * SCD_QUEUE
 static mut CMD_QUEUE_READY: bool = false;
 static mut CMD_WRITE_PTR: usize = 0;
 static mut CMD_SEQ: u8 = 0;
+static mut WF_PRE_STATUS: u32 = 0;
+static mut WF_PRE_TXFACT: u32 = 0;
+static mut WF_PRE_WR: u32 = 0;
+static mut WF_PRE_RD: u32 = 0;
+static mut WF_PRE_TCSR: u32 = 0;
+static mut WF_PRE_TSSR: u32 = 0;
+static mut WF_PRE_TFD0: u32 = 0;
+static mut WF_PRE_TFD1: u32 = 0;
+static mut WF_PRE_BC: u16 = 0;
+static mut WF_POST_STATUS: u32 = 0;
+static mut WF_POST_TXFACT: u32 = 0;
+static mut WF_POST_WR: u32 = 0;
+static mut WF_POST_RD: u32 = 0;
+static mut WF_POST_TCSR: u32 = 0;
+static mut WF_POST_TSSR: u32 = 0;
+static mut WF_POST_TFD0: u32 = 0;
+static mut WF_POST_TFD1: u32 = 0;
+static mut WF_POST_BC: u16 = 0;
 
 
 #[repr(align(4096))]
@@ -368,6 +386,12 @@ pub fn wf_post_scan_diagnostics() {
         let status = prph_read(SCD_QUEUE_STATUS_BITS);
         let tssr = core::ptr::read_volatile((MMIO + FH_TSSR_TX_STATUS_REG) as *const u32);
         let tcsr = core::ptr::read_volatile((MMIO + FH_TCSR_CONFIG_CMD) as *const u32);
+        WF_POST_STATUS = status;
+        WF_POST_TXFACT = prph_read(SCD_TXFACT);
+        WF_POST_WR = wr;
+        WF_POST_RD = rd;
+        WF_POST_TCSR = tcsr;
+        WF_POST_TSSR = tssr;
 
         if WF_GUI_OUTPUT {
             fn hex(v: u32) {
@@ -385,7 +409,51 @@ pub fn wf_post_scan_diagnostics() {
                 }
             }
 
-            crate::desktop::terminal_write("TX WR=");
+            crate::desktop::terminal_write("PRE ST=");
+            hex(WF_PRE_STATUS);
+            crate::desktop::terminal_write(" ACT=");
+            crate::desktop::terminal_write(if (WF_PRE_STATUS & SCD_QUEUE_ACTIVE) != 0 { "1" } else { "0" });
+            crate::desktop::terminal_write(" WSL=");
+            crate::desktop::terminal_write(if (WF_PRE_STATUS & SCD_QUEUE_WSL) != 0 { "1" } else { "0" });
+            crate::desktop::terminal_write(" FIFO=");
+            hex(WF_PRE_STATUS & 7);
+            crate::desktop::terminal_write(" SCDEN=");
+            crate::desktop::terminal_write(if (WF_PRE_STATUS & (1 << 19)) != 0 { "1" } else { "0" });
+            crate::desktop::terminal_write(" TXF=");
+            hex(WF_PRE_TXFACT);
+            crate::desktop::terminal_write(" WR=");
+            hex(WF_PRE_WR);
+            crate::desktop::terminal_write(" RD=");
+            hex(WF_PRE_RD);
+            crate::desktop::terminal_write(" TCSR=");
+            hex(WF_PRE_TCSR);
+            crate::desktop::terminal_write(" TSSR=");
+            hex(WF_PRE_TSSR);
+            crate::desktop::terminal_write(" TFD0=");
+            hex(WF_PRE_TFD0);
+            crate::desktop::terminal_write(" TFD1=");
+            hex(WF_PRE_TFD1);
+            crate::desktop::terminal_write(" BC=");
+            hex(WF_PRE_BC as u32);
+            crate::desktop::terminal_write("\nPOST ST=");
+            hex(WF_POST_STATUS);
+            crate::desktop::terminal_write(" TXF=");
+            hex(WF_POST_TXFACT);
+            crate::desktop::terminal_write(" WR=");
+            hex(WF_POST_WR);
+            crate::desktop::terminal_write(" RD=");
+            hex(WF_POST_RD);
+            crate::desktop::terminal_write(" TCSR=");
+            hex(WF_POST_TCSR);
+            crate::desktop::terminal_write(" TSSR=");
+            hex(WF_POST_TSSR);
+            crate::desktop::terminal_write(" TFD0=");
+            hex(WF_POST_TFD0);
+            crate::desktop::terminal_write(" TFD1=");
+            hex(WF_POST_TFD1);
+            crate::desktop::terminal_write(" BC=");
+            hex(WF_POST_BC as u32);
+            crate::desktop::terminal_write("\nTX WR=");
             hex(wr);
             crate::desktop::terminal_write(" RD=");
             hex(rd);
@@ -541,8 +609,29 @@ pub fn send_command(cmd: u8, payload: &[u8]) -> bool {
         // HBUS_TARG_WRPTR. On the Intel 2000/2030 family this is MMIO + 0x460.
         // SCD_QUEUE_WRPTR is scheduler state, not the host doorbell used to
         // submit the command.
+        // Diagnostic snapshot A: everything is captured after the TFD/BC
+        // entry is built but before the host doorbell is written.
+        WF_PRE_STATUS = prph_read(SCD_QUEUE_STATUS_BITS);
+        WF_PRE_TXFACT = prph_read(SCD_TXFACT);
+        WF_PRE_WR = prph_read(SCD_QUEUE_WRPTR);
+        WF_PRE_RD = prph_read(SCD_QUEUE_RDPTR);
+        WF_PRE_TCSR = core::ptr::read_volatile((MMIO + FH_TCSR_CONFIG_CMD) as *const u32);
+        WF_PRE_TSSR = core::ptr::read_volatile((MMIO + FH_TSSR_TX_STATUS_REG) as *const u32);
+        WF_PRE_TFD0 = core::ptr::read_volatile(tfd as *const u32);
+        WF_PRE_TFD1 = core::ptr::read_volatile(tfd.add(8) as *const u32);
+        WF_PRE_BC = SCD_BC_TABLE.0[bc_off];
         core::ptr::write_volatile((MMIO + 0x460) as *mut u32,
             (next as u32 & 0xFF) | ((IWL_DEFAULT_CMD_QUEUE_NUM as u32) << 8));
+        // Diagnostic snapshot B: immediately after the same doorbell write.
+        WF_POST_STATUS = prph_read(SCD_QUEUE_STATUS_BITS);
+        WF_POST_TXFACT = prph_read(SCD_TXFACT);
+        WF_POST_WR = prph_read(SCD_QUEUE_WRPTR);
+        WF_POST_RD = prph_read(SCD_QUEUE_RDPTR);
+        WF_POST_TCSR = core::ptr::read_volatile((MMIO + FH_TCSR_CONFIG_CMD) as *const u32);
+        WF_POST_TSSR = core::ptr::read_volatile((MMIO + FH_TSSR_TX_STATUS_REG) as *const u32);
+        WF_POST_TFD0 = core::ptr::read_volatile(tfd as *const u32);
+        WF_POST_TFD1 = core::ptr::read_volatile(tfd.add(8) as *const u32);
+        WF_POST_BC = SCD_BC_TABLE.0[bc_off];
         // Diagnostic only: do not change hardware state here. Linux exposes the\n        // FH TX TRB and SCD status when a legacy queue is stuck; we mirror that\n        // telemetry so the next AH532 run tells us whether FH consumed the TFD.\n        let _auto_retry = FH_TX_CHICKEN_BITS_SCD_AUTO_RETRY_EN;\n        CMD_WRITE_PTR = next;
         CMD_SEQ = CMD_SEQ.wrapping_add(1);
         diag_write_str("[WIFI] CMD TX id=");
