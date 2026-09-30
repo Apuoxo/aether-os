@@ -582,9 +582,10 @@ pub fn send_command(cmd: u8, payload: &[u8]) -> bool {
         }
         let next = (slot + 1) & (FH_TFD_CMD_SLOTS - 1);
         // The DVM PCIe transport publishes the host TFD through
-        // HBUS_TARG_WRPTR (MMIO + 0x60). SCD_QUEUE_WRPTR is scheduler state,
-        // not the host doorbell used to submit the command.
-        core::ptr::write_volatile((MMIO + 0x60) as *mut u32,
+        // HBUS_TARG_WRPTR. On the Intel 2000/2030 family this is MMIO + 0x460.
+        // SCD_QUEUE_WRPTR is scheduler state, not the host doorbell used to
+        // submit the command.
+        core::ptr::write_volatile((MMIO + 0x460) as *mut u32,
             (next as u32 & 0xFF) | ((IWL_DEFAULT_CMD_QUEUE_NUM as u32) << 8));
         // Diagnostic only: do not change hardware state here. Linux exposes the\n        // FH TX TRB and SCD status when a legacy queue is stuck; we mirror that\n        // telemetry so the next AH532 run tells us whether FH consumed the TFD.\n        let _auto_retry = FH_TX_CHICKEN_BITS_SCD_AUTO_RETRY_EN;\n        CMD_WRITE_PTR = next;
         CMD_SEQ = CMD_SEQ.wrapping_add(1);
