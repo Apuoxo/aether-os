@@ -596,7 +596,11 @@ pub fn init_command_queue() -> bool {
     }
 }
 
-fn dma_phys(ptr: *const u8) -> Option<u64> {\n    unsafe { paging::virt_to_phys(ptr as usize) }\n}\n\nfn cmd_tfd_set(buf: *mut u8, dma: u64, len: usize) {
+fn dma_phys(ptr: *const u8) -> Option<u64> {
+    unsafe { paging::virt_to_phys(ptr as usize) }
+}
+
+fn cmd_tfd_set(buf: *mut u8, dma: u64, len: usize) {
     unsafe {
         core::ptr::write_bytes(buf, 0, FH_TFD_SIZE);
         *buf.add(3) = 1;
@@ -628,7 +632,8 @@ pub fn send_command(cmd: u8, payload: &[u8]) -> bool {
         }
         let len = 4 + payload.len();
         let tfd = (&mut CMD_TFD_QUEUE.0[slot * FH_TFD_SIZE]) as *mut u8;
-        let fw_dma = match dma_phys(&FW_DMA_BUF.0[0] as *const u8) { Some(p) => p, None => return false };\n        cmd_tfd_set(tfd, fw_dma, len);
+        let fw_dma = match dma_phys(&FW_DMA_BUF.0[0] as *const u8) { Some(p) => p, None => return false };
+        cmd_tfd_set(tfd, fw_dma, len);
         // DVM SCD byte count is the transmitted command length plus the
         // 4-byte CRC and 4-byte delimiter. The legacy SCD table stores DW.
         // Do NOT add sizeof(struct iwl_tfd): the TFD is a descriptor, not
