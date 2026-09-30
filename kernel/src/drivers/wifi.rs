@@ -20,37 +20,23 @@ pub fn set_wf_gui_output(enabled: bool) {
 }
 
 fn diag_write_str(s: &str) {
-    unsafe { if WF_GUI_OUTPUT { crate::desktop::terminal_write(s); return; } }
+    unsafe {
+        // WF's shell prints the stage-level results. Do not mirror the
+        // driver's internal trace into the graphical terminal: character-by-
+        // character terminal rendering made the hardware bring-up appear
+        // hung even though the CPU was simply formatting thousands of lines.
+        if WF_GUI_OUTPUT { return; }
+    }
     serial::write_str(s);
 }
 
 fn diag_write_usize(v: usize) {
-    unsafe {
-        if WF_GUI_OUTPUT {
-            if v == 0 { crate::desktop::terminal_write("0"); return; }
-            let mut n=v; let mut b=[0u8;20]; let mut k=0usize;
-            while n>0 { b[k]=b'0'+(n%10) as u8; n/=10; k+=1; }
-            let mut o=[0u8;20]; let mut i=0usize;
-            while i<k { o[i]=b[k-1-i]; i+=1; }
-            if let Ok(x)=core::str::from_utf8(&o[..k]) { crate::desktop::terminal_write(x); }
-            return;
-        }
-    }
+    unsafe { if WF_GUI_OUTPUT { return; } }
     serial::write_usize(v);
 }
 
 fn diag_write_hex(v: usize) {
-    unsafe {
-        if WF_GUI_OUTPUT {
-            if v == 0 { crate::desktop::terminal_write("0"); return; }
-            let mut n=v; let mut b=[0u8;16]; let mut k=0usize;
-            while n>0 { let x=(n&0xF) as u8; b[k]=if x<10 { b'0'+x } else { b'a'+x-10 }; n>>=4; k+=1; }
-            let mut o=[0u8;16]; let mut i=0usize;
-            while i<k { o[i]=b[k-1-i]; i+=1; }
-            if let Ok(x)=core::str::from_utf8(&o[..k]) { crate::desktop::terminal_write(x); }
-            return;
-        }
-    }
+    unsafe { if WF_GUI_OUTPUT { return; } }
     serial::write_hex(v);
 }
 
@@ -373,77 +359,47 @@ pub fn ui_scan_notification_seen() -> bool { unsafe { SCAN_NOTIFICATION_SEEN } }
 pub fn wf_post_scan_diagnostics() {
     unsafe {
         if !MMIO_MAPPED || MMIO == 0 {
-            diag_write_str("[WIFI] WF_RESULT=NO-MMIO\n");
             return;
         }
-        let csr_int = core::ptr::read_volatile((MMIO + CSR_INT) as *const u32);
-        let fh_int = core::ptr::read_volatile((MMIO + CSR_FH_INT_STATUS) as *const u32);
-        let hw_rptr = core::ptr::read_volatile((MMIO + FH_RSCSR_RDPTR) as *const u32);
-        let cb_wptr = core::ptr::read_volatile((MMIO + FH_RSCSR_RBDCB_WPTR) as *const u32);
-        let stts_wptr = core::ptr::read_volatile((MMIO + FH_RSCSR_STTS_WPTR) as *const u32);
-        let rx_status = core::ptr::read_volatile((MMIO + FH_RSSR_RX_STATUS) as *const u32);
-        let rbd_base = core::ptr::read_volatile((MMIO + FH_RSCSR_RBDCB_BASE) as *const u32);
-        let rx_cfg = core::ptr::read_volatile((MMIO + FH_RCSR_CHNL0_CONFIG) as *const u32);
-        let flush = core::ptr::read_volatile((MMIO + FH_RCSR_CHNL0_FLUSH_RB_REQ) as *const u32);
-        diag_write_str("[WIFI] WF-RX FINAL read="); diag_write_usize(RX_READ);
-        diag_write_str(" hw_closed_rb="); diag_write_hex(hw_rptr as usize);
-        diag_write_str(" cb_wptr="); diag_write_hex(cb_wptr as usize);
-        diag_write_str(" stts_wptr="); diag_write_hex(stts_wptr as usize);
-        diag_write_str(" rx_status="); diag_write_hex(rx_status as usize);
-        diag_write_str(" rbd_base="); diag_write_hex(rbd_base as usize);
-        diag_write_str(" cfg="); diag_write_hex(rx_cfg as usize);
-        diag_write_str(" flush="); diag_write_hex(flush as usize);
-        diag_write_str(" CSR_INT="); diag_write_hex(csr_int as usize);
-        diag_write_str(" FH_INT="); diag_write_hex(fh_int as usize); diag_write_str("\n");
 
-        diag_write_str("[WIFI] WF-ALIVE log=");
-        diag_write_hex(ALIVE_LOG_PTR as usize);
-        diag_write_str(" scd32=");
-        diag_write_hex(ALIVE_SCD_PTR as usize);
-        diag_write_str(" scd_prph=");
-        diag_write_hex(prph_read(SCD_SRAM_BASE_ADDR) as usize);
-        diag_write_str("\n");
-        diag_write_str("[WIFI] WF-TX TSSR=");
-        diag_write_hex(core::ptr::read_volatile((MMIO + FH_TSSR_TX_STATUS_REG) as *const u32) as usize);
-        diag_write_str(" TCSR4=");
-        diag_write_hex(core::ptr::read_volatile((MMIO + FH_TCSR_CONFIG_CMD) as *const u32) as usize);
-        diag_write_str("\n");
-        diag_write_str("[WIFI] WF-CMD FINAL wrptr="); diag_write_hex(prph_read(SCD_QUEUE_WRPTR) as usize);
-        diag_write_str(" rdptr="); diag_write_hex(prph_read(SCD_QUEUE_RDPTR) as usize);
-        diag_write_str(" scd_sram="); diag_write_hex(prph_read(SCD_SRAM_BASE_ADDR) as usize);
-        diag_write_str(" status="); diag_write_hex(prph_read(SCD_QUEUE_STATUS_BITS) as usize);
-        diag_write_str(" dram="); diag_write_hex(prph_read(SCD_DRAM_BASE_ADDR) as usize);
-        diag_write_str(" cbbc="); diag_write_hex(core::ptr::read_volatile((MMIO + FH_MEM_CBBC_CMD) as *const u32) as usize);
-        diag_write_str(" tcsr="); diag_write_hex(core::ptr::read_volatile((MMIO + FH_TCSR_CONFIG_CMD) as *const u32) as usize);
-        diag_write_str(" tsts="); diag_write_hex(core::ptr::read_volatile((MMIO + FH_TCSR_BUF_STS_CMD) as *const u32) as usize);
-        diag_write_str(" hbus="); diag_write_hex(core::ptr::read_volatile((MMIO + 0x60) as *const u32) as usize); diag_write_str("\n");
+        // Only the scheduler/transport state needed for the next hypothesis.
+        let wr = prph_read(SCD_QUEUE_WRPTR);
+        let rd = prph_read(SCD_QUEUE_RDPTR);
+        let status = prph_read(SCD_QUEUE_STATUS_BITS);
+        let tssr = core::ptr::read_volatile((MMIO + FH_TSSR_TX_STATUS_REG) as *const u32);
+        let tcsr = core::ptr::read_volatile((MMIO + FH_TCSR_CONFIG_CMD) as *const u32);
 
-        diag_write_str("[WIFI] WF-RX DESCRIPTORS");
-        let mut i = 0usize;
-        while i < FH_RX_RBD_COUNT {
-            diag_write_str(" ["); diag_write_usize(i); diag_write_str("]=");
-            diag_write_hex(RX_RBD.0[i] as usize); diag_write_str(":");
-            diag_write_hex(core::ptr::read_volatile(&RX_BUFFERS.0[i][0] as *const u8 as *const u32) as usize);
-            i += 1;
-        }
-        diag_write_str("\n");
+        if WF_GUI_OUTPUT {
+            fn hex(v: u32) {
+                let mut b = [0u8; 8];
+                let mut i = 8usize;
+                let mut n = v;
+                while i > 0 {
+                    i -= 1;
+                    let x = (n & 0xF) as u8;
+                    b[i] = if x < 10 { b'0' + x } else { b'a' + x - 10 };
+                    n >>= 4;
+                }
+                if let Ok(s) = core::str::from_utf8(&b) {
+                    crate::desktop::terminal_write(s);
+                }
+            }
 
-        diag_write_str("[WIFI] WF-SCAN start="); diag_write_usize(scan_start_count() as usize);
-        diag_write_str(" results="); diag_write_usize(scan_results_count() as usize);
-        diag_write_str(" complete="); diag_write_usize(scan_complete_count() as usize);
-        diag_write_str(" rx_irq="); diag_write_usize(RX_IRQ_COUNT as usize);
-        diag_write_str(" alive="); diag_write_str(if ALIVE_SEEN { "SEEN" } else { "NOT-SEEN" }); diag_write_str("\n");
-
-        if scan_complete_count() == 0 && scan_start_count() == 0 &&
-           scan_results_count() == 0 && RX_READ == (hw_rptr as usize & (FH_RX_RBD_COUNT - 1)) {
-            diag_write_str("[WIFI] WF-RESULT=RX_RING_NO_NEW_ENTRIES\n");
-            diag_write_str("[WIFI] WF-CAUSE=SCAN_COMMAND_SUBMITTED_BUT_RX_PRODUCER_DID_NOT_ADVANCE\n");
-            diag_write_str("[WIFI] WF-NEXT=VERIFY_RX_RING_PROGRAMMING_FH_CHANNEL_ENABLE_AND_BUFFER_ADDRESSING\n");
-        } else if scan_complete_count() == 0 {
-            diag_write_str("[WIFI] WF-RESULT=SCAN_NO_COMPLETE_NOTIFICATION\n");
-            diag_write_str("[WIFI] WF-NEXT=CONTINUE_RX_NOTIFICATION_ANALYSIS\n");
-        } else {
-            diag_write_str("[WIFI] WF-RESULT=SCAN_COMPLETE_NOTIFICATION_SEEN\n");
+            crate::desktop::terminal_write("TX WR=");
+            hex(wr);
+            crate::desktop::terminal_write(" RD=");
+            hex(rd);
+            crate::desktop::terminal_write(" SCD=");
+            hex(status);
+            crate::desktop::terminal_write(" TSSR=");
+            hex(tssr);
+            crate::desktop::terminal_write(" TCSR=");
+            hex(tcsr);
+            crate::desktop::terminal_write(" RX=");
+            crate::desktop::terminal_write(if RX_IRQ_COUNT != 0 { "IRQ" } else { "NO-IRQ" });
+            crate::desktop::terminal_write(" SCAN=");
+            crate::desktop::terminal_write(if SCAN_COMPLETE_COUNT != 0 { "COMPLETE" } else { "NO-COMPLETE" });
+            crate::desktop::terminal_write("\n");
         }
     }
 }
