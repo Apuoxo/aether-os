@@ -24,6 +24,10 @@ const HD3000_DID: u16 = 0x0116;
 
 const PAGE_SIZE: usize = 4096;
 
+// AH532 Sandy Bridge IGD BAR2 aperture: 256 MiB. This is the GPU address
+// window, not dedicated VRAM; keep the KMS surface inside that real window.
+const GEN6_APERTURE_BYTES: usize = 256 * 1024 * 1024;
+
 // Sandy Bridge display registers (Gen6).
 const PIPEACONF: usize = 0x70008;
 const PIPEBCONF: usize = 0x71008;
@@ -207,8 +211,7 @@ fn detect_existing_scanout() {
         let expected_stride = if bpp == 32 { w.saturating_mul(4) } else { w.saturating_mul(3) };
         let aper = GPU.aperture as u64;
         if stride != pitch || pitch < expected_stride || addr == 0 || addr != aper || surf != 0 {
-            serial::write_str("[VIDEO/SCANOUT] existing surface does not match Multiboot FB
-");
+            serial::write_str("[VIDEO/SCANOUT] existing surface does not match Multiboot FB\n");
             return;
         }
         let _ = h;
@@ -709,7 +712,7 @@ pub fn modeset_to(w: u16, h: u16) -> bool {
         if fb::address() != aper { serial::write_str("[VIDEO/KMS] REFUSE: LFB != GMADR\n"); return false; }
         let stride = (((w as usize).saturating_mul(4)).saturating_add(63)) & !63usize;
         let size = match stride.checked_mul(h as usize) { Some(v) => v, None => return false };
-        if size == 0 || size > 16 * 1024 * 1024 { return false; }
+        if size == 0 || size > GEN6_APERTURE_BYTES { return false; }
         if !map_mmio(aper as u64, size + PAGE_SIZE) { return false; }
         let mut y = 0usize;
         while y < h as usize { let row = (aper + y * stride) as *mut u32; let mut x = 0usize; while x < w as usize { core::ptr::write_volatile(row.add(x), 0x0010_2840); x += 1; } y += 1; }
