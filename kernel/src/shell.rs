@@ -208,6 +208,7 @@ fn cmd_wf() {
     write_str("MODE: single desktop command; Serial output disabled\n");
     write_str("TARGET: Intel Centrino Wireless-N 2230 native DVM transport\n");
     write_str("STAGE: PCI -> reset -> firmware -> ALIVE -> CMDQ -> SCAN -> RX ring\n");
+    write_str("WF-DIAG-REV=COMPACT-1\n");
 
     crate::drivers::wifi::survey();
     write_str("PCI=");
