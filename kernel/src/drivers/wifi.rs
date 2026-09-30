@@ -399,6 +399,36 @@ pub fn wf_post_scan_diagnostics() {
         }
 
         // Only the scheduler/transport state needed for the next hypothesis.
+        if WF_GUI_OUTPUT {
+            fn hex(v: u64) {
+                let mut b = [0u8; 16];
+                let mut i = 16usize;
+                let mut n = v;
+                while i > 0 {
+                    i -= 1;
+                    let x = (n & 0xF) as u8;
+                    b[i] = if x < 10 { b'0' + x } else { b'a' + x - 10 };
+                    n >>= 4;
+                }
+                if let Ok(s) = core::str::from_utf8(&b) {
+                    crate::desktop::terminal_write(s);
+                }
+            }
+            let rbd_virt = (&RX_RBD.0 as *const u32) as u64;
+            let status_virt = (&RX_STATUS.0 as *const u32) as u64;
+            let buf0_virt = (&RX_BUFFERS.0[0][0] as *const u8) as u64;
+            let rbd_phys = paging::virt_to_phys(rbd_virt as usize).unwrap_or(0) as u64;
+            let status_phys = paging::virt_to_phys(status_virt as usize).unwrap_or(0) as u64;
+            let buf0_phys = paging::virt_to_phys(buf0_virt as usize).unwrap_or(0) as u64;
+            crate::desktop::terminal_write("RX-DMA-PHYS RBD-V="); hex(rbd_virt);
+            crate::desktop::terminal_write(" RBD-P="); hex(rbd_phys);
+            crate::desktop::terminal_write(" STATUS-V="); hex(status_virt);
+            crate::desktop::terminal_write(" STATUS-P="); hex(status_phys);
+            crate::desktop::terminal_write(" BUF0-V="); hex(buf0_virt);
+            crate::desktop::terminal_write(" BUF0-P="); hex(buf0_phys);
+            crate::desktop::terminal_write("\n");
+        }
+
         let wr = prph_read(SCD_QUEUE_WRPTR);
         let rd = prph_read(SCD_QUEUE_RDPTR);
         let status = prph_read(SCD_QUEUE_STATUS_BITS);
