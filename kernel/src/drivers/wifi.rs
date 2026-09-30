@@ -945,15 +945,40 @@ unsafe fn init_rx_queue() -> bool {
     ALIVE_SEEN = false;
     ALIVE_VALID = 0;
     ALIVE_SUBTYPE = 0;
-    let rbd_base = (&RX_RBD.0 as *const u32) as u64;
-    let status_base = (&RX_STATUS.0 as *const u32) as u64;
+    let rbd_base = match crate::mm::paging::virt_to_phys(&RX_RBD.0 as *const _ as usize) {
+        Some(p) => p,
+        None => {
+            diag_write_str("[WIFI] RX DMA RBD PHYS=FAILED\\n");
+            return false;
+        }
+    };
+    let status_base = match crate::mm::paging::virt_to_phys(&RX_STATUS.0 as *const _ as usize) {
+        Some(p) => p,
+        None => {
+            diag_write_str("[WIFI] RX DMA STATUS PHYS=FAILED\\n");
+            return false;
+        }
+    };
     let mut i = 0usize;
     while i < FH_RX_RBD_COUNT {
-        let buf = (&RX_BUFFERS.0[i][0] as *const u8) as u64;
+        let buf = match crate::mm::paging::virt_to_phys(&RX_BUFFERS.0[i][0] as *const u8 as usize) {
+            Some(p) => p,
+            None => {
+                diag_write_str("[WIFI] RX DMA BUFFER PHYS=FAILED\\n");
+                return false;
+            }
+        };
         RX_RBD.0[i] = (buf >> 8) as u32;
         RX_BUFFERS.0[i][0] = 0;
         i += 1;
     }
+    diag_write_str("[WIFI] RX-DMA-PHYS RBD=");
+    diag_write_hex(rbd_base as usize);
+    diag_write_str(" STATUS=");
+    diag_write_hex(status_base as usize);
+    diag_write_str(" BUF0=");
+    diag_write_hex(crate::mm::paging::virt_to_phys(&RX_BUFFERS.0[0][0] as *const u8 as usize).unwrap_or(0) as usize);
+    diag_write_str("\\n");
     RX_STATUS.0[0] = 0;
     RX_STATUS.0[1] = 0;
     RX_STATUS.0[2] = 0;
