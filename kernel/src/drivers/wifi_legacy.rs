@@ -40,6 +40,17 @@ fn diag_write_hex(v: usize) {
     serial::write_hex(v);
 }
 
+fn diag_write_hex_fixed(v: u32) {
+    unsafe { if WF_GUI_OUTPUT { return; } }
+    serial::write_str("0x");
+    let mut i = 8usize;
+    while i > 0 {
+        i -= 1;
+        let d = ((v >> (i * 4)) & 0xF) as u8;
+        serial::write_byte(if d < 10 { b'0' + d } else { b'A' + d - 10 });
+    }
+}
+
 const INTEL_VID: u16 = 0x8086;
 const CENTRINO_2230_DID: u16 = 0x0887;
 const SUBSYS_BGN: u16 = 0x4062;
@@ -872,7 +883,8 @@ pub fn rxon_24ghz() -> bool {
         diag_write_hex((RXON_FLG_BAND_24G | RXON_FLG_AUTO_DETECT) as usize);
         diag_write_str(" filter=");
         diag_write_hex(RXON_FILTER_ACCEPT_GRP as usize);
-        diag_write_str("\n");
+        diag_write_str(" MAC=ZERO NVM=NOT-READ\n");
+        crate::desktop::terminal_write("[WIFI] RXON MAC=ZERO NVM=NOT-READ\n");
 
         if !send_command(REPLY_RXON_CMD, &p) {
             diag_write_str("[WIFI] RXON24 CMD=FAILED\n");
@@ -895,6 +907,11 @@ pub fn scan_24ghz() -> bool {
     unsafe {
         if !CMD_QUEUE_READY || !ALIVE_SEEN { return false; }
         SCAN_NOTIFICATION_SEEN = false;
+        WIFI_RXON_RESPONSE_COUNT = 0;
+        WIFI_SCAN_RESPONSE_COUNT = 0;
+        WIFI_ERROR_RESPONSE_COUNT = 0;
+        WIFI_LAST_ERROR_CMD = 0;
+        WIFI_LAST_ERROR_TYPE = 0;
         if !rxon_24ghz() { return false; }
 
         // Legacy DVM iwl_scan_cmd for the 2030 firmware:
@@ -943,6 +960,7 @@ pub fn scan_24ghz() -> bool {
         }
         diag_write_str("[WIFI] SCAN24 CMD=SUBMITTED\n");
         crate::desktop::terminal_write("[WIFI] SCAN24 CMD=SUBMITTED\n");
+        crate::desktop::terminal_write("[WIFI] RX-NOTIFY stream=ENABLED\n");
         // Do one non-blocking RX poll only. If the firmware responds later,
         // the next WF invocation will observe it. This keeps the shell alive
         // while we validate command transport on real hardware.
@@ -966,7 +984,7 @@ pub fn scan_24ghz() -> bool {
         diag_write_str(" TCSR_STS=");
         diag_write_hex(core::ptr::read_volatile((MMIO + FH_TCSR_BUF_STS_CMD) as *const u32) as usize);
         diag_write_str(" HBUS_WRPTR=");
-        diag_write_hex(core::ptr::read_volatile((MMIO + 0x60) as *const u32) as usize);
+        diag_write_hex(core::ptr::read_volatile((MMIO + 0x460) as *const u32) as usize);
         diag_write_str("\n");
 
         let mut line = [0u8; 192];
@@ -1152,6 +1170,7 @@ pub unsafe fn irq_handler() {
                     diag_write_usize(len);
                     diag_write_str(" cmd=");
                     diag_write_hex(cmd as usize);
+                    crate::desktop::terminal_write("[WIFI] RX-NOTIFY received\n");
                     if cmd == REPLY_ERROR_CMD {
                         if len >= 24 {
                             let error_type = core::ptr::read_volatile(p.add(8) as *const u32);
