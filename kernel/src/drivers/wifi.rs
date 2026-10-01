@@ -25,6 +25,7 @@ pub use legacy::{
     ui_scan_start_count, ui_scan_results_count, ui_scan_complete_count,
     ui_scan_complete_channels, ui_scan_complete_status,
     ui_scan_notification_seen, wf_post_scan_diagnostics,
+    software_reset, irq_handler,
     command_queue_ready, rxon_24ghz, load_firmware, start_firmware,
     activate_nic, probe_capabilities, probe_prerequisites, survey, init,
 };
