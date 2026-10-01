@@ -146,7 +146,6 @@ static mut WF_PRE_CSR_INT: u32 = 0;
 static mut WF_PRE_FH_INT: u32 = 0;
 static mut WF_POST_CSR_INT: u32 = 0;
 static mut WF_POST_FH_INT: u32 = 0;
-static mut WF_PRE_CBBC: u32 = 0;
 static mut WF_PRE_TXFACT: u32 = 0;
 static mut WF_PRE_WR: u32 = 0;
 static mut WF_PRE_RD: u32 = 0;
