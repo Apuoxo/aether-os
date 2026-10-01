@@ -136,6 +136,17 @@ static mut CMD_QUEUE_READY: bool = false;
 static mut CMD_WRITE_PTR: usize = 0;
 static mut CMD_SEQ: u8 = 0;
 static mut WF_PRE_STATUS: u32 = 0;
+static mut WF_PRE_DOORBELL: u32 = 0;
+static mut WF_POST_DOORBELL: u32 = 0;
+static mut WF_PRE_TRB: u32 = 0;
+static mut WF_POST_TRB: u32 = 0;
+static mut WF_PRE_CHICKEN: u32 = 0;
+static mut WF_POST_CHICKEN: u32 = 0;
+static mut WF_PRE_CSR_INT: u32 = 0;
+static mut WF_PRE_FH_INT: u32 = 0;
+static mut WF_POST_CSR_INT: u32 = 0;
+static mut WF_POST_FH_INT: u32 = 0;
+static mut WF_PRE_CBBC: u32 = 0;
 static mut WF_PRE_TXFACT: u32 = 0;
 static mut WF_PRE_WR: u32 = 0;
 static mut WF_PRE_RD: u32 = 0;
@@ -457,7 +468,28 @@ pub fn wf_post_scan_diagnostics() {
                 }
             }
 
-            crate::desktop::terminal_write("PRE ST=");
+            crate::desktop::terminal_write("DOORBELL PRE=");
+            hex(WF_PRE_DOORBELL);
+            crate::desktop::terminal_write(" POST=");
+            hex(WF_POST_DOORBELL);
+            crate::desktop::terminal_write(" EXPECT=00000401\n");
+            crate::desktop::terminal_write("FH TRB PRE=");
+            hex(WF_PRE_TRB);
+            crate::desktop::terminal_write(" POST=");
+            hex(WF_POST_TRB);
+            crate::desktop::terminal_write(" CHICKEN PRE=");
+            hex(WF_PRE_CHICKEN);
+            crate::desktop::terminal_write(" POST=");
+            hex(WF_POST_CHICKEN);
+            crate::desktop::terminal_write(" IRQ PRE CSR=");
+            hex(WF_PRE_CSR_INT);
+            crate::desktop::terminal_write(" FH=");
+            hex(WF_PRE_FH_INT);
+            crate::desktop::terminal_write(" POST CSR=");
+            hex(WF_POST_CSR_INT);
+            crate::desktop::terminal_write(" FH=");
+            hex(WF_POST_FH_INT);
+            crate::desktop::terminal_write("\nPRE ST=");
             hex(WF_PRE_STATUS);
             crate::desktop::terminal_write(" ACT=");
             crate::desktop::terminal_write(if (WF_PRE_STATUS & SCD_QUEUE_ACTIVE) != 0 { "1" } else { "0" });
@@ -700,11 +732,17 @@ pub fn send_command(cmd: u8, payload: &[u8]) -> bool {
         WF_PRE_FW_ADDR = frame as u32;
         WF_PRE_BC_ADDR = (&SCD_BC_TABLE.0[bc_off] as *const u16) as u32;
         WF_PRE_CBBC = core::ptr::read_volatile((MMIO + FH_MEM_CBBC_CMD) as *const u32);
+        WF_PRE_DOORBELL = core::ptr::read_volatile((MMIO + 0x460) as *const u32);
+        WF_PRE_TRB = core::ptr::read_volatile((MMIO + FH_TX_TRB_BASE + IWL_CMD_FIFO_NUM as usize * 4) as *const u32);
+        WF_PRE_CHICKEN = core::ptr::read_volatile((MMIO + FH_TX_CHICKEN_BITS) as *const u32);
+        WF_PRE_CSR_INT = core::ptr::read_volatile((MMIO + CSR_INT) as *const u32);
+        WF_PRE_FH_INT = core::ptr::read_volatile((MMIO + CSR_FH_INT_STATUS) as *const u32);
         WF_PRE_CR3 = paging::read_cr3() as u32;
         WF_PRE_BC = SCD_BC_TABLE.0[bc_off];
         core::ptr::write_volatile((MMIO + 0x460) as *mut u32,
             (next as u32 & 0xFF) | ((IWL_DEFAULT_CMD_QUEUE_NUM as u32) << 8));
         // Diagnostic snapshot B: immediately after the same doorbell write.
+        WF_POST_DOORBELL = core::ptr::read_volatile((MMIO + 0x460) as *const u32);
         WF_POST_STATUS = prph_read(SCD_QUEUE_STATUS_BITS);
         WF_POST_TXFACT = prph_read(SCD_TXFACT);
         WF_POST_WR = prph_read(SCD_QUEUE_WRPTR);
@@ -721,6 +759,10 @@ pub fn send_command(cmd: u8, payload: &[u8]) -> bool {
         WF_POST_FRAME3 = core::ptr::read_volatile(frame.add(12) as *const u32);
         WF_POST_CBBC = core::ptr::read_volatile((MMIO + FH_MEM_CBBC_CMD) as *const u32);
         WF_POST_BC = SCD_BC_TABLE.0[bc_off];
+        WF_POST_TRB = core::ptr::read_volatile((MMIO + FH_TX_TRB_BASE + IWL_CMD_FIFO_NUM as usize * 4) as *const u32);
+        WF_POST_CHICKEN = core::ptr::read_volatile((MMIO + FH_TX_CHICKEN_BITS) as *const u32);
+        WF_POST_CSR_INT = core::ptr::read_volatile((MMIO + CSR_INT) as *const u32);
+        WF_POST_FH_INT = core::ptr::read_volatile((MMIO + CSR_FH_INT_STATUS) as *const u32);
         // Diagnostic only: do not change hardware state here. Linux exposes the\n        // FH TX TRB and SCD status when a legacy queue is stuck; we mirror that\n        // telemetry so the next AH532 run tells us whether FH consumed the TFD.\n        let _auto_retry = FH_TX_CHICKEN_BITS_SCD_AUTO_RETRY_EN;\n        CMD_WRITE_PTR = next;
         CMD_SEQ = CMD_SEQ.wrapping_add(1);
         diag_write_str("[WIFI] CMD TX id=");
