@@ -641,7 +641,11 @@ pub fn init_command_queue() -> bool {
         // channel. Queue #4 still owns the command TFD ring.
         let mut ch = 0usize;
         while ch < FH_TX_CHANNEL_COUNT {
-            let cfg = MMIO + FH_TCSR_CONFIG_CMD - (IWL_DEFAULT_CMD_QUEUE_NUM * 0x20) + ch * 0x20;
+            // Configure the actual legacy FH TX channels 0..7.
+            // FH_TCSR_CONFIG_CMD is channel 7; subtracting the command
+            // queue number here incorrectly shifted the base to channel 3
+            // and caused writes through channel 10.
+            let cfg = MMIO + FH_MEM_LOWER_BOUND + 0xD00 + ch * 0x20;
             core::ptr::write_volatile(cfg as *mut u32, 0);
             core::ptr::write_volatile(cfg as *mut u32,
                 FH_TCSR_TX_CMD_DMA_ENABLE | FH_TCSR_TX_CMD_CREDIT_ENABLE |
