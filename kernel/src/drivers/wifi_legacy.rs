@@ -891,12 +891,40 @@ pub fn rxon_24ghz() -> bool {
             return false;
         }
         diag_write_str("[WIFI] RXON24 CMD=SUBMITTED\n");
-        irq_handler();
+
+        // RXON is a prerequisite for SCAN. Do not submit SCAN until the
+        // firmware has either acknowledged RXON or returned REPLY_ERROR.
+        // A single irq_handler() call is insufficient on this polled path:
+        // the response can legitimately arrive after the command doorbell.
+        let mut polls = 0usize;
+        while polls < 200_000 {
+            let pending = core::ptr::read_volatile((MMIO + CSR_INT) as *const u32);
+            if pending != 0 {
+                irq_handler();
+                if WIFI_RXON_RESPONSE_COUNT != 0 || WIFI_ERROR_RESPONSE_COUNT != 0 {
+                    break;
+                }
+            }
+            core::hint::spin_loop();
+            polls += 1;
+        }
+
         diag_write_str("[WIFI] RXON24 RESPONSE_COUNT=");
         diag_write_usize(WIFI_RXON_RESPONSE_COUNT as usize);
         diag_write_str(" ERROR_COUNT=");
         diag_write_usize(WIFI_ERROR_RESPONSE_COUNT as usize);
+        diag_write_str(" POLLS=");
+        diag_write_usize(polls);
         diag_write_str("\n");
+
+        if WIFI_ERROR_RESPONSE_COUNT != 0 {
+            diag_write_str("[WIFI] RXON24 REJECTED BY FIRMWARE\n");
+            return false;
+        }
+        if WIFI_RXON_RESPONSE_COUNT == 0 {
+            diag_write_str("[WIFI] RXON24 NO-RESPONSE TIMEOUT\n");
+            return false;
+        }
         true
     }
 }
