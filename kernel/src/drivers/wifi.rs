@@ -111,6 +111,8 @@ const SCD_QUEUE_WRPTR: u32 = SCD_BASE + 0x18 + (IWL_DEFAULT_CMD_QUEUE_NUM as u32
 const SCD_QUEUE_RDPTR: u32 = SCD_BASE + 0x68 + (IWL_DEFAULT_CMD_QUEUE_NUM as u32 * 4);
 const SCD_CHAINEXT_EN: u32 = SCD_BASE + 0x244;
 const SCD_EN_CTRL: u32 = SCD_BASE + 0x254;
+const SCD_GP_CTRL: u32 = SCD_BASE + 0x1A8;
+const SCD_GP_CTRL_AUTO_ACTIVE_MODE: u32 = 1 << 18;
 const SCD_QUEUE_STATUS_BITS: u32 = SCD_BASE + 0x10C + (IWL_DEFAULT_CMD_QUEUE_NUM as u32 * 4);
 const SCD_QUEUE_CTX: u32 = 0x0600 + (IWL_DEFAULT_CMD_QUEUE_NUM as u32 * 8);
 const FH_TSSR_TX_STATUS_REG: usize = FH_MEM_LOWER_BOUND + 0xEB0;
@@ -608,6 +610,9 @@ pub fn init_command_queue() -> bool {
         // activating queue #4.  The DVM transport expects the DRAM base and
         // queue read pointer to be valid even for the first host command.
         prph_write(SCD_CHAINEXT_EN, 0);
+        // Legacy AGN/DVM transport requires SCD auto-active mode before
+        // queue activation. Linux sets SCD_GP_CTRL bit 18 during TX init.
+        prph_write(SCD_GP_CTRL, prph_read(SCD_GP_CTRL) | SCD_GP_CTRL_AUTO_ACTIVE_MODE);
         // DVM command queue #4 is not enabled through SCD_EN_CTRL here.
         // Linux enables SCD_EN_CTRL only for configurations that explicitly
         // set scd_set_active (the 2030 DVM path does not). Queue activation
