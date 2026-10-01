@@ -1416,7 +1416,6 @@ fn redraw_input_window(idx: usize) {
         draw_window(idx);
         CURSOR_SAVED = false;
         cursor_save_and_draw(MX, MY);
-        graphics::present();
     }
 }
 
@@ -3335,8 +3334,6 @@ fn render_drag_step() {
         DRAG_OLD_H = WINS[DRAG_WIN].h;
         CURSOR_SAVED = false;
         cursor_save_and_draw(MX, MY);
-        graphics::present();
-        graphics::present();
     }
 }
 
@@ -3387,7 +3384,6 @@ fn redraw_single_window(idx: usize) {
         draw_window(idx);
         CURSOR_SAVED = false;
         cursor_save_and_draw(MX, MY);
-        graphics::present();
     }
 }
 
@@ -3965,7 +3961,6 @@ pub fn run() -> ! {
                     cursor_restore();
                     redraw_status_strip();
                     cursor_save_and_draw(MX, MY);
-                    graphics::present();
                 }
             }
             if DIRTY_FULL {
@@ -3981,7 +3976,6 @@ pub fn run() -> ! {
                 DIRTY_CURSOR = false;
             } else if DIRTY_CURSOR {
                 cursor_save_and_draw(MX, MY);
-                graphics::present();
                 DIRTY_CURSOR = false;
             }
         }
