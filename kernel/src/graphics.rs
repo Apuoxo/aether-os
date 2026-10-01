@@ -32,10 +32,14 @@ pub fn init(addr: usize, width: usize, height: usize, pitch: usize, bpp: u8, sof
         FB.pitch = pitch;
         FB.bpp = bpp;
         FB.software = software;
-        // Keep the known-good AH532 direct-LFB path active. The backbuffer/present
-        // experiment is not a complete rendering pipeline and must not hide the
-        // desktop in an off-screen buffer.
-        BACKBUFFER_ACTIVE = false;
+        // Use the existing RAM backbuffer for 32-bpp modes when the complete
+        // framebuffer fits. Desktop rendering must never expose intermediate
+        // pixel writes on the real LFB.
+        let bytes = pitch.saturating_mul(height);
+        BACKBUFFER_ACTIVE = bpp == 32 && bytes <= BACKBUFFER_BYTES;
+        if BACKBUFFER_ACTIVE {
+            core::ptr::write_bytes(BACKBUFFER.as_mut_ptr(), 0, BACKBUFFER_BYTES);
+        }
     }
 }
 
@@ -60,7 +64,11 @@ pub fn put_pixel(x: usize, y: usize, color: u32) {
             return;
         }
         if BACKBUFFER_ACTIVE && FB.bpp == 32 {
-            let ptr = BACKBUFFER.as_mut_ptr().add(y * FB.pitch + x * 4) as *mut u32;
+            let off = y.saturating_mul(FB.pitch).saturating_add(x.saturating_mul(4));
+            if off.saturating_add(4) > BACKBUFFER_BYTES {
+                return;
+            }
+            let ptr = BACKBUFFER.as_mut_ptr().add(off) as *mut u32;
             core::ptr::write_unaligned(ptr, color);
         } else if FB.bpp == 32 {
             let ptr = (FB.addr + y * FB.pitch + x * 4) as *mut u32;
@@ -91,6 +99,14 @@ pub fn get_pixel(x: usize, y: usize) -> u32 {
     unsafe {
         if FB.addr == 0 || x >= FB.width || y >= FB.height || FB.bpp != 32 {
             return 0;
+        }
+        if BACKBUFFER_ACTIVE {
+            let off = y.saturating_mul(FB.pitch).saturating_add(x.saturating_mul(4));
+            if off.saturating_add(4) > BACKBUFFER_BYTES {
+                return 0;
+            }
+            let ptr = BACKBUFFER.as_ptr().add(off) as *const u32;
+            return core::ptr::read_unaligned(ptr);
         }
         let ptr = (FB.addr + y * FB.pitch + x * 4) as *const u32;
         core::ptr::read_volatile(ptr)
