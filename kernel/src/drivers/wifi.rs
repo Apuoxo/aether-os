@@ -618,7 +618,7 @@ pub fn init_command_queue() -> bool {
         // set scd_set_active (the 2030 DVM path does not). Queue activation
         // itself is performed through SCD_QUEUE_STATUS_BITS below.
         prph_write(SCD_QUEUECHAIN_SEL, 0);
-        prph_write(SCD_TXFACT, 1u32 << IWL_CMD_FIFO_NUM);
+        prph_write(SCD_TXFACT, 0xFF);
         // SCD_DRAM_BASE_ADDR is the scheduler byte-count table base, not the
         // TFD ring base. Gen1/2 iwlwifi uses 320 u16 entries per queue and
         // indexes the table by queue number.
