@@ -208,6 +208,11 @@ static mut SCAN_COMPLETE_COUNT: u32 = 0;
 static mut SCAN_COMPLETE_CHANNELS: u8 = 0;
 static mut SCAN_COMPLETE_STATUS: u8 = 0;
 static mut SCAN_COMPLETE_LAST_CHANNEL: u8 = 0;
+static mut WIFI_RXON_RESPONSE_COUNT: u32 = 0;
+static mut WIFI_SCAN_RESPONSE_COUNT: u32 = 0;
+static mut WIFI_ERROR_RESPONSE_COUNT: u32 = 0;
+static mut WIFI_LAST_ERROR_CMD: u8 = 0;
+static mut WIFI_LAST_ERROR_TYPE: u32 = 0;
 
 static mut FOUND: bool = false;
 static mut READY: bool = false; // phase1 ready = found + mapped
@@ -798,6 +803,7 @@ pub fn send_command(cmd: u8, payload: &[u8]) -> bool {
 pub fn command_queue_ready() -> bool { unsafe { CMD_QUEUE_READY } }
 
 
+const REPLY_ERROR_CMD: u8 = 0x02;
 const REPLY_RXON_CMD: u8 = 0x10;
 const RXON_DEV_TYPE_ESS: u8 = 3;
 const RXON_FLG_BAND_24G: u32 = 1 << 0;
@@ -864,6 +870,11 @@ pub fn rxon_24ghz() -> bool {
         }
         diag_write_str("[WIFI] RXON24 CMD=SUBMITTED\n");
         irq_handler();
+        diag_write_str("[WIFI] RXON24 RESPONSE_COUNT=");
+        diag_write_usize(WIFI_RXON_RESPONSE_COUNT as usize);
+        diag_write_str(" ERROR_COUNT=");
+        diag_write_usize(WIFI_ERROR_RESPONSE_COUNT as usize);
+        diag_write_str("\n");
         true
     }
 }
@@ -1131,7 +1142,39 @@ pub unsafe fn irq_handler() {
                     diag_write_usize(len);
                     diag_write_str(" cmd=");
                     diag_write_hex(cmd as usize);
-                    if cmd == 1 {
+                    if cmd == REPLY_ERROR_CMD {
+                        if len >= 24 {
+                            let error_type = core::ptr::read_volatile(p.add(8) as *const u32);
+                            let bad_cmd = core::ptr::read_volatile(p.add(12));
+                            let bad_seq = core::ptr::read_volatile(p.add(13));
+                            let error_info = core::ptr::read_volatile(p.add(16) as *const u32);
+                            WIFI_ERROR_RESPONSE_COUNT = WIFI_ERROR_RESPONSE_COUNT.wrapping_add(1);
+                            WIFI_LAST_ERROR_TYPE = error_type;
+                            WIFI_LAST_ERROR_CMD = bad_cmd;
+                            diag_write_str("[WIFI] REPLY_ERROR type=");
+                            diag_write_hex(error_type as usize);
+                            diag_write_str(" cmd=");
+                            diag_write_hex(bad_cmd as usize);
+                            diag_write_str(" seq=");
+                            diag_write_hex(bad_seq as usize);
+                            diag_write_str(" info=");
+                            diag_write_hex(error_info as usize);
+                            diag_write_str("\n");
+                        }
+                    } else if cmd == REPLY_RXON_CMD {
+                        WIFI_RXON_RESPONSE_COUNT = WIFI_RXON_RESPONSE_COUNT.wrapping_add(1);
+                        diag_write_str("[WIFI] REPLY_RXON response len=");
+                        diag_write_usize(len);
+                        diag_write_str("\n");
+                    } else if cmd == REPLY_SCAN_CMD {
+                        WIFI_SCAN_RESPONSE_COUNT = WIFI_SCAN_RESPONSE_COUNT.wrapping_add(1);
+                        let status = if len >= 12 { core::ptr::read_volatile(p.add(8) as *const u32) } else { 0xffff_ffff };
+                        diag_write_str("[WIFI] REPLY_SCAN status=");
+                        diag_write_hex(status as usize);
+                        diag_write_str(" len=");
+                        diag_write_usize(len);
+                        diag_write_str("\n");
+                    } else if cmd == 1 {
                         diag_write_str(" subtype=");
                         diag_write_usize(subtype_probe as usize);
                     }
