@@ -1,53 +1,34 @@
-//! Safe framebuffer via Multiboot2 tag — no hang on failure
+//! Multiboot2 framebuffer bootstrap and compatibility facade.
+//!
+//! `graphics::Framebuffer` is the single source of truth after initialization.
+//! This module only discovers/maps the Multiboot framebuffer and forwards all
+//! runtime state and drawing through `graphics`.
 
+use crate::graphics;
 use crate::serial;
-use crate::mm;
 use crate::mm::paging;
 
 const MB2_TAG_FB: u32 = 8;
 const MB2_TAG_END: u32 = 0;
 
-static mut FB_ADDR: usize = 0;
-static mut FB_W: usize = 0;
-static mut FB_H: usize = 0;
-static mut FB_PITCH: usize = 0;
-static mut FB_BPP: u8 = 0;
-static mut FB_OK: bool = false;
-
-/// Synchronize the boot framebuffer snapshot after a successful display-plane modeset.
-/// The video driver owns the hardware transition; this keeps legacy fb::* readers coherent.
+/// Synchronize the canonical framebuffer state after a display-plane modeset.
 pub fn sync_runtime(addr: usize, width: usize, height: usize, pitch: usize, bpp: u8) {
-    unsafe {
-        FB_ADDR = addr;
-        FB_W = width;
-        FB_H = height;
-        FB_PITCH = pitch;
-        FB_BPP = bpp;
-        FB_OK = addr != 0 && width != 0 && height != 0 && (bpp == 32 || bpp == 24);
-    }
+    graphics::init(addr, width, height, pitch, bpp, false);
 }
 
-pub fn is_ready() -> bool {
-    unsafe { FB_OK }
-}
-
-pub fn width() -> usize {
-    unsafe { FB_W }
-}
-pub fn height() -> usize {
-    unsafe { FB_H }
-}
-pub fn address() -> usize { unsafe { FB_ADDR } }
-pub fn pitch() -> usize { unsafe { FB_PITCH } }
-pub fn bpp() -> u8 { unsafe { FB_BPP } }
+pub fn is_ready() -> bool { graphics::ready() }
+pub fn width() -> usize { graphics::width() }
+pub fn height() -> usize { graphics::height() }
+pub fn address() -> usize { graphics::fb_addr() }
+pub fn pitch() -> usize { graphics::pitch() }
+pub fn bpp() -> u8 { graphics::bpp() }
 
 fn vga_fb_mark(col: usize, a: u8, b: u8) {
-    // write two chars at row 1
     unsafe {
         let p = (0xB8000 + 80 * 2 + col * 2) as *mut u16;
-        *p = 0x0E00u16 | (a as u16);
+        *p = 0x0E00u16 | a as u16;
         let p2 = (0xB8000 + 80 * 2 + (col + 1) * 2) as *mut u16;
-        *p2 = 0x0E00u16 | (b as u16);
+        *p2 = 0x0E00u16 | b as u16;
     }
 }
 
@@ -61,40 +42,29 @@ fn read_u8(p: usize) -> u8 {
     unsafe { *(p as *const u8) }
 }
 
-/// Map physical FB range into current page tables (identity, USER not needed)
+/// Identity-map the physical framebuffer when it lies outside the bootstrap map.
 fn map_fb_range(phys: usize, size: usize) -> bool {
-    if phys == 0 || size == 0 {
-        return false;
-    }
+    if phys == 0 || size == 0 { return false; }
     let cr3 = unsafe { paging::read_cr3() };
     let start = phys & !0xFFF;
-    let end = (phys + size + 0xFFF) & !0xFFF;
+    let end = match phys.checked_add(size.saturating_add(0xFFF)) {
+        Some(v) => v & !0xFFF,
+        None => return false,
+    };
     let mut va = start;
     while va < end {
-        // already identity-mapped below 1GiB?
-        if va < 0x4000_0000 {
-            va += 0x1000;
-            continue;
+        if va >= 0x4000_0000 {
+            let _ = unsafe {
+                paging::map_page(cr3, va, va, paging::PAGE_PRESENT | paging::PAGE_WRITE)
+            };
         }
-        // map 4K page at identity
-        if !unsafe {
-            paging::map_page(
-                cr3,
-                va,
-                va,
-                paging::PAGE_PRESENT | paging::PAGE_WRITE,
-            )
-        } {
-            // may already be mapped — try continue
-        }
-        va += 0x1000;
+        va = match va.checked_add(0x1000) { Some(v) => v, None => return false };
     }
     unsafe { paging::load_cr3(cr3) };
     true
 }
 
-
-/// Parse Multiboot2 info; return true if usable 32bpp RGB FB found
+/// Parse Multiboot2 framebuffer tag and initialize the canonical graphics state.
 pub fn init_from_mbi(mbi: usize) -> bool {
     serial::write_str("\n[FB] Multiboot2 scan...\n");
     if mbi == 0 || mbi < 0x1000 {
@@ -103,7 +73,6 @@ pub fn init_from_mbi(mbi: usize) -> bool {
         return false;
     }
 
-    // total_size at mbi+0
     let total = read_u32(mbi) as usize;
     if total < 16 || total > 0x100000 {
         serial::write_str("[FBX] bad MBI size\n");
@@ -115,18 +84,16 @@ pub fn init_from_mbi(mbi: usize) -> bool {
     while off + 8 <= total {
         let tag_type = read_u32(mbi + off);
         let tag_size = read_u32(mbi + off + 4) as usize;
-        if tag_size < 8 || off + tag_size > total {
-            break;
-        }
-        if tag_type == MB2_TAG_END {
-            break;
-        }
+        if tag_size < 8 || off + tag_size > total { break; }
+        if tag_type == MB2_TAG_END { break; }
+
         if tag_type == MB2_TAG_FB && tag_size >= 32 {
             let addr = read_u64(mbi + off + 8) as usize;
             let pitch = read_u32(mbi + off + 16) as usize;
             let width = read_u32(mbi + off + 20) as usize;
             let height = read_u32(mbi + off + 24) as usize;
             let bpp = read_u8(mbi + off + 28);
+
             serial::write_str("[FB0] detected addr=");
             serial::write_hex(addr);
             serial::write_str(" ");
@@ -140,14 +107,17 @@ pub fn init_from_mbi(mbi: usize) -> bool {
             serial::write_str("\n");
             vga_fb_mark(0, b'F', b'0');
 
-            // Validate
-            if addr == 0
-                || width < 320
-                || width > 4096
-                || height < 200
-                || height > 2160
-                || pitch < width
-                || (bpp != 32 && bpp != 24)
+            let bytes_per_pixel = match bpp {
+                32 => 4usize,
+                24 => 3usize,
+                _ => 0,
+            };
+            let min_pitch = match width.checked_mul(bytes_per_pixel) {
+                Some(v) => v,
+                None => 0,
+            };
+            if addr == 0 || width < 320 || width > 4096 || height < 200 || height > 2160
+                || bytes_per_pixel == 0 || pitch < min_pitch
             {
                 serial::write_str("[FBX] parameters invalid\n");
                 vga_fb_mark(0, b'F', b'X');
@@ -156,12 +126,14 @@ pub fn init_from_mbi(mbi: usize) -> bool {
             vga_fb_mark(0, b'F', b'1');
             serial::write_str("[FB1] parameters valid\n");
 
-            let fb_size = pitch.saturating_mul(height);
-            if fb_size == 0 || fb_size > 32 * 1024 * 1024 {
-                serial::write_str("[FBX] size too large\n");
-                vga_fb_mark(0, b'F', b'X');
-                return false;
-            }
+            let fb_size = match pitch.checked_mul(height) {
+                Some(v) if v != 0 && v <= 32 * 1024 * 1024 => v,
+                _ => {
+                    serial::write_str("[FBX] size invalid\n");
+                    vga_fb_mark(0, b'F', b'X');
+                    return false;
+                }
+            };
 
             if !map_fb_range(addr, fb_size) {
                 serial::write_str("[FBX] map failed\n");
@@ -169,116 +141,46 @@ pub fn init_from_mbi(mbi: usize) -> bool {
                 return false;
             }
             vga_fb_mark(0, b'F', b'2');
-            serial::write_str("[FB2] mapped\n");
 
-            unsafe {
-                FB_ADDR = addr;
-                FB_W = width;
-                FB_H = height;
-                FB_PITCH = pitch;
-                FB_BPP = bpp;
-                FB_OK = true;
-            }
-            crate::graphics::init(addr, width, height, pitch, bpp, false);
-            serial::write_str("[FB] Multiboot mode ");
+            graphics::init(addr, width, height, pitch, bpp, false);
+            serial::write_str("[FB] SoT -> graphics::FB ");
             serial::write_usize(width);
             serial::write_str("x");
             serial::write_usize(height);
+            serial::write_str(" pitch=");
+            serial::write_usize(pitch);
+            serial::write_str(" bpp=");
+            serial::write_usize(bpp as usize);
             serial::write_str("\n");
-            // CLEAN_INIT_DONE
             return true;
         }
-        // next tag 8-byte aligned
         off = (off + tag_size + 7) & !7;
     }
+
     serial::write_str("[FBX] no framebuffer tag — text mode\n");
     vga_fb_mark(0, b'F', b'X');
     false
 }
 
-fn put_pixel(x: usize, y: usize, color: u32) {
-    unsafe {
-        if !FB_OK || x >= FB_W || y >= FB_H {
-            return;
-        }
-        let bpp = FB_BPP as usize;
-        let off = FB_ADDR + y * FB_PITCH + x * (bpp / 8);
-        if bpp == 32 {
-            core::ptr::write_volatile(off as *mut u32, color);
-        } else if bpp == 24 {
-            let p = off as *mut u8;
-            *p = (color & 0xFF) as u8;
-            *p.add(1) = ((color >> 8) & 0xFF) as u8;
-            *p.add(2) = ((color >> 16) & 0xFF) as u8;
-        }
-    }
-}
-
-fn fill(color: u32) {
-    unsafe {
-        if !FB_OK {
-            return;
-        }
-        let mut y = 0usize;
-        while y < FB_H {
-            let mut x = 0usize;
-            while x < FB_W {
-                put_pixel(x, y, color);
-                x += 1;
-            }
-            y += 1;
-        }
-    }
-}
-
-fn fill_rect(x0: usize, y0: usize, w: usize, h: usize, color: u32) {
-    unsafe {
-        if !FB_OK {
-            return;
-        }
-        let mut y = y0;
-        while y < y0 + h && y < FB_H {
-            let mut x = x0;
-            while x < x0 + w && x < FB_W {
-                put_pixel(x, y, color);
-                x += 1;
-            }
-            y += 1;
-        }
-    }
-}
-
-/// Test pattern: dark blue fill, green bar, red square, white border
+/// Test pattern uses the canonical graphics path only.
 pub fn draw_test_pattern() -> bool {
-    if !is_ready() {
-        return false;
-    }
+    if !is_ready() { return false; }
     serial::write_str("[FB] drawing test pattern...\n");
-    // dark blue background
-    fill(0x0010_2840);
-    // green horizontal bar
-    fill_rect(40, 40, unsafe { FB_W.saturating_sub(80) }, 20, 0x0020_C060);
-    // red square
-    fill_rect(80, 100, 120, 120, 0x00C0_3040);
-    // cyan rectangle
-    fill_rect(240, 100, 200, 80, 0x0020_A0C0);
-    // white corner markers
-    fill_rect(0, 0, 16, 16, 0x00FF_FFFF);
-    fill_rect(unsafe { FB_W.saturating_sub(16) }, 0, 16, 16, 0x00FF_FFFF);
-    fill_rect(0, unsafe { FB_H.saturating_sub(16) }, 16, 16, 0x00FF_FFFF);
-    fill_rect(
-        unsafe { FB_W.saturating_sub(16) },
-        unsafe { FB_H.saturating_sub(16) },
-        16,
-        16,
-        0x00FF_FFFF,
-    );
+    let w = graphics::width();
+    let h = graphics::height();
+    graphics::fill(0x0010_2840);
+    graphics::fill_rect(40, 40, w.saturating_sub(80), 20, 0x0020_C060);
+    graphics::fill_rect(80, 100, 120, 120, 0x00C0_3040);
+    graphics::fill_rect(240, 100, 200, 80, 0x0020_A0C0);
+    graphics::fill_rect(0, 0, 16, 16, 0x00FF_FFFF);
+    graphics::fill_rect(w.saturating_sub(16), 0, 16, 16, 0x00FF_FFFF);
+    graphics::fill_rect(0, h.saturating_sub(16), 16, 16, 0x00FF_FFFF);
+    graphics::fill_rect(w.saturating_sub(16), h.saturating_sub(16), 16, 16, 0x00FF_FFFF);
     serial::write_str("[FB] test pattern rendered\n");
     vga_fb_mark(0, b'F', b'3');
     true
 }
 
-/// Entry from kernel: try MBI, pattern, never hang
 pub fn try_init(mbi: usize) {
     if init_from_mbi(mbi) {
         let _ = draw_test_pattern();
