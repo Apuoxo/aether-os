@@ -3776,14 +3776,16 @@ fn handle_key(ch: u8) {
 }
 
 pub fn run() -> ! {
-    // Use the same guarded mode-application path as the Graphics panel.
-    // Apply the AH532 native panel mode only after the desktop framebuffer is
-    // fully initialized; the previous pre-desktop call caused scanout artifacts.
-    if crate::drivers::video::modeset_to(1366, 768) {
-        serial::write_str("[DESKTOP] startup resolution=1366x768\n");
-    } else {
-        serial::write_str("[DESKTOP] startup resolution restore=FAILED\n");
-    }
+    // Stage 4 keeps display timings and the firmware-selected scanout mode
+    // owned by firmware. Do not call the legacy video::modeset_to() here:
+    // that path still programs Pipe A directly and bypasses the rollback-safe
+    // intel_kms path. The framebuffer discovered from Multiboot is already the
+    // working scanout surface, so start the desktop on that mode unchanged.
+    serial::write_str("[DESKTOP] startup uses firmware-selected framebuffer ");
+    serial::write_usize(graphics::width());
+    serial::write_str("x");
+    serial::write_usize(graphics::height());
+    serial::write_str("\n");
     if graphics::enable_backbuffer() {
         serial::write_str("[DESKTOP] RAM backbuffer enabled\n");
     } else {
