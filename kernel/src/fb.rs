@@ -121,10 +121,12 @@ pub fn init_from_mbi(mbi: usize) -> bool {
                 return false;
             }
 
+            // Multiboot2 framebuffer tag: type at +29, then direct-RGB
+            // masks at +31..+36. +30 is the reserved byte.
             let pixel_format = graphics::PixelFormat::direct_rgb(
-                read_u8(mbi + off + 30), read_u8(mbi + off + 31),
-                read_u8(mbi + off + 32), read_u8(mbi + off + 33),
-                read_u8(mbi + off + 34), read_u8(mbi + off + 35),
+                read_u8(mbi + off + 31), read_u8(mbi + off + 32),
+                read_u8(mbi + off + 33), read_u8(mbi + off + 34),
+                read_u8(mbi + off + 35), read_u8(mbi + off + 36),
             );
             if !pixel_format.compatible_with_renderer(bpp) {
                 serial::write_str("[FBX] unsupported RGB masks R=");
