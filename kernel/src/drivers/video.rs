@@ -375,7 +375,8 @@ pub fn init() -> bool {
             Some(v) => v,
             None => 0,
         };
-        if fb_addr != 0 && fb_len != 0 && fb_addr == GPU.aperture {
+        let gpu_aperture = unsafe { GPU.aperture };
+        if fb_addr != 0 && fb_len != 0 && fb_addr == gpu_aperture {
             unsafe {
                 if paging::map_write_combining(fb_addr, fb_addr, fb_len) {
                     serial::write_str("[PAT] framebuffer=WC addr=");

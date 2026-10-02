@@ -9,6 +9,12 @@ pub const PAGE_USER: u64 = 1 << 2;
 pub const PAGE_ACCESSED: u64 = 1 << 5;
 pub const PAGE_PCD: u64 = 1 << 4;
 pub const PAGE_PWT: u64 = 1 << 3;
+// In a 4 KiB PTE, bit 7 selects the PAT entry. (For a huge PDE, bit 12 is used.)
+pub const PAGE_PAT: u64 = 1 << 7;
+
+const CPUID_PAT_EDX: u32 = 1 << 16;
+const IA32_PAT_MSR: u32 = 0x277;
+const PAT_WC: u8 = 0x01;
 pub const PAGE_HUGE: u64 = 1 << 7;
 
 #[repr(align(4096))]
