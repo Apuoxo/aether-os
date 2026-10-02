@@ -44,16 +44,50 @@ p4_table:
 
 align 4096
 p3_table:
-    dq p2_table + 0x03
-    times 511 dq 0
+    dq p2_table0 + 0x03
+    dq p2_table1 + 0x03
+    dq p2_table2 + 0x03
+    dq p2_table3 + 0x03
+    dq p2_table4 + 0x03
+    dq p2_table5 + 0x03
+    dq p2_table6 + 0x03
+    dq p2_table7 + 0x03
+    dq p2_table8 + 0x03
+    dq p2_table9 + 0x03
+    dq p2_table10 + 0x03
+    dq p2_table11 + 0x03
+    dq p2_table12 + 0x03
+    dq p2_table13 + 0x03
+    dq p2_table14 + 0x03
+    dq p2_table15 + 0x03
+    times 496 dq 0
 
+%macro MAKE_PD 2
 align 4096
-p2_table:
-%assign i 0
+%1:
+%assign j 0
 %rep 512
-    dq (i << 21) + 0x83
-%assign i i+1
+    dq (((%2 * 512 + j) << 21) + 0x83)
+%assign j j+1
 %endrep
+%endmacro
+
+MAKE_PD p2_table0, 0
+MAKE_PD p2_table1, 1
+MAKE_PD p2_table2, 2
+MAKE_PD p2_table3, 3
+MAKE_PD p2_table4, 4
+MAKE_PD p2_table5, 5
+MAKE_PD p2_table6, 6
+MAKE_PD p2_table7, 7
+MAKE_PD p2_table8, 8
+MAKE_PD p2_table9, 9
+MAKE_PD p2_table10, 10
+MAKE_PD p2_table11, 11
+MAKE_PD p2_table12, 12
+MAKE_PD p2_table13, 13
+MAKE_PD p2_table14, 14
+MAKE_PD p2_table15, 15
 
 align 16
 gdt64:
