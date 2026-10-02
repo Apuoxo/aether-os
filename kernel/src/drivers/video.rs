@@ -587,9 +587,9 @@ pub fn preferred_mode() -> Option<DisplayMode> {
 /// Validate that a requested mode can be represented by the existing
 /// Multiboot framebuffer without touching display hardware.
 pub fn mode_matches_framebuffer(mode: DisplayMode) -> bool {
-    if !fb::is_ready() { return false; }
-    let w = fb::width() as u16;
-    let h = fb::height() as u16;
+    if !graphics::ready() { return false; }
+    let w = graphics::width() as u16;
+    let h = graphics::height() as u16;
     mode.width == w && mode.height == h && mode.pixel_clock_khz != 0
 }
 
@@ -606,15 +606,15 @@ pub fn attach_existing_mode() -> Option<DisplayMode> {
 /// This does not require EDID and never writes display hardware.
 pub fn active_mode_from_framebuffer() -> Option<DisplayMode> {
     unsafe {
-        if !SCANOUT_READY || !fb::is_ready() { return None; }
-        let w = fb::width();
-        let h = fb::height();
-        let bpp = fb::bpp() as usize;
+        if !SCANOUT_READY || !graphics::ready() { return None; }
+        let w = graphics::width();
+        let h = graphics::height();
+        let bpp = graphics::bpp() as usize;
         if w == 0 || h == 0 || (bpp != 32 && bpp != 24) {
             return None;
         }
         let bytes = bpp / 8;
-        if fb::pitch() < w.saturating_mul(bytes) {
+        if graphics::pitch() < w.saturating_mul(bytes) {
             return None;
         }
         Some(DisplayMode {
@@ -630,9 +630,9 @@ pub fn active_mode_from_framebuffer() -> Option<DisplayMode> {
 /// Draw a small driver-owned diagnostic marker through the existing graphics
 /// path. This never changes Intel display registers.
 pub fn draw_driver_marker() -> bool {
-    if !scanout_ready() || !fb::is_ready() { return false; }
-    let w = fb::width();
-    let h = fb::height();
+    if !scanout_ready() || !graphics::ready() { return false; }
+    let w = graphics::width();
+    let h = graphics::height();
     if w < 32 || h < 16 { return false; }
     graphics::border_rect(4, 4, 24, 12, 0x00FF00);
     graphics::draw_str(7, 6, "A6", 0x00FFFFFF);
@@ -703,9 +703,9 @@ pub fn set_plane_surface(surf: u32, stride: u32, w: u16, h: u16) -> bool {
 }
 pub fn modeset_to(w: u16, h: u16) -> bool {
     unsafe {
-        if !GPU_READY || GPU.aperture == 0 || !fb::is_ready() { return false; }
+        if !GPU_READY || GPU.aperture == 0 || !graphics::ready() { return false; }
         let aper = GPU.aperture;
-        if fb::address() != aper { serial::write_str("[VIDEO/KMS] REFUSE: LFB != GMADR\n"); return false; }
+        if graphics::fb_addr() != aper { serial::write_str("[VIDEO/KMS] REFUSE: LFB != GMADR\n"); return false; }
         let stride = (((w as usize).saturating_mul(4)).saturating_add(63)) & !63usize;
         let size = match stride.checked_mul(h as usize) { Some(v) => v, None => return false };
         if size == 0 || size > 16 * 1024 * 1024 { return false; }
@@ -714,7 +714,6 @@ pub fn modeset_to(w: u16, h: u16) -> bool {
         while y < h as usize { let row = (aper + y * stride) as *mut u32; let mut x = 0usize; while x < w as usize { core::ptr::write_volatile(row.add(x), 0x0010_2840); x += 1; } y += 1; }
         if !set_plane_surface(0, stride as u32, w, h) { return false; }
         graphics::init(aper, w as usize, h as usize, stride, 32, false);
-        
         crate::drivers::ps2::clamp_to_screen();
         HW_W = w; HW_H = h;
         serial::write_str("[VIDEO/KMS] MODESET "); serial::write_usize(w as usize); serial::write_str("x"); serial::write_usize(h as usize); serial::write_str(" PASS\n");
