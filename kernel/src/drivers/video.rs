@@ -12,7 +12,6 @@
 //! driver enough hardware knowledge for the next active display stage.
 
 use crate::graphics;
-use crate::fb;
 use crate::mm::paging;
 use crate::serial;
 
@@ -178,12 +177,12 @@ unsafe fn mmio_read32(off: usize) -> u32 {
 fn detect_existing_scanout() {
     unsafe {
         SCANOUT_READY = false;
-        if !GPU_READY || !fb::is_ready() { return; }
-        let w = fb::width() as u32;
-        let h = fb::height() as u32;
-        let addr = fb::address() as u64;
-        let pitch = fb::pitch() as u32;
-        let bpp = fb::bpp();
+        if !GPU_READY || !graphics::ready() { return; }
+        let w = graphics::width() as u32;
+        let h = graphics::height() as u32;
+        let addr = graphics::fb_addr() as u64;
+        let pitch = graphics::pitch() as u32;
+        let bpp = graphics::bpp();
         let pa = mmio_read32(PIPEACONF);
         let pb = mmio_read32(PIPEBCONF);
         let mut pipe = 0u8;
@@ -715,7 +714,7 @@ pub fn modeset_to(w: u16, h: u16) -> bool {
         while y < h as usize { let row = (aper + y * stride) as *mut u32; let mut x = 0usize; while x < w as usize { core::ptr::write_volatile(row.add(x), 0x0010_2840); x += 1; } y += 1; }
         if !set_plane_surface(0, stride as u32, w, h) { return false; }
         graphics::init(aper, w as usize, h as usize, stride, 32, false);
-        crate::fb::sync_runtime(aper, w as usize, h as usize, stride, 32);
+        
         crate::drivers::ps2::clamp_to_screen();
         HW_W = w; HW_H = h;
         serial::write_str("[VIDEO/KMS] MODESET "); serial::write_usize(w as usize); serial::write_str("x"); serial::write_usize(h as usize); serial::write_str(" PASS\n");

@@ -2,7 +2,7 @@
 //! MMIO identity mapping + bounded forcewake + read-only register dump.
 //! No GGTT/GSM, no modeset, no EDID, no infinite waits.
 
-use crate::{mm, serial, graphics, fb};
+use crate::{mm, serial, graphics};
 use crate::drivers::intel_igpu;
 
 const PCI_ADDR: u16 = 0x0CF8;
@@ -295,7 +295,7 @@ unsafe fn map_aperture(phys: usize, size: usize) -> bool {
 /// framebuffer. No PLL/FDI/timing programming and no GGTT/GSM setup.
 pub fn set_plane_surface(surf: u32, stride: u32, w: u16, h: u16) -> bool {
     unsafe {
-        if !MMIO_READY || !fb::is_ready() || !FORCEWAKE_READY {
+        if !MMIO_READY || !graphics::ready() || !FORCEWAKE_READY {
             return false;
         }
         let w = w as usize;
@@ -308,7 +308,7 @@ pub fn set_plane_surface(surf: u32, stride: u32, w: u16, h: u16) -> bool {
         }
 
         let aper = intel_igpu::aperture_bar() as usize;
-        let lfb = fb::address();
+        let lfb = graphics::fb_addr();
         if aper == 0 || lfb != aper {
             serial::write_str("[KMS] PLANE REFUSE LFB!=GMADR LFB=");
             serial::write_hex(lfb);
@@ -360,12 +360,12 @@ pub fn set_plane_surface(surf: u32, stride: u32, w: u16, h: u16) -> bool {
 /// this only binds the already-selected framebuffer dimensions to Pipe A.
 pub fn modeset_to(w: u16, h: u16) -> bool {
     unsafe {
-        if !MMIO_READY || !fb::is_ready() || w == 0 || h == 0 {
+        if !MMIO_READY || !graphics::ready() || w == 0 || h == 0 {
             return false;
         }
-        let fw = fb::width();
-        let fh = fb::height();
-        if fw != w as usize || fh != h as usize || fb::bpp() != 32 {
+        let fw = graphics::width();
+        let fh = graphics::height();
+        if fw != w as usize || fh != h as usize || graphics::bpp() != 32 {
             serial::write_str("[KMS] MODESET REFUSE framebuffer geometry mismatch\n");
             return false;
         }
@@ -378,8 +378,7 @@ pub fn modeset_to(w: u16, h: u16) -> bool {
         let ok = set_plane_surface(0, stride as u32, w, h);
         forcewake_put();
         if ok {
-            graphics::init(fb::address(), w as usize, h as usize, stride, 32, false);
-            fb::sync_runtime(fb::address(), w as usize, h as usize, stride, 32);
+            graphics::init(graphics::fb_addr(), w as usize, h as usize, stride, 32, false);
             crate::drivers::ps2::clamp_to_screen();
             serial::write_str("[KMS] MODESET=PASS ");
             serial::write_usize(w as usize);

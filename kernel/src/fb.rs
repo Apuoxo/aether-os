@@ -11,11 +11,6 @@ use crate::mm::paging;
 const MB2_TAG_FB: u32 = 8;
 const MB2_TAG_END: u32 = 0;
 
-/// Synchronize the canonical framebuffer state after a display-plane modeset.
-pub fn sync_runtime(addr: usize, width: usize, height: usize, pitch: usize, bpp: u8) {
-    graphics::init(addr, width, height, pitch, bpp, false);
-}
-
 pub fn is_ready() -> bool { graphics::ready() }
 pub fn width() -> usize { graphics::width() }
 pub fn height() -> usize { graphics::height() }
