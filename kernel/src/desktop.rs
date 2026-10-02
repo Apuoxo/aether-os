@@ -2137,6 +2137,12 @@ fn handle_mouse_buttons(buttons: u8) {
                             if ok {
                                 VIDEO_PENDING_W = graphics::width() as u16;
                                 VIDEO_PENDING_H = graphics::height() as u16;
+                                if graphics::enable_backbuffer() {
+                                    serial::write_str("[FB] backbuffer recreated after modeset\n");
+                                } else {
+                                    serial::write_str("[FB] backbuffer unavailable after modeset; direct framebuffer\n");
+                                }
+                                handle_resolution_changed();
                                 ps2::clamp_to_screen();
                             }
                             DIRTY_FULL = true;
@@ -3516,6 +3522,45 @@ fn hit_start_menu(mx: i32, my: i32) -> Option<usize> {
 
 static mut BACKGROUND_DRAWN: bool = false;
 static mut DIRTY_WINDOW: i16 = -1;
+
+/// Rebuild compositor geometry after a successful hardware mode change.
+/// Maximized windows follow the new work area; other windows are clamped to it.
+/// The next full render repaints the new backbuffer from scratch.
+fn handle_resolution_changed() {
+    let sw = graphics::width() as i32;
+    let sh = graphics::height() as i32;
+    if sw <= 0 || sh <= 70 {
+        return;
+    }
+    unsafe {
+        let mut i = 0usize;
+        while i < MAX_WIN {
+            if WINS[i].maximized {
+                WINS[i].x = 0;
+                WINS[i].y = 30;
+                WINS[i].w = sw;
+                WINS[i].h = sh - 70;
+            } else {
+                clamp_win(i);
+            }
+            i += 1;
+        }
+        MX = MX.clamp(0, sw - 1);
+        MY = MY.clamp(0, sh - 1);
+        CURSOR_SAVED = false;
+        CURSOR_OX = -1;
+        CURSOR_OY = -1;
+        BACKGROUND_DRAWN = false;
+        DIRTY_FULL = true;
+        DIRTY_WINDOW = -1;
+        DIRTY_CURSOR = false;
+    }
+    serial::write_str("[DESKTOP] geometry recalculated for ");
+    serial::write_usize(sw as usize);
+    serial::write_str("x");
+    serial::write_usize(sh as usize);
+    serial::write_str("\n");
+}
 
 fn render() {
     let w = graphics::width();
