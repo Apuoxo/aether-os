@@ -3334,6 +3334,7 @@ fn render_drag_step() {
         DRAG_OLD_H = WINS[DRAG_WIN].h;
         CURSOR_SAVED = false;
         cursor_save_and_draw(MX, MY);
+        graphics::present();
     }
 }
 
@@ -3384,6 +3385,7 @@ fn redraw_single_window(idx: usize) {
         draw_window(idx);
         CURSOR_SAVED = false;
         cursor_save_and_draw(MX, MY);
+        graphics::present();
     }
 }
 
@@ -3584,6 +3586,7 @@ fn render() {
         }
         CURSOR_SAVED = false;
         cursor_save_and_draw(MX, MY);
+        graphics::present();
     }
 }
 
@@ -3735,6 +3738,11 @@ pub fn run() -> ! {
         serial::write_str("[DESKTOP] startup resolution=1366x768\n");
     } else {
         serial::write_str("[DESKTOP] startup resolution restore=FAILED\n");
+    }
+    if graphics::enable_backbuffer() {
+        serial::write_str("[DESKTOP] RAM backbuffer enabled\n");
+    } else {
+        serial::write_str("[DESKTOP] RAM backbuffer unavailable; direct framebuffer\n");
     }
     unsafe {
         let sw = graphics::width() as i32;
@@ -3961,6 +3969,7 @@ pub fn run() -> ! {
                     cursor_restore();
                     redraw_status_strip();
                     cursor_save_and_draw(MX, MY);
+                    graphics::present();
                 }
             }
             if DIRTY_FULL {
@@ -3976,6 +3985,7 @@ pub fn run() -> ! {
                 DIRTY_CURSOR = false;
             } else if DIRTY_CURSOR {
                 cursor_save_and_draw(MX, MY);
+                graphics::present();
                 DIRTY_CURSOR = false;
             }
         }
