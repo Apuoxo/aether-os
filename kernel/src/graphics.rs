@@ -14,6 +14,10 @@ const BACKBUFFER_BYTES: usize = 8 * 1024 * 1024;
 #[link_section = ".bss"]
 static mut BACKBUFFER: [u8; BACKBUFFER_BYTES] = [0; BACKBUFFER_BYTES];
 static mut BACKBUFFER_ACTIVE: bool = false;
+static mut DIRTY_MIN_X: usize = usize::MAX;
+static mut DIRTY_MIN_Y: usize = usize::MAX;
+static mut DIRTY_MAX_X: usize = 0;
+static mut DIRTY_MAX_Y: usize = 0;
 
 static mut FB: Framebuffer = Framebuffer {
     addr: 0,
@@ -39,10 +43,11 @@ pub fn init(addr: usize, width: usize, height: usize, pitch: usize, bpp: u8, sof
         FB.bpp = bpp;
         FB.software = software;
         crate::serial::write_str("[FB] set "); crate::serial::write_usize(width); crate::serial::write_str("x"); crate::serial::write_usize(height); crate::serial::write_str(" pitch="); crate::serial::write_usize(pitch); crate::serial::write_str(" bpp="); crate::serial::write_usize(bpp as usize); crate::serial::write_str(" addr="); crate::serial::write_hex(addr); crate::serial::write_str("\n");
-        // Keep the known-good AH532 direct-LFB path active. The backbuffer/present
-        // experiment is not a complete rendering pipeline and must not hide the
-        // desktop in an off-screen buffer.
         BACKBUFFER_ACTIVE = false;
+        DIRTY_MIN_X = usize::MAX;
+        DIRTY_MIN_Y = usize::MAX;
+        DIRTY_MAX_X = 0;
+        DIRTY_MAX_Y = 0;
     }
 }
 
@@ -61,6 +66,50 @@ pub fn fb_addr() -> usize { unsafe { FB.addr } }
 pub fn bpp() -> u8 { unsafe { FB.bpp } }
 pub fn software() -> bool { unsafe { FB.software } }
 
+/// Enable the RAM rendering surface after the framebuffer geometry is known.
+/// The desktop compositor paints the complete scene before the first present,
+/// so no framebuffer readback is required.
+pub fn enable_backbuffer() -> bool {
+    unsafe {
+        if FB.addr == 0 || FB.bpp != 32 {
+            return false;
+        }
+        let bytes = match FB.pitch.checked_mul(FB.height) {
+            Some(v) => v,
+            None => return false,
+        };
+        if bytes == 0 || bytes > BACKBUFFER_BYTES {
+            crate::serial::write_str("[FB] backbuffer unavailable bytes=");
+            crate::serial::write_usize(bytes);
+            crate::serial::write_str("\n");
+            return false;
+        }
+        BACKBUFFER_ACTIVE = true;
+        DIRTY_MIN_X = usize::MAX;
+        DIRTY_MIN_Y = usize::MAX;
+        DIRTY_MAX_X = 0;
+        DIRTY_MAX_Y = 0;
+        crate::serial::write_str("[FB] backbuffer=ON bytes=");
+        crate::serial::write_usize(bytes);
+        crate::serial::write_str("\n");
+        true
+    }
+}
+
+pub fn backbuffer_active() -> bool {
+    unsafe { BACKBUFFER_ACTIVE }
+}
+
+fn mark_dirty(x: usize, y: usize) {
+    unsafe {
+        if !BACKBUFFER_ACTIVE { return; }
+        if x < DIRTY_MIN_X { DIRTY_MIN_X = x; }
+        if y < DIRTY_MIN_Y { DIRTY_MIN_Y = y; }
+        if x > DIRTY_MAX_X { DIRTY_MAX_X = x; }
+        if y > DIRTY_MAX_Y { DIRTY_MAX_Y = y; }
+    }
+}
+
 pub fn put_pixel(x: usize, y: usize, color: u32) {
     unsafe {
         if FB.addr == 0 || x >= FB.width || y >= FB.height {
@@ -69,6 +118,7 @@ pub fn put_pixel(x: usize, y: usize, color: u32) {
         if BACKBUFFER_ACTIVE && FB.bpp == 32 {
             let ptr = BACKBUFFER.as_mut_ptr().add(y * FB.pitch + x * 4) as *mut u32;
             core::ptr::write_unaligned(ptr, color);
+            mark_dirty(x, y);
         } else if FB.bpp == 32 {
             let ptr = (FB.addr + y * FB.pitch + x * 4) as *mut u32;
             core::ptr::write_volatile(ptr, color);
@@ -83,14 +133,31 @@ pub fn put_pixel(x: usize, y: usize, color: u32) {
 
 pub fn present() {
     unsafe {
-        if !BACKBUFFER_ACTIVE || FB.addr == 0 || FB.bpp != 32 {
+        if !BACKBUFFER_ACTIVE || FB.addr == 0 || FB.bpp != 32 ||
+           DIRTY_MIN_X == usize::MAX || DIRTY_MIN_Y == usize::MAX {
             return;
         }
-        let bytes = FB.pitch.saturating_mul(FB.height);
-        let src = BACKBUFFER.as_ptr();
-        let dst = FB.addr as *mut u8;
-        let _ = crate::drivers::intel_kms::wait_vblank();
-        core::ptr::copy_nonoverlapping(src, dst, bytes);
+        let min_x = DIRTY_MIN_X;
+        let min_y = DIRTY_MIN_Y;
+        let max_x = DIRTY_MAX_X.min(FB.width.saturating_sub(1));
+        let max_y = DIRTY_MAX_Y.min(FB.height.saturating_sub(1));
+        if min_x > max_x || min_y > max_y {
+            DIRTY_MIN_X = usize::MAX;
+            DIRTY_MIN_Y = usize::MAX;
+            return;
+        }
+        let row_bytes = (max_x - min_x + 1) * 4;
+        let mut y = min_y;
+        while y <= max_y {
+            let src = BACKBUFFER.as_ptr().add(y * FB.pitch + min_x * 4);
+            let dst = (FB.addr + y * FB.pitch + min_x * 4) as *mut u8;
+            core::ptr::copy_nonoverlapping(src, dst, row_bytes);
+            y += 1;
+        }
+        DIRTY_MIN_X = usize::MAX;
+        DIRTY_MIN_Y = usize::MAX;
+        DIRTY_MAX_X = 0;
+        DIRTY_MAX_Y = 0;
     }
 }
 
@@ -98,6 +165,10 @@ pub fn get_pixel(x: usize, y: usize) -> u32 {
     unsafe {
         if FB.addr == 0 || x >= FB.width || y >= FB.height || FB.bpp != 32 {
             return 0;
+        }
+        if BACKBUFFER_ACTIVE {
+            let ptr = BACKBUFFER.as_ptr().add(y * FB.pitch + x * 4) as *const u32;
+            return core::ptr::read_unaligned(ptr);
         }
         let ptr = (FB.addr + y * FB.pitch + x * 4) as *const u32;
         core::ptr::read_volatile(ptr)
