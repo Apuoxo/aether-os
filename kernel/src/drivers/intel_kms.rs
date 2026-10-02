@@ -14,15 +14,23 @@ const FORCEWAKE: usize = 0x0A18C;
 const FORCEWAKE_ACK: usize = 0x130090;
 
 const PIPEASRC: usize = 0x6001C;
+const PIPEBSRC: usize = 0x6101C;
 const PIPEACONF: usize = 0x70008;
+const PIPEBCONF: usize = 0x71008;
 const PIPEASTAT: usize = 0x70024;
+const PIPEBSTAT: usize = 0x71024;
 const PIPEADSL: usize = 0x70000;
+const PIPEBDSL: usize = 0x71000;
 const PIPESTAT_VBLANK: u32 = 1 << 1;
 const VBLANK_WAIT_ITERS: usize = 2_000_000;
 const DSPACNTR: usize = 0x70180;
 const DSPASTRIDE: usize = 0x70188;
 const DSPASIZE: usize = 0x70190;
 const DSPASURF: usize = 0x7019C;
+const DSPBCNTR: usize = 0x71180;
+const DSPBSTRIDE: usize = 0x71188;
+const DSPBSIZE: usize = 0x71190;
+const DSPBSURF: usize = 0x7119C;
 const PLANE_ENABLE: u32 = 1 << 31;
 const PLANE_TILED: u32 = 1 << 10;
 const PLANE_FORMAT_MASK: u32 = 0xF << 26;
@@ -158,46 +166,67 @@ pub fn forcewake_get() -> bool {
     }
 }
 
-/// Wait for a bounded Pipe A vertical-blank status transition.
-/// A stale status event is cleared first; no interrupt is enabled.
+fn active_pipe() -> Option<u8> {
+    unsafe {
+        let a = mmio_read32(PIPEACONF) & (1 << 31) != 0;
+        let b = mmio_read32(PIPEBCONF) & (1 << 31) != 0;
+        match (a, b) {
+            (true, false) => Some(0),
+            (false, true) => Some(1),
+            _ => None,
+        }
+    }
+}
+
+/// Wait for a bounded vertical-blank transition on the currently active pipe.
+/// No interrupt is enabled and the wait is always bounded.
 pub fn wait_vblank() -> bool {
     unsafe {
-        if !MMIO_READY {
-            return false;
-        }
-        if !FORCEWAKE_READY && !forcewake_get() {
-            return false;
-        }
-
-        mmio_write32(PIPEASTAT, PIPESTAT_VBLANK);
-
-        let mut last_dsl = mmio_read32(PIPEADSL);
-        let mut moved = false;
-        let mut i = 0usize;
-        while i < VBLANK_WAIT_ITERS {
-            let stat = mmio_read32(PIPEASTAT);
-            if stat & PIPESTAT_VBLANK != 0 {
-                serial::write_str("[KMS] VBLANK=OK DSL=");
-                serial::write_hex(mmio_read32(PIPEADSL) as usize);
-                serial::write_str("\n");
-                return true;
+        let pipe = match active_pipe() {
+            Some(p) => p,
+            None => {
+                serial::write_str("[KMS] VBLANK no unique active pipe\n");
+                return false;
             }
-            if (i & 0x3FF) == 0 {
-                let dsl = mmio_read32(PIPEADSL);
-                if dsl != last_dsl {
-                    moved = true;
-                    last_dsl = dsl;
-                }
-            }
-            core::hint::spin_loop();
-            i += 1;
-        }
-
-        serial::write_str("[KMS] VBLANK=TIMEOUT DSL=");
-        serial::write_hex(last_dsl as usize);
-        serial::write_str(if moved { " DSL_MOVED\n" } else { " DSL_STATIC\n" });
-        false
+        };
+        wait_vblank_pipe(pipe)
     }
+}
+
+unsafe fn wait_vblank_pipe(pipe: u8) -> bool {
+    let (stat_reg, dsl_reg) = if pipe == 0 { (PIPEASTAT, PIPEADSL) } else { (PIPEBSTAT, PIPEBDSL) };
+    mmio_write32(stat_reg, PIPESTAT_VBLANK);
+
+    let mut last_dsl = mmio_read32(dsl_reg);
+    let mut moved = false;
+    let mut i = 0usize;
+    while i < VBLANK_WAIT_ITERS {
+        let stat = mmio_read32(stat_reg);
+        if stat & PIPESTAT_VBLANK != 0 {
+            serial::write_str("[KMS] VBLANK pipe=");
+            serial::write_usize(pipe as usize);
+            serial::write_str(" DSL=");
+            serial::write_hex(mmio_read32(dsl_reg) as usize);
+            serial::write_str("\n");
+            return true;
+        }
+        if (i & 0x3FF) == 0 {
+            let dsl = mmio_read32(dsl_reg);
+            if dsl != last_dsl {
+                moved = true;
+                last_dsl = dsl;
+            }
+        }
+        core::hint::spin_loop();
+        i += 1;
+    }
+
+    serial::write_str("[KMS] VBLANK=TIMEOUT pipe=");
+    serial::write_usize(pipe as usize);
+    serial::write_str(" DSL=");
+    serial::write_hex(last_dsl as usize);
+    serial::write_str(if moved { " DSL_MOVED\n" } else { " DSL_STATIC\n" });
+    false
 }
 
 pub fn forcewake_put() {
@@ -291,19 +320,84 @@ unsafe fn map_aperture(phys: usize, size: usize) -> bool {
     true
 }
 
-/// Stage 5: retarget the existing Pipe A primary plane to the Multiboot
-/// framebuffer. No PLL/FDI/timing programming and no GGTT/GSM setup.
+/// Stage 4/5: bind the firmware-selected scanout to the current Multiboot FB.
+/// Timings and panel fitter remain firmware-owned; Aether exposes only the
+/// already-working mode instead of pretending to support arbitrary modes.
+#[derive(Copy, Clone)]
+struct PlaneState {
+    cntr: u32,
+    stride: u32,
+    size: u32,
+    surf: u32,
+}
+
+unsafe fn plane_regs(pipe: u8) -> (usize, usize, usize, usize) {
+    if pipe == 0 {
+        (DSPACNTR, DSPASTRIDE, DSPASIZE, DSPASURF)
+    } else {
+        (DSPBCNTR, DSPBSTRIDE, DSPBSIZE, DSPBSURF)
+    }
+}
+
+unsafe fn snapshot_plane(pipe: u8) -> PlaneState {
+    let (cntr, stride, size, surf) = plane_regs(pipe);
+    PlaneState {
+        cntr: mmio_read32(cntr),
+        stride: mmio_read32(stride),
+        size: mmio_read32(size),
+        surf: mmio_read32(surf),
+    }
+}
+
+unsafe fn restore_plane(pipe: u8, old: PlaneState) {
+    let (cntr, stride, size, surf) = plane_regs(pipe);
+    mmio_write32(cntr, old.cntr & !PLANE_ENABLE);
+    mmio_write32(stride, old.stride);
+    mmio_write32(size, old.size);
+    mmio_write32(surf, old.surf);
+    mmio_write32(cntr, old.cntr);
+}
+
+unsafe fn rollback_plane(pipe: u8, old: PlaneState, reason: &str) {
+    serial::write_str("[KMS] MODESET ROLLBACK ");
+    serial::write_str(reason);
+    serial::write_str(" pipe=");
+    serial::write_usize(pipe as usize);
+    serial::write_str("\n");
+    restore_plane(pipe, old);
+}
+
+fn current_mode_supported(w: usize, h: usize) -> bool {
+    if !graphics::ready() || graphics::bpp() != 32 {
+        return false;
+    }
+    let fw = graphics::width();
+    let fh = graphics::height();
+    fw == w && fh == h
+}
+
 pub fn set_plane_surface(surf: u32, stride: u32, w: u16, h: u16) -> bool {
     unsafe {
         if !MMIO_READY || !graphics::ready() || !FORCEWAKE_READY {
             return false;
         }
+        let pipe = match active_pipe() {
+            Some(p) => p,
+            None => {
+                serial::write_str("[KMS] PLANE REFUSE no unique active pipe\n");
+                return false;
+            }
+        };
         let w = w as usize;
         let h = h as usize;
-        if surf != 0 || w < 320 || h < 200 || w > PLANE_MAX_W || h > PLANE_MAX_H {
+        if !current_mode_supported(w, h) || surf != 0 || w < 320 || h < 200 || w > PLANE_MAX_W || h > PLANE_MAX_H {
+            serial::write_str("[KMS] PLANE REFUSE unsupported mode\n");
             return false;
         }
-        if stride == 0 || (stride & 63) != 0 || (stride as usize) < w.saturating_mul(4) {
+        if stride == 0 || (stride & 63) != 0 || (stride as usize) < w.saturating_mul(4)
+            || stride as usize != graphics::pitch()
+        {
+            serial::write_str("[KMS] PLANE REFUSE invalid stride\n");
             return false;
         }
 
@@ -327,46 +421,62 @@ pub fn set_plane_surface(surf: u32, stride: u32, w: u16, h: u16) -> bool {
             return false;
         }
 
-        let old = mmio_read32(DSPACNTR);
-        mmio_write32(DSPACNTR, old & !PLANE_ENABLE);
+        let old = snapshot_plane(pipe);
+        mmio_write32(plane_regs(pipe).0, old.cntr & !PLANE_ENABLE);
 
         let mut n = 0usize;
-        while n < 80_000 && (mmio_read32(DSPACNTR) & PLANE_ENABLE) != 0 {
+        while n < 80_000 && (mmio_read32(plane_regs(pipe).0) & PLANE_ENABLE) != 0 {
             core::hint::spin_loop();
             n += 1;
         }
-        if (mmio_read32(DSPACNTR) & PLANE_ENABLE) != 0 {
-            serial::write_str("[KMS] PLANE disable TIMEOUT\n");
+        if (mmio_read32(plane_regs(pipe).0) & PLANE_ENABLE) != 0 {
+            rollback_plane(pipe, old, "disable-timeout");
             return false;
         }
 
-        mmio_write32(DSPASTRIDE, stride);
-        mmio_write32(DSPASIZE, (((h - 1) as u32) << 16) | ((w - 1) as u32));
-        mmio_write32(DSPASURF, surf);
+        let (_, stride_reg, size_reg, surf_reg) = plane_regs(pipe);
+        mmio_write32(stride_reg, stride);
+        mmio_write32(size_reg, (((h - 1) as u32) << 16) | ((w - 1) as u32));
+        mmio_write32(surf_reg, surf);
 
-        let mut plane = old & !(PLANE_FORMAT_MASK | PLANE_TILED);
+        let mut plane = old.cntr & !(PLANE_FORMAT_MASK | PLANE_TILED);
         plane |= PLANE_FORMAT_XRGB8888 | PLANE_ENABLE;
-        mmio_write32(DSPACNTR, plane);
+        mmio_write32(plane_regs(pipe).0, plane);
 
-        let ok = wait_vblank();
+        let programmed_size = mmio_read32(size_reg);
+        let programmed_stride = mmio_read32(stride_reg);
+        let programmed_surf = mmio_read32(surf_reg);
+        if programmed_size != (((h - 1) as u32) << 16 | ((w - 1) as u32))
+            || programmed_stride != stride || programmed_surf != surf
+        {
+            rollback_plane(pipe, old, "readback-mismatch");
+            return false;
+        }
+
+        let ok = wait_vblank_pipe(pipe);
+        if !ok {
+            rollback_plane(pipe, old, "vblank-fail");
+        }
         serial::write_str("[KMS] PLANE ");
-        serial::write_str(if ok { "PASS" } else { "VBLANK-FAIL" });
+        serial::write_str(if ok { "PASS" } else { "FAIL" });
+        serial::write_str(" pipe=");
+        serial::write_usize(pipe as usize);
         serial::write_str("\n");
         ok
     }
 }
 
-/// Stage 5 modeset entry point. The pipe timings remain firmware-owned;
-/// this only binds the already-selected framebuffer dimensions to Pipe A.
+/// Modeset deliberately accepts only the firmware-selected framebuffer mode.
+/// No arbitrary timing/panel-fitter programming is claimed in this stage.
 pub fn modeset_to(w: u16, h: u16) -> bool {
     unsafe {
         if !MMIO_READY || !graphics::ready() || w == 0 || h == 0 {
             return false;
         }
-        let fw = graphics::width();
-        let fh = graphics::height();
-        if fw != w as usize || fh != h as usize || graphics::bpp() != 32 {
-            serial::write_str("[KMS] MODESET REFUSE framebuffer geometry mismatch\n");
+        let w = w as usize;
+        let h = h as usize;
+        if !current_mode_supported(w, h) {
+            serial::write_str("[KMS] MODESET REFUSE mode-not-firmware-selected\n");
             return false;
         }
         if !forcewake_get() {
@@ -374,16 +484,22 @@ pub fn modeset_to(w: u16, h: u16) -> bool {
             return false;
         }
 
-        let stride = (((w as usize).saturating_mul(4)).saturating_add(63)) & !63usize;
-        let ok = set_plane_surface(0, stride as u32, w, h);
+        let stride = graphics::pitch();
+        let pipe = active_pipe();
+        let ok = if pipe.is_some() {
+            set_plane_surface(0, stride as u32, w as u16, h as u16)
+        } else {
+            false
+        };
         forcewake_put();
         if ok {
-            graphics::init(graphics::fb_addr(), w as usize, h as usize, stride, 32, false);
             crate::drivers::ps2::clamp_to_screen();
-            serial::write_str("[KMS] MODESET=PASS ");
-            serial::write_usize(w as usize);
+            serial::write_str("[KMS] MODESET=PASS firmware-mode ");
+            serial::write_usize(w);
             serial::write_str("x");
-            serial::write_usize(h as usize);
+            serial::write_usize(h);
+            serial::write_str(" pipe=");
+            serial::write_usize(pipe.unwrap() as usize);
             serial::write_str("\n");
         }
         ok

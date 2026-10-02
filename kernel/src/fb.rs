@@ -87,6 +87,7 @@ pub fn init_from_mbi(mbi: usize) -> bool {
             let width = read_u32(mbi + off + 20) as usize;
             let height = read_u32(mbi + off + 24) as usize;
             let bpp = read_u8(mbi + off + 28);
+            let framebuffer_type = read_u8(mbi + off + 29);
 
             serial::write_str("[FB0] detected addr=");
             serial::write_hex(addr);
@@ -102,14 +103,60 @@ pub fn init_from_mbi(mbi: usize) -> bool {
             vga_fb_mark(0, b'F', b'0');
 
             let bytes_per_pixel = match bpp { 32 => 4usize, 24 => 3usize, _ => 0 };
-            let min_pitch = match width.checked_mul(bytes_per_pixel) { Some(v) => v, None => 0 };
+            let min_pitch = match width.checked_mul(bpp as usize).and_then(|bits| bits.checked_add(7)).map(|bits| bits / 8) { Some(v) => v, None => 0 };
             if addr == 0 || width < 320 || width > 4096 || height < 200 || height > 2160
-                || bytes_per_pixel == 0 || pitch < min_pitch
+                || bytes_per_pixel == 0 || min_pitch == 0 || pitch < min_pitch
             {
                 serial::write_str("[FBX] parameters invalid\n");
                 vga_fb_mark(0, b'F', b'X');
                 return false;
             }
+
+            if framebuffer_type != 1 || tag_size < 38 {
+                serial::write_str("[FBX] unsupported framebuffer type\n");
+                serial::write_str("[FBX] type=");
+                serial::write_usize(framebuffer_type as usize);
+                serial::write_str("\n");
+                vga_fb_mark(0, b'F', b'X');
+                return false;
+            }
+
+            let pixel_format = graphics::PixelFormat::direct_rgb(
+                read_u8(mbi + off + 30), read_u8(mbi + off + 31),
+                read_u8(mbi + off + 32), read_u8(mbi + off + 33),
+                read_u8(mbi + off + 34), read_u8(mbi + off + 35),
+            );
+            if !pixel_format.compatible_with_renderer(bpp) {
+                serial::write_str("[FBX] unsupported RGB masks R=");
+                serial::write_usize(pixel_format.red_position as usize);
+                serial::write_str(":");
+                serial::write_usize(pixel_format.red_mask_size as usize);
+                serial::write_str(" G=");
+                serial::write_usize(pixel_format.green_position as usize);
+                serial::write_str(":");
+                serial::write_usize(pixel_format.green_mask_size as usize);
+                serial::write_str(" B=");
+                serial::write_usize(pixel_format.blue_position as usize);
+                serial::write_str(":");
+                serial::write_usize(pixel_format.blue_mask_size as usize);
+                serial::write_str("\n");
+                vga_fb_mark(0, b'F', b'X');
+                return false;
+            }
+
+            serial::write_str("[FB0] type=RGB masks R=");
+            serial::write_usize(pixel_format.red_position as usize);
+            serial::write_str(":");
+            serial::write_usize(pixel_format.red_mask_size as usize);
+            serial::write_str(" G=");
+            serial::write_usize(pixel_format.green_position as usize);
+            serial::write_str(":");
+            serial::write_usize(pixel_format.green_mask_size as usize);
+            serial::write_str(" B=");
+            serial::write_usize(pixel_format.blue_position as usize);
+            serial::write_str(":");
+            serial::write_usize(pixel_format.blue_mask_size as usize);
+            serial::write_str("\n");
             vga_fb_mark(0, b'F', b'1');
             serial::write_str("[FB1] parameters valid\n");
 
@@ -129,7 +176,11 @@ pub fn init_from_mbi(mbi: usize) -> bool {
             }
             vga_fb_mark(0, b'F', b'2');
 
-            graphics::init(addr, width, height, pitch, bpp, false);
+            if !graphics::init_with_format(addr, width, height, pitch, bpp, false, pixel_format) {
+                serial::write_str("[FBX] graphics format rejected\n");
+                vga_fb_mark(0, b'F', b'X');
+                return false;
+            }
             serial::write_str("[FB] SoT -> graphics::FB ");
             serial::write_usize(width);
             serial::write_str("x");

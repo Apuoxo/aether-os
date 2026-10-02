@@ -1,5 +1,54 @@
 //! Framebuffer drawing primitives + 8x8 font
 
+#[derive(Copy, Clone)]
+pub struct PixelFormat {
+    pub framebuffer_type: u8,
+    pub red_position: u8,
+    pub red_mask_size: u8,
+    pub green_position: u8,
+    pub green_mask_size: u8,
+    pub blue_position: u8,
+    pub blue_mask_size: u8,
+}
+
+impl PixelFormat {
+    pub const fn unknown() -> Self {
+        Self {
+            framebuffer_type: 0xFF,
+            red_position: 0,
+            red_mask_size: 0,
+            green_position: 0,
+            green_mask_size: 0,
+            blue_position: 0,
+            blue_mask_size: 0,
+        }
+    }
+
+    pub const fn direct_rgb(
+        red_position: u8, red_mask_size: u8,
+        green_position: u8, green_mask_size: u8,
+        blue_position: u8, blue_mask_size: u8,
+    ) -> Self {
+        Self {
+            framebuffer_type: 1,
+            red_position,
+            red_mask_size,
+            green_position,
+            green_mask_size,
+            blue_position,
+            blue_mask_size,
+        }
+    }
+
+    pub fn compatible_with_renderer(&self, bpp: u8) -> bool {
+        self.framebuffer_type == 1
+            && self.red_position == 16 && self.red_mask_size == 8
+            && self.green_position == 8 && self.green_mask_size == 8
+            && self.blue_position == 0 && self.blue_mask_size == 8
+            && (bpp == 24 || bpp == 32)
+    }
+}
+
 pub struct Framebuffer {
     pub addr: usize,
     pub width: usize,
@@ -7,6 +56,7 @@ pub struct Framebuffer {
     pub pitch: usize,
     pub bpp: u8,
     pub software: bool,
+    pub pixel_format: PixelFormat,
 }
 
 const BACKBUFFER_BYTES: usize = 16 * 1024 * 1024;
@@ -26,6 +76,7 @@ static mut FB: Framebuffer = Framebuffer {
     pitch: 0,
     bpp: 0,
     software: false,
+    pixel_format: PixelFormat::unknown(),
 };
 
 pub fn init(addr: usize, width: usize, height: usize, pitch: usize, bpp: u8, software: bool) {
@@ -42,6 +93,7 @@ pub fn init(addr: usize, width: usize, height: usize, pitch: usize, bpp: u8, sof
         FB.pitch = pitch;
         FB.bpp = bpp;
         FB.software = software;
+        FB.pixel_format = PixelFormat::unknown();
         crate::serial::write_str("[FB] set "); crate::serial::write_usize(width); crate::serial::write_str("x"); crate::serial::write_usize(height); crate::serial::write_str(" pitch="); crate::serial::write_usize(pitch); crate::serial::write_str(" bpp="); crate::serial::write_usize(bpp as usize); crate::serial::write_str(" addr="); crate::serial::write_hex(addr); crate::serial::write_str("\n");
         BACKBUFFER_ACTIVE = false;
         DIRTY_MIN_X = usize::MAX;
@@ -49,6 +101,20 @@ pub fn init(addr: usize, width: usize, height: usize, pitch: usize, bpp: u8, sof
         DIRTY_MAX_X = 0;
         DIRTY_MAX_Y = 0;
     }
+}
+
+pub fn init_with_format(
+    addr: usize, width: usize, height: usize, pitch: usize, bpp: u8,
+    software: bool, pixel_format: PixelFormat,
+) -> bool {
+    let min_pitch = width.saturating_mul(bpp as usize) / 8;
+    if pitch < min_pitch || !pixel_format.compatible_with_renderer(bpp) {
+        crate::serial::write_str("[FB] unsupported framebuffer format or pitch\n");
+        return false;
+    }
+    init(addr, width, height, pitch, bpp, software);
+    unsafe { FB.pixel_format = pixel_format; }
+    true
 }
 
 pub fn ready() -> bool {
@@ -65,6 +131,7 @@ pub fn pitch() -> usize { unsafe { FB.pitch } }
 pub fn fb_addr() -> usize { unsafe { FB.addr } }
 pub fn bpp() -> u8 { unsafe { FB.bpp } }
 pub fn software() -> bool { unsafe { FB.software } }
+pub fn pixel_format() -> PixelFormat { unsafe { FB.pixel_format } }
 
 /// Enable the RAM rendering surface after the framebuffer geometry is known.
 /// The desktop compositor paints the complete scene before the first present,
