@@ -375,8 +375,9 @@ pub fn init() -> bool {
             Some(v) => v,
             None => 0,
         };
-        let gpu_aperture = unsafe { GPU.aperture };
-        if fb_addr != 0 && fb_len != 0 && fb_addr == gpu_aperture {
+        // Multiboot LFB is the CPU physical framebuffer address. PAT/WC is
+        // applied to that CPU mapping; it must not depend on the GPU GMADR BAR.
+        if fb_addr != 0 && fb_len != 0 {
             unsafe {
                 if paging::map_write_combining(fb_addr, fb_addr, fb_len) {
                     serial::write_str("[PAT] framebuffer=WC addr=");
@@ -389,7 +390,7 @@ pub fn init() -> bool {
                 }
             }
         } else {
-            serial::write_str("[PAT] framebuffer WC skipped: non-identity or invalid LFB\n");
+            serial::write_str("[PAT] framebuffer WC skipped: invalid LFB\n");
         }
     }
     found
