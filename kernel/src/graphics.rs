@@ -9,7 +9,7 @@ pub struct Framebuffer {
     pub software: bool,
 }
 
-const BACKBUFFER_BYTES: usize = 8 * 1024 * 1024;
+const BACKBUFFER_BYTES: usize = 16 * 1024 * 1024;
 
 #[link_section = ".bss"]
 static mut BACKBUFFER: [u8; BACKBUFFER_BYTES] = [0; BACKBUFFER_BYTES];
@@ -101,12 +101,16 @@ pub fn backbuffer_active() -> bool {
 }
 
 fn mark_dirty(x: usize, y: usize) {
+    mark_dirty_rect(x, y, x, y);
+}
+
+fn mark_dirty_rect(min_x: usize, min_y: usize, max_x: usize, max_y: usize) {
     unsafe {
         if !BACKBUFFER_ACTIVE { return; }
-        if x < DIRTY_MIN_X { DIRTY_MIN_X = x; }
-        if y < DIRTY_MIN_Y { DIRTY_MIN_Y = y; }
-        if x > DIRTY_MAX_X { DIRTY_MAX_X = x; }
-        if y > DIRTY_MAX_Y { DIRTY_MAX_Y = y; }
+        if min_x < DIRTY_MIN_X { DIRTY_MIN_X = min_x; }
+        if min_y < DIRTY_MIN_Y { DIRTY_MIN_Y = min_y; }
+        if max_x > DIRTY_MAX_X { DIRTY_MAX_X = max_x; }
+        if max_y > DIRTY_MAX_Y { DIRTY_MAX_Y = max_y; }
     }
 }
 
@@ -146,14 +150,8 @@ pub fn present() {
             DIRTY_MIN_Y = usize::MAX;
             return;
         }
-        let row_bytes = (max_x - min_x + 1) * 4;
-        let mut y = min_y;
-        while y <= max_y {
-            let src = BACKBUFFER.as_ptr().add(y * FB.pitch + min_x * 4);
-            let dst = (FB.addr + y * FB.pitch + min_x * 4) as *mut u8;
-            core::ptr::copy_nonoverlapping(src, dst, row_bytes);
-            y += 1;
-        }
+        blit_to_framebuffer(min_x, min_y, min_x, min_y,
+            max_x - min_x + 1, max_y - min_y + 1);
         DIRTY_MIN_X = usize::MAX;
         DIRTY_MIN_Y = usize::MAX;
         DIRTY_MAX_X = 0;
@@ -178,26 +176,76 @@ pub fn get_pixel(x: usize, y: usize) -> u32 {
 pub fn fill(color: u32) {
     let w = width();
     let h = height();
-    let mut y = 0;
-    while y < h {
-        let mut x = 0;
-        while x < w {
-            put_pixel(x, y, color);
-            x += 1;
+    fill_rect(0, 0, w, h, color);
+}
+
+/// Fill a clipped rectangle without routing every pixel through put_pixel().
+pub fn fill_rect(x: usize, y: usize, w: usize, h: usize, color: u32) {
+    let fb_w = width();
+    let fb_h = height();
+    if w == 0 || h == 0 || x >= fb_w || y >= fb_h { return; }
+    let x1 = x.saturating_add(w).min(fb_w);
+    let y1 = y.saturating_add(h).min(fb_h);
+    if x >= x1 || y >= y1 { return; }
+    let count = x1 - x;
+    unsafe {
+        if BACKBUFFER_ACTIVE && FB.bpp == 32 {
+            let value = color.to_ne_bytes();
+            let mut row = y;
+            while row < y1 {
+                let dst = BACKBUFFER.as_mut_ptr().add(row * FB.pitch + x * 4);
+                let mut i = 0usize;
+                while i < count {
+                    core::ptr::copy_nonoverlapping(value.as_ptr(), dst.add(i * 4), 4);
+                    i += 1;
+                }
+                row += 1;
+            }
+            mark_dirty_rect(x, y, x1 - 1, y1 - 1);
+        } else if FB.bpp == 32 {
+            let mut row = y;
+            while row < y1 {
+                let dst = (FB.addr + row * FB.pitch + x * 4) as *mut u32;
+                let mut i = 0usize;
+                while i < count {
+                    core::ptr::write_volatile(dst.add(i), color);
+                    i += 1;
+                }
+                row += 1;
+            }
+        } else if FB.bpp == 24 {
+            let mut row = y;
+            while row < y1 {
+                let mut i = 0usize;
+                while i < count {
+                    let p = (FB.addr + row * FB.pitch + (x + i) * 3) as *mut u8;
+                    *p = (color & 0xFF) as u8;
+                    *p.add(1) = ((color >> 8) & 0xFF) as u8;
+                    *p.add(2) = ((color >> 16) & 0xFF) as u8;
+                    i += 1;
+                }
+                row += 1;
+            }
         }
-        y += 1;
     }
 }
 
-pub fn fill_rect(x: usize, y: usize, w: usize, h: usize, color: u32) {
-    let mut dy = 0;
-    while dy < h {
-        let mut dx = 0;
-        while dx < w {
-            put_pixel(x + dx, y + dy, color);
-            dx += 1;
+/// Copy a clipped rectangle from the RAM backbuffer to the framebuffer.
+pub fn blit_to_framebuffer(src_x: usize, src_y: usize, dst_x: usize, dst_y: usize, w: usize, h: usize) {
+    unsafe {
+        if !BACKBUFFER_ACTIVE || FB.addr == 0 || FB.bpp != 32 || w == 0 || h == 0 { return; }
+        if src_x >= FB.width || src_y >= FB.height || dst_x >= FB.width || dst_y >= FB.height { return; }
+        let cw = w.min(FB.width - src_x).min(FB.width - dst_x);
+        let ch = h.min(FB.height - src_y).min(FB.height - dst_y);
+        if cw == 0 || ch == 0 { return; }
+        let row_bytes = cw * 4;
+        let mut row = 0usize;
+        while row < ch {
+            let src = BACKBUFFER.as_ptr().add((src_y + row) * FB.pitch + src_x * 4);
+            let dst = (FB.addr + (dst_y + row) * FB.pitch + dst_x * 4) as *mut u8;
+            core::ptr::copy_nonoverlapping(src, dst, row_bytes);
+            row += 1;
         }
-        dy += 1;
     }
 }
 
