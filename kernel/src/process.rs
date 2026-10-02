@@ -24,7 +24,7 @@ pub struct Process {
     pub entry: usize,
     pub stack: usize,
     pub cr3: usize,
-    pub pages: [usize; elf::MAX_IMAGE_PAGES],
+    pub page_list: mm::PageList,
     pub page_count: usize,
     pub name: [u8; 16],
     pub name_len: usize,
@@ -41,7 +41,7 @@ impl Process {
             entry: 0,
             stack: 0,
             cr3: 0,
-            pages: [0; elf::MAX_IMAGE_PAGES],
+            page_list: mm::PageList::empty(),
             page_count: 0,
             name: [0; 16],
             name_len: 0,
@@ -110,7 +110,7 @@ pub fn create_from_image_with_personality(
         p.entry = img.entry;
         p.stack = img.stack_top;
         p.cr3 = img.cr3;
-        p.pages = img.pages;
+        p.page_list = img.page_list;
         p.page_count = img.page_count;
         let nb = name.as_bytes();
         let nlen = if nb.len() > 16 { 16 } else { nb.len() };
@@ -147,16 +147,9 @@ pub fn destroy(pid: usize) {
             if TABLE[i].pid == pid && TABLE[i].state != State::Empty {
                 let n = TABLE[i].page_count;
                 let personality = TABLE[i].personality;
-                let mut j = 0usize;
-                while j < n {
-                    let pg = TABLE[i].pages[j];
-                    if pg != 0 {
-                        mm::free_page(pg);
-                    }
-                    j += 1;
-                }
                 serial::write_str("  [PROC] PID=");
                 serial::write_usize(pid);
+                mm::free_page_list(TABLE[i].page_list);
                 serial::write_str(" EXIT pages_freed=");
                 serial::write_usize(n);
                 serial::write_str("\n");
@@ -255,7 +248,7 @@ pub fn create(
     // This must not silently convert a personality process into a native process.
     let img = elf::LoadedImage {
         entry,
-        pages: [0; elf::MAX_IMAGE_PAGES],
+        page_list: mm::PageList::empty(),
         page_count: 0,
         stack_top: stack,
         cr3: 0,

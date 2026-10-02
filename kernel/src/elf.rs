@@ -37,12 +37,10 @@ struct Phdr {
 const PT_LOAD: u32 = 1;
 const ET_EXEC: u16 = 2;
 const EM_X86_64: u16 = 0x3e;
-/// Maximum number of physical pages owned by one loaded image, including its user stack.
-pub const MAX_IMAGE_PAGES: usize = 64;
 
 pub struct LoadedImage {
     pub entry: usize,
-    pub pages: [usize; MAX_IMAGE_PAGES],
+    pub page_list: mm::PageList,
     pub page_count: usize,
     pub stack_top: usize,
     pub cr3: usize,
@@ -112,7 +110,7 @@ pub fn load(buf: &[u8]) -> Option<LoadedImage> {
     } else {
         serial::write_str(" DIFFERENT=NO\n");
     }
-    let mut pages = [0usize; MAX_IMAGE_PAGES];
+    let mut page_list = mm::PageList::empty();
     let mut page_count = 0usize;
 
     let mut i = 0usize;
@@ -170,10 +168,6 @@ pub fn load(buf: &[u8]) -> Option<LoadedImage> {
         };
         let mut va = start;
         while va < end {
-            if page_count >= MAX_IMAGE_PAGES {
-                serial::write_str("  [ELF] image page limit reject\n");
-                return None;
-            }
             let phys = match mm::alloc_page() {
                 Some(p) => p,
                 None => {
@@ -193,7 +187,10 @@ pub fn load(buf: &[u8]) -> Option<LoadedImage> {
                 serial::write_str("  [ELF] map fail\n");
                 return None;
             }
-            pages[page_count] = phys;
+            if !page_list.push(phys) {
+                serial::write_str("  [ELF] page metadata OOM\n");
+                return None;
+            }
             page_count += 1;
             // Copy file data into this page if overlapping
             let page_file_start = if va >= vaddr { va - vaddr } else { 0 };
@@ -231,12 +228,11 @@ pub fn load(buf: &[u8]) -> Option<LoadedImage> {
     } {
         return None;
     }
-    if page_count >= MAX_IMAGE_PAGES {
-        serial::write_str("  [ELF] stack page limit reject\n");
+    if !page_list.push(stack_phys) {
         mm::free_page(stack_phys);
+        serial::write_str("  [ELF] page metadata OOM\n");
         return None;
     }
-    pages[page_count] = stack_phys;
     page_count += 1;
     unsafe { paging::load_cr3(cr3); }
 
@@ -245,7 +241,7 @@ pub fn load(buf: &[u8]) -> Option<LoadedImage> {
 
     Some(LoadedImage {
         entry,
-        pages,
+        page_list,
         page_count,
         stack_top: stack_va + 0xFF0,
         cr3,

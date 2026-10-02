@@ -261,7 +261,7 @@ pub extern "C" fn kernel_main(mbi: usize) -> ! {
     serial::write_str(" start=");
     serial::write_hex(pmm_start);
     serial::write_str("\n");
-    mm::init(pmm_start, 64 * 1024 * 1024);
+    if !mm::init_from_multiboot(mbi, kernel_end) { serial::write_str("[PANIC] PMM initialization failed\\n"); loop { unsafe { core::arch::asm!("hlt"); } } }
     // Capture the real Multiboot RAM value for the graphical boot screen.
     let detected_ram_mib = multiboot_usable_memory_mib(mbi);
     let managed_ram_mib = (mm::total_count() as u64) / 256;
@@ -271,7 +271,7 @@ pub extern "C" fn kernel_main(mbi: usize) -> ! {
     let mut kstack_base = 0usize;
     let mut ki = 0usize;
     while ki < 16 {
-        if let Some(p) = mm::alloc_page() {
+        if let Some(p) = mm::alloc_page_below(1usize << 30) {
             if kstack_base == 0 { kstack_base = p; }
             // prefer contiguous
             ki += 1;
@@ -306,8 +306,8 @@ pub extern "C" fn kernel_main(mbi: usize) -> ! {
     vga_mark(7, b'M'); // PIC masked
 
     // USER maps kept for later Ring3 — but demo deferred (HW-safe path)
-    let code_phys = mm::alloc_page().unwrap_or(0x300000);
-    let stack_phys = mm::alloc_page().unwrap_or(0x301000);
+    let code_phys = mm::alloc_page_below(1usize << 30).unwrap_or(0x300000);
+    let stack_phys = mm::alloc_page_below(1usize << 30).unwrap_or(0x301000);
     unsafe {
         let c = code_phys as *mut u8;
         *c.add(0) = 0xB8; *c.add(1) = 1; *c.add(2) = 0; *c.add(3) = 0; *c.add(4) = 0;
