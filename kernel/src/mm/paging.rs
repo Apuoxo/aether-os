@@ -10,7 +10,6 @@ pub const PAGE_ACCESSED: u64 = 1 << 5;
 pub const PAGE_PCD: u64 = 1 << 4;
 pub const PAGE_PWT: u64 = 1 << 3;
 pub const PAGE_HUGE: u64 = 1 << 7;
-pub const TEMP_PHYS_MAP: usize = 0xFFFF_8000_1000_0000;
 
 #[repr(align(4096))]
 pub struct PageTable {
@@ -41,7 +40,7 @@ impl PageTable {
 }
 
 pub fn alloc_table() -> Option<usize> {
-    mm::alloc_page_below(1usize << 30)
+    mm::alloc_page()
 }
 
 pub unsafe fn identity_map_2mb(pml4_phys: usize, n_2mb: usize) -> bool {
@@ -174,17 +173,6 @@ pub unsafe fn create_user_pml4() -> Option<usize> {
         i += 1;
     }
     Some(new_phys)
-}
-
-pub unsafe fn unmap_page(pml4_phys: usize, virt: usize) {
-    let pml4=&mut *(pml4_phys as *mut PageTable);
-    let e4=pml4.get((virt>>39)&0x1ff); if e4&PAGE_PRESENT==0{return;}
-    let pdpt=&mut *((e4&!0xfff) as *mut PageTable); let e3=pdpt.get((virt>>30)&0x1ff);
-    if e3&PAGE_PRESENT==0||e3&PAGE_HUGE!=0{return;}
-    let pd=&mut *((e3&!0xfff) as *mut PageTable); let i2=(virt>>21)&0x1ff; let e2=pd.get(i2);
-    if e2&PAGE_PRESENT==0||e2&PAGE_HUGE!=0{return;}
-    let pt=&mut *((e2&!0xfff) as *mut PageTable); pt.set((virt>>12)&0x1ff,0,0);
-    core::arch::asm!("invlpg [{}]",in(reg)virt,options(nostack,preserves_flags));
 }
 
 pub unsafe fn load_cr3(pml4_phys: usize) {

@@ -3820,19 +3820,12 @@ pub fn run() -> ! {
     });
     terminal_write("========================================\n");
     terminal_write("\x1b[32maether>\x1b[0m ");
-    if graphics::activate_backbuffer() {
-        serial::write_str("[DESKTOP] backbuffer=ACTIVE\n");
-    } else {
-        serial::write_str("[DESKTOP] backbuffer=DISABLED\n");
-    }
-
     unsafe {
         DIRTY_FULL = true;
         MX = (graphics::width() / 2) as i32;
         MY = (graphics::height() / 2) as i32;
     }
     render();
-    graphics::present();
 
     loop {
         ps2::poll();
@@ -3986,11 +3979,6 @@ pub fn run() -> ! {
                 DIRTY_CURSOR = false;
             }
         }
-        // Publish exactly one completed desktop frame per loop iteration.
-        // Local redraws stay in RAM until this point, so intermediate drawing
-        // never becomes visible on the real LFB.
-        graphics::present();
-
         let mut d = 0u32;
         while d < 200 {
             d += 1;
