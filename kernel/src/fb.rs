@@ -23,6 +23,13 @@ pub fn address() -> usize { graphics::fb_addr() }
 pub fn pitch() -> usize { graphics::pitch() }
 pub fn bpp() -> u8 { graphics::bpp() }
 
+/// Compatibility drawing facade. `graphics` remains the only state owner.
+pub fn put_pixel(x: usize, y: usize, color: u32) { graphics::put_pixel(x, y, color); }
+pub fn fill(color: u32) { graphics::fill(color); }
+pub fn fill_rect(x: usize, y: usize, w: usize, h: usize, color: u32) {
+    graphics::fill_rect(x, y, w, h, color);
+}
+
 fn vga_fb_mark(col: usize, a: u8, b: u8) {
     unsafe {
         let p = (0xB8000 + 80 * 2 + col * 2) as *mut u16;
@@ -32,15 +39,9 @@ fn vga_fb_mark(col: usize, a: u8, b: u8) {
     }
 }
 
-fn read_u32(p: usize) -> u32 {
-    unsafe { core::ptr::read_unaligned(p as *const u32) }
-}
-fn read_u64(p: usize) -> u64 {
-    unsafe { core::ptr::read_unaligned(p as *const u64) }
-}
-fn read_u8(p: usize) -> u8 {
-    unsafe { *(p as *const u8) }
-}
+fn read_u32(p: usize) -> u32 { unsafe { core::ptr::read_unaligned(p as *const u32) } }
+fn read_u64(p: usize) -> u64 { unsafe { core::ptr::read_unaligned(p as *const u64) } }
+fn read_u8(p: usize) -> u8 { unsafe { *(p as *const u8) } }
 
 /// Identity-map the physical framebuffer when it lies outside the bootstrap map.
 fn map_fb_range(phys: usize, size: usize) -> bool {
@@ -54,9 +55,7 @@ fn map_fb_range(phys: usize, size: usize) -> bool {
     let mut va = start;
     while va < end {
         if va >= 0x4000_0000 {
-            let _ = unsafe {
-                paging::map_page(cr3, va, va, paging::PAGE_PRESENT | paging::PAGE_WRITE)
-            };
+            let _ = unsafe { paging::map_page(cr3, va, va, paging::PAGE_PRESENT | paging::PAGE_WRITE) };
         }
         va = match va.checked_add(0x1000) { Some(v) => v, None => return false };
     }
@@ -107,15 +106,8 @@ pub fn init_from_mbi(mbi: usize) -> bool {
             serial::write_str("\n");
             vga_fb_mark(0, b'F', b'0');
 
-            let bytes_per_pixel = match bpp {
-                32 => 4usize,
-                24 => 3usize,
-                _ => 0,
-            };
-            let min_pitch = match width.checked_mul(bytes_per_pixel) {
-                Some(v) => v,
-                None => 0,
-            };
+            let bytes_per_pixel = match bpp { 32 => 4usize, 24 => 3usize, _ => 0 };
+            let min_pitch = match width.checked_mul(bytes_per_pixel) { Some(v) => v, None => 0 };
             if addr == 0 || width < 320 || width > 4096 || height < 200 || height > 2160
                 || bytes_per_pixel == 0 || pitch < min_pitch
             {
