@@ -100,6 +100,17 @@ pub fn backbuffer_active() -> bool {
     unsafe { BACKBUFFER_ACTIVE }
 }
 
+#[inline(always)]
+unsafe fn fill_row_u32(dst: *mut u32, count: usize, color: u32) {
+    core::arch::asm!(
+        "rep stosd",
+        inout("rdi") dst => _,
+        inout("rcx") count => _,
+        inout("eax") color => _,
+        options(nostack, preserves_flags)
+    );
+}
+
 fn mark_dirty(x: usize, y: usize) {
     mark_dirty_rect(x, y, x, y);
 }
@@ -194,11 +205,7 @@ pub fn fill_rect(x: usize, y: usize, w: usize, h: usize, color: u32) {
             let mut row = y;
             while row < y1 {
                 let dst = BACKBUFFER.as_mut_ptr().add(row * FB.pitch + x * 4);
-                let mut i = 0usize;
-                while i < count {
-                    core::ptr::copy_nonoverlapping(value.as_ptr(), dst.add(i * 4), 4);
-                    i += 1;
-                }
+                fill_row_u32(dst as *mut u32, count, color);
                 row += 1;
             }
             mark_dirty_rect(x, y, x1 - 1, y1 - 1);
