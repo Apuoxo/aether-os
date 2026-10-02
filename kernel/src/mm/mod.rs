@@ -90,8 +90,8 @@ pub fn init_from_multiboot(mbi:usize,kernel_end:usize)->bool {
     let mut bitmap=0usize;
     mmap(mbi,|b,l,k|{
         if bitmap!=0 || k!=1{return;}
-        let mut s=match usize::try_from(b){Ok(v)=>au(v),Err(_)=>return;};
-        let e=match b.checked_add(l).and_then(|v|usize::try_from(v).ok()){Some(v)=>ad(v),None=>return;};
+        let mut s=match usize::try_from(b){Ok(v)=>au(v),Err(_)=>return,};
+        let e=match b.checked_add(l).and_then(|v|usize::try_from(v).ok()){Some(v)=>ad(v),None=>return,};
         if s<0x100000{s=0x100000;} if s<kernel_end{s=au(kernel_end);}
         if s<LOW_PHYS_LIMIT && map_bytes<=e.saturating_sub(s){bitmap=s;}
     });
@@ -160,7 +160,7 @@ impl PageList{
     pub fn push(&mut self,page:usize)->bool{unsafe{
         if self.tail==0{let n=match alloc_page_below(LOW_PHYS_LIMIT){Some(v)=>v,None=>return false};zero_pages(n,1);self.head=n;self.tail=n;}
         let mut node=self.tail as *mut PageListNode;
-        if (*node).count==510{let n=match alloc_page_below(LOW_PHYS_LIMIT){Some(v)=>v,None=>return false};zero_pages(n,1);(*node).next=n;self.tail=n;node=n;}
+        if (*node).count==510{let n=match alloc_page_below(LOW_PHYS_LIMIT){Some(v)=>v,None=>return false};zero_pages(n,1);(*node).next=n;self.tail=n;node=n as *mut PageListNode;}
         let i=(*node).count;(*node).pages[i]=page;(*node).count=i+1;self.count+=1;true
     }}
 }
