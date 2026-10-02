@@ -25,6 +25,12 @@ static mut FB: Framebuffer = Framebuffer {
 };
 
 pub fn init(addr: usize, width: usize, height: usize, pitch: usize, bpp: u8, software: bool) {
+    let min_pitch = width.saturating_mul(bpp as usize) / 8;
+    if pitch < min_pitch {
+        crate::serial::write_str("[FB] bad pitch ");
+        crate::serial::write_usize(pitch); crate::serial::write_str(" < "); crate::serial::write_usize(min_pitch); crate::serial::write_str("\n");
+        return;
+    }
     unsafe {
         FB.addr = addr;
         FB.width = width;
@@ -32,6 +38,7 @@ pub fn init(addr: usize, width: usize, height: usize, pitch: usize, bpp: u8, sof
         FB.pitch = pitch;
         FB.bpp = bpp;
         FB.software = software;
+        crate::serial::write_str("[FB] set "); crate::serial::write_usize(width); crate::serial::write_str("x"); crate::serial::write_usize(height); crate::serial::write_str(" pitch="); crate::serial::write_usize(pitch); crate::serial::write_str(" bpp="); crate::serial::write_usize(bpp as usize); crate::serial::write_str(" addr="); crate::serial::write_hex(addr); crate::serial::write_str("\n");
         // Keep the known-good AH532 direct-LFB path active. The backbuffer/present
         // experiment is not a complete rendering pipeline and must not hide the
         // desktop in an off-screen buffer.

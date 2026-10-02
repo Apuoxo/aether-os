@@ -3,6 +3,7 @@
 use crate::graphics;
 use crate::drivers::ps2;
 
+// legacy, not used by desktop
 static mut CURSOR_X: i32 = 400;
 static mut CURSOR_Y: i32 = 300;
 static mut FOCUS: usize = 0; // focused window index
