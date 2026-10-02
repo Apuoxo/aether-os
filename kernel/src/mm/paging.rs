@@ -158,6 +158,114 @@ pub unsafe fn map_page(pml4_phys: usize, virt: usize, phys: usize, flags: u64) -
 
 /// New PML4 for a process: distinct CR3, shares kernel PDPT trees (no USER on 2MiB kernel identity).
 /// User PT_LOAD pages are mapped only via map_page(..., PAGE_USER) into this PML4.
+/// Return the PTE flags selecting a PAT entry by its 3-bit index.
+#[inline(always)]
+fn pat_flags(index: usize) -> u64 {
+    let mut flags = 0;
+    if index & 1 != 0 { flags |= PAGE_PWT; }
+    if index & 2 != 0 { flags |= PAGE_PCD; }
+    if index & 4 != 0 { flags |= PAGE_PAT; }
+    flags
+}
+
+unsafe fn rdmsr(msr: u32) -> u64 {
+    let lo: u32;
+    let hi: u32;
+    core::arch::asm!(
+        "rdmsr",
+        in("ecx") msr,
+        out("eax") lo,
+        out("edx") hi,
+        options(nostack, preserves_flags)
+    );
+    ((hi as u64) << 32) | lo as u64
+}
+
+unsafe fn wrmsr(msr: u32, value: u64) {
+    let lo = value as u32;
+    let hi = (value >> 32) as u32;
+    core::arch::asm!(
+        "wrmsr",
+        in("ecx") msr,
+        in("eax") lo,
+        in("edx") hi,
+        options(nostack, preserves_flags)
+    );
+}
+
+/// Ensure a PAT entry contains Write-Combining and return the PTE flags
+/// selecting that entry. Existing PAT entries are reused when possible.
+pub unsafe fn pat_write_combine_flags() -> Option<u64> {
+    let features = core::arch::x86_64::__cpuid(1);
+    if features.edx & CPUID_PAT_EDX == 0 {
+        return None;
+    }
+
+    let pat = rdmsr(IA32_PAT_MSR);
+    let mut index = 0usize;
+    while index < 8 {
+        let ty = ((pat >> (index * 8)) & 0xFF) as u8;
+        if ty == PAT_WC {
+            return Some(pat_flags(index));
+        }
+        index += 1;
+    }
+
+    // PAT5 is not selected by any existing mapping in this kernel. It uses
+    // PAT=1, PCD=0, PWT=1 and is therefore selected by PAGE_PAT|PAGE_PWT.
+    let shift = 5 * 8;
+    let new_pat = (pat & !(0xFFu64 << shift)) | ((PAT_WC as u64) << shift);
+    wrmsr(IA32_PAT_MSR, new_pat);
+    Some(pat_flags(5))
+}
+
+/// Map a physical framebuffer range as Write-Combining in the kernel address space.
+/// The mapping is identity-based, matching the existing framebuffer architecture.
+pub unsafe fn map_write_combining(virt: usize, phys: usize, len: usize) -> bool {
+    if virt == 0 || phys == 0 || len == 0 {
+        return false;
+    }
+
+    let flags = match pat_write_combine_flags() {
+        Some(v) => v | PAGE_PRESENT | PAGE_WRITE,
+        None => return false,
+    };
+
+    let start_va = virt & !(PAGE_SIZE - 1);
+    let start_pa = phys & !(PAGE_SIZE - 1);
+    let offset = virt - start_va;
+    let map_len = match offset.checked_add(len) {
+        Some(v) => v,
+        None => return false,
+    };
+    let pages = (map_len + PAGE_SIZE - 1) / PAGE_SIZE;
+
+    // The old framebuffer mapping may have been cacheable. Write back and
+    // invalidate caches before changing its memory type, then reload CR3 to
+    // invalidate the affected non-global TLB entries.
+    core::arch::asm!("wbinvd", options(nostack, preserves_flags));
+
+    let cr3 = kernel_cr3();
+    let mut i = 0usize;
+    while i < pages {
+        let va = match start_va.checked_add(i * PAGE_SIZE) {
+            Some(v) => v,
+            None => return false,
+        };
+        let pa = match start_pa.checked_add(i * PAGE_SIZE) {
+            Some(v) => v,
+            None => return false,
+        };
+        if !map_page(cr3, va, pa, flags) {
+            return false;
+        }
+        i += 1;
+    }
+
+    load_cr3(cr3);
+    true
+}
+
 pub unsafe fn create_user_pml4() -> Option<usize> {
     let kcr3 = read_cr3();
     let new_phys = alloc_table()?;

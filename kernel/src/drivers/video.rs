@@ -369,6 +369,27 @@ pub fn init() -> bool {
     let found = discover();
     if graphics::ready() {
         serial::write_str("[VIDEO] software framebuffer remains active; hardware snapshot is diagnostic only\n");
+
+        let fb_addr = graphics::fb_addr();
+        let fb_len = match graphics::pitch().checked_mul(graphics::height()) {
+            Some(v) => v,
+            None => 0,
+        };
+        if fb_addr != 0 && fb_len != 0 && fb_addr == GPU.aperture {
+            unsafe {
+                if paging::map_write_combining(fb_addr, fb_addr, fb_len) {
+                    serial::write_str("[PAT] framebuffer=WC addr=");
+                    serial::write_hex(fb_addr);
+                    serial::write_str(" bytes=");
+                    serial::write_usize(fb_len);
+                    serial::write_str("\n");
+                } else {
+                    serial::write_str("[PAT] framebuffer WC unavailable; keeping existing mapping\n");
+                }
+            }
+        } else {
+            serial::write_str("[PAT] framebuffer WC skipped: non-identity or invalid LFB\n");
+        }
     }
     found
 }
