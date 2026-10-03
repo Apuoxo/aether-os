@@ -483,13 +483,18 @@ pub fn alloc_page_phys() -> Option<u64> {
     }
 
     unsafe {
-        let max_alloc_pages = core::cmp::min(
+        let alloc_start_page = START_PAGE.load(Ordering::SeqCst);
+        let legacy_pages = (LEGACY_ALLOC_BYTES / PAGE_SIZE as u64) as usize;
+        let alloc_end_page = core::cmp::min(
             MAX_PAGES,
-            (MAX_ALLOC_PHYS / PAGE_SIZE as u64) as usize,
+            core::cmp::min(
+                alloc_start_page.saturating_add(legacy_pages),
+                (MAX_ALLOC_PHYS / PAGE_SIZE as u64) as usize,
+            ),
         );
-        let mut page = START_PAGE.load(Ordering::SeqCst);
+        let mut page = alloc_start_page;
 
-        while page < max_alloc_pages {
+        while page < alloc_end_page {
             if is_free_bit(page) {
                 clear_free_bit(page);
                 FREE.fetch_sub(1, Ordering::SeqCst);
@@ -533,13 +538,18 @@ pub fn alloc_pages(count: usize) -> Option<usize> {
     }
 
     unsafe {
-        let max_alloc_pages = core::cmp::min(
+        let alloc_start_page = START_PAGE.load(Ordering::SeqCst);
+        let legacy_pages = (LEGACY_ALLOC_BYTES / PAGE_SIZE as u64) as usize;
+        let alloc_end_page = core::cmp::min(
             MAX_PAGES,
-            (MAX_ALLOC_PHYS / PAGE_SIZE as u64) as usize,
+            core::cmp::min(
+                alloc_start_page.saturating_add(legacy_pages),
+                (MAX_ALLOC_PHYS / PAGE_SIZE as u64) as usize,
+            ),
         );
-        let mut start = START_PAGE.load(Ordering::SeqCst);
+        let mut start = alloc_start_page;
 
-        while start.checked_add(count).map_or(false, |v| v <= max_alloc_pages) {
+        while start.checked_add(count).map_or(false, |v| v <= alloc_end_page) {
             let mut ok = true;
             let mut i = 0usize;
             while i < count {
