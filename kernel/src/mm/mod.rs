@@ -7,6 +7,7 @@ pub mod paging;
 
 const PAGE_SIZE: usize = 4096;
 const MAX_ALLOC_PHYS: u64 = 1u64 << 30;
+const LEGACY_ALLOC_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_RESERVED_RANGES: usize = 256;
 
 #[derive(Copy, Clone)]
@@ -359,7 +360,16 @@ pub fn init(mbi: usize, kernel_end: usize) -> bool {
         BITMAP = bitmap_phys as *mut u64;
         BITMAP_WORDS = bitmap_words;
         MAX_PAGES = max_pages;
-        START_PAGE.store(0, Ordering::SeqCst);
+        // Keep the physical allocation window stable while Stage 1 expands the
+        // PMM's tracked/usable RAM map. This preserves the pre-Stage-1 source
+        // range for DMA/page-table consumers; higher RAM remains tracked but is
+        // not issued until the allocator/mapping policy is deliberately widened.
+        let alloc_start = match align_up_page(kernel_end as u64) {
+            Some(v) => v,
+            None => return false,
+        };
+        let alloc_start_page = (alloc_start / PAGE_SIZE as u64) as usize;
+        START_PAGE.store(alloc_start_page, Ordering::SeqCst);
 
         if !add_reserved(
             &mut reserved,
@@ -447,7 +457,15 @@ pub fn init(mbi: usize, kernel_end: usize) -> bool {
         crate::serial::write_str(" MiB bitmap=");
         crate::serial::write_usize((bitmap_bytes / 1024) as usize);
         crate::serial::write_str(" KiB\n");
-        crate::serial::write_str("[PMM] bitmap_phys=");
+        crate::serial::write_str("[PMM] alloc_window=");
+        crate::serial::write_hex(alloc_start as usize);
+        crate::serial::write_str("..");
+        let alloc_end = core::cmp::min(
+            alloc_start.saturating_add(LEGACY_ALLOC_BYTES),
+            MAX_ALLOC_PHYS,
+        );
+        crate::serial::write_hex(alloc_end as usize);
+        crate::serial::write_str(" bitmap_phys=");
         crate::serial::write_hex(bitmap_phys as usize);
         crate::serial::write_str(" pages=");
         crate::serial::write_usize(MAX_PAGES);
@@ -465,13 +483,18 @@ pub fn alloc_page_phys() -> Option<u64> {
     }
 
     unsafe {
-        let max_alloc_pages = core::cmp::min(
+        let alloc_start_page = START_PAGE.load(Ordering::SeqCst);
+        let legacy_pages = (LEGACY_ALLOC_BYTES / PAGE_SIZE as u64) as usize;
+        let alloc_end_page = core::cmp::min(
             MAX_PAGES,
-            (MAX_ALLOC_PHYS / PAGE_SIZE as u64) as usize,
+            core::cmp::min(
+                alloc_start_page.saturating_add(legacy_pages),
+                (MAX_ALLOC_PHYS / PAGE_SIZE as u64) as usize,
+            ),
         );
-        let mut page = START_PAGE.load(Ordering::SeqCst);
+        let mut page = alloc_start_page;
 
-        while page < max_alloc_pages {
+        while page < alloc_end_page {
             if is_free_bit(page) {
                 clear_free_bit(page);
                 FREE.fetch_sub(1, Ordering::SeqCst);
@@ -515,13 +538,18 @@ pub fn alloc_pages(count: usize) -> Option<usize> {
     }
 
     unsafe {
-        let max_alloc_pages = core::cmp::min(
+        let alloc_start_page = START_PAGE.load(Ordering::SeqCst);
+        let legacy_pages = (LEGACY_ALLOC_BYTES / PAGE_SIZE as u64) as usize;
+        let alloc_end_page = core::cmp::min(
             MAX_PAGES,
-            (MAX_ALLOC_PHYS / PAGE_SIZE as u64) as usize,
+            core::cmp::min(
+                alloc_start_page.saturating_add(legacy_pages),
+                (MAX_ALLOC_PHYS / PAGE_SIZE as u64) as usize,
+            ),
         );
-        let mut start = START_PAGE.load(Ordering::SeqCst);
+        let mut start = alloc_start_page;
 
-        while start.checked_add(count).map_or(false, |v| v <= max_alloc_pages) {
+        while start.checked_add(count).map_or(false, |v| v <= alloc_end_page) {
             let mut ok = true;
             let mut i = 0usize;
             while i < count {
