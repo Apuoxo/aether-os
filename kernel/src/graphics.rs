@@ -128,6 +128,45 @@ pub fn height() -> usize {
 }
 
 pub fn pitch() -> usize { unsafe { FB.pitch } }
+
+/// Update the software framebuffer geometry after a successful scanout change.
+/// The existing framebuffer address and pitch remain authoritative; reject any
+/// geometry that would exceed the fixed RAM backbuffer.
+pub fn resize_geometry(width: usize, height: usize) -> bool {
+    unsafe {
+        if FB.addr == 0 || FB.bpp != 32 || width == 0 || height == 0 {
+            return false;
+        }
+        let min_pitch = width.saturating_mul(4);
+        if FB.pitch < min_pitch {
+            return false;
+        }
+        let bytes = match FB.pitch.checked_mul(height) {
+            Some(v) if v != 0 && v <= BACKBUFFER_BYTES => v,
+            _ => return false,
+        };
+        FB.width = width;
+        FB.height = height;
+        if BACKBUFFER_ACTIVE {
+            BACKBUFFER_ACTIVE = false;
+            if !enable_backbuffer() {
+                return false;
+            }
+        }
+        DIRTY_MIN_X = usize::MAX;
+        DIRTY_MIN_Y = usize::MAX;
+        DIRTY_MAX_X = 0;
+        DIRTY_MAX_Y = 0;
+        crate::serial::write_str("[FB] resize ");
+        crate::serial::write_usize(width);
+        crate::serial::write_str("x");
+        crate::serial::write_usize(height);
+        crate::serial::write_str(" bytes=");
+        crate::serial::write_usize(bytes);
+        crate::serial::write_str("\n");
+        true
+    }
+}
 pub fn fb_addr() -> usize { unsafe { FB.addr } }
 pub fn bpp() -> u8 { unsafe { FB.bpp } }
 pub fn software() -> bool { unsafe { FB.software } }

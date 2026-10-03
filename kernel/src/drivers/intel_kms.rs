@@ -22,6 +22,12 @@ const PIPEBSTAT: usize = 0x71024;
 const PIPEADSL: usize = 0x70000;
 const PIPEBDSL: usize = 0x71000;
 const PIPESTAT_VBLANK: u32 = 1 << 1;
+const PFIT_CONTROL: usize = 0x61230;
+const PFIT_PGM_RATIOS: usize = 0x61234;
+const PFIT_ENABLE: u32 = 1 << 31;
+const PFIT_PIPE_SHIFT: u32 = 29;
+const PFIT_SCALING_AUTO: u32 = 1 << 26;
+const PFIT_FILTER_FUZZY: u32 = 1 << 24;
 const VBLANK_WAIT_ITERS: usize = 2_000_000;
 const DSPACNTR: usize = 0x70180;
 const DSPASTRIDE: usize = 0x70188;
@@ -394,7 +400,7 @@ pub fn set_plane_surface(surf: u32, stride: u32, w: u16, h: u16) -> bool {
             serial::write_str("[KMS] PLANE REFUSE unsupported geometry\n");
             return false;
         }
-        if stride == 0 || (stride & 63) != 0 || stride as usize < w.saturating_mul(4) {
+        if stride == 0 || (stride & 63) != 0 || (stride as usize) < w.saturating_mul(4) {
             serial::write_str("[KMS] PLANE REFUSE invalid stride\n");
             return false;
         }
