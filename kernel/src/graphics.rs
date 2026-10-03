@@ -228,6 +228,16 @@ pub fn present() {
             DIRTY_MIN_Y = usize::MAX;
             return;
         }
+        // Stage 5: synchronize the scanout update to vertical blank when
+        // the Intel KMS path is actually available. Every wait is bounded;
+        // failure to obtain KMS/vblank must never stop the LFB presentation.
+        if crate::drivers::intel_kms::ready()
+            && crate::drivers::intel_kms::forcewake_get()
+        {
+            let _ = crate::drivers::intel_kms::wait_vblank();
+            crate::drivers::intel_kms::forcewake_put();
+        }
+
         blit_to_framebuffer(min_x, min_y, min_x, min_y,
             max_x - min_x + 1, max_y - min_y + 1);
         DIRTY_MIN_X = usize::MAX;
