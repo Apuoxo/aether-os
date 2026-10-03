@@ -826,7 +826,7 @@ fn cmd_video_info() {
 fn cmd_video_mode(w: u16, h: u16) {
     write_str("VIDEO MODESET ");
     write_usize(w as usize); write_str("x"); write_usize(h as usize); write_str("\n");
-    let ok = crate::drivers::video::modeset_to(w, h);
+    let ok = crate::drivers::intel_kms::modeset_to(w, h);
     write_str("RESULT="); write_str(if ok { "PASS" } else { "FAIL" }); write_str("\n");
     write_str("FB="); write_hex(crate::fb::address());
     write_str(" W="); write_usize(crate::graphics::width());

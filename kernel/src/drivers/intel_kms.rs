@@ -1,6 +1,6 @@
 //! Intel Gen6 Sandy Bridge display MMIO bring-up — Stage 3.
 //! MMIO identity mapping + bounded forcewake + read-only register dump.
-//! No GGTT/GSM, no modeset, no EDID, no infinite waits.
+//! Stage 5 primary-plane geometry path; no GGTT/GSM or EDID boot dependency.
 
 use crate::{mm, serial, graphics};
 use crate::drivers::intel_igpu;
@@ -390,13 +390,11 @@ pub fn set_plane_surface(surf: u32, stride: u32, w: u16, h: u16) -> bool {
         };
         let w = w as usize;
         let h = h as usize;
-        if !current_mode_supported(w, h) || surf != 0 || w < 320 || h < 200 || w > PLANE_MAX_W || h > PLANE_MAX_H {
-            serial::write_str("[KMS] PLANE REFUSE unsupported mode\n");
+        if surf != 0 || w < 320 || h < 200 || w > PLANE_MAX_W || h > PLANE_MAX_H {
+            serial::write_str("[KMS] PLANE REFUSE unsupported geometry\n");
             return false;
         }
-        if stride == 0 || (stride & 63) != 0 || (stride as usize) < w.saturating_mul(4)
-            || stride as usize != graphics::pitch()
-        {
+        if stride == 0 || (stride & 63) != 0 || stride as usize < w.saturating_mul(4) {
             serial::write_str("[KMS] PLANE REFUSE invalid stride\n");
             return false;
         }
@@ -421,50 +419,93 @@ pub fn set_plane_surface(surf: u32, stride: u32, w: u16, h: u16) -> bool {
             return false;
         }
 
+        let (cntr_reg, stride_reg, size_reg, surf_reg) = plane_regs(pipe);
+        let src_reg = if pipe == 0 { PIPEASRC } else { PIPEBSRC };
         let old = snapshot_plane(pipe);
-        mmio_write32(plane_regs(pipe).0, old.cntr & !PLANE_ENABLE);
+        let old_src = mmio_read32(src_reg);
+        let old_pfit = mmio_read32(PFIT_CONTROL);
+        let old_pfit_ratio = mmio_read32(PFIT_PGM_RATIOS);
 
+        mmio_write32(cntr_reg, old.cntr & !PLANE_ENABLE);
         let mut n = 0usize;
-        while n < 80_000 && (mmio_read32(plane_regs(pipe).0) & PLANE_ENABLE) != 0 {
+        while n < 80_000 && (mmio_read32(cntr_reg) & PLANE_ENABLE) != 0 {
             core::hint::spin_loop();
             n += 1;
         }
-        if (mmio_read32(plane_regs(pipe).0) & PLANE_ENABLE) != 0 {
+        if (mmio_read32(cntr_reg) & PLANE_ENABLE) != 0 {
             rollback_plane(pipe, old, "disable-timeout");
             return false;
         }
 
-        let (_, stride_reg, size_reg, surf_reg) = plane_regs(pipe);
+        // Sandy Bridge is Gen6 (965+ panel fitter semantics). Keep the
+        // firmware-selected pipe timing and scale the 800x600 source to the
+        // existing panel mode. Native 1366x768 disables fitting.
+        if w == 1366 && h == 768 {
+            mmio_write32(PFIT_PGM_RATIOS, 0);
+            mmio_write32(PFIT_CONTROL, 0);
+        } else if w == 800 && h == 600 {
+            mmio_write32(PFIT_PGM_RATIOS, 0);
+            mmio_write32(
+                PFIT_CONTROL,
+                PFIT_ENABLE | ((pipe as u32) << PFIT_PIPE_SHIFT)
+                    | PFIT_SCALING_AUTO | PFIT_FILTER_FUZZY,
+            );
+        } else {
+            mmio_write32(cntr_reg, old.cntr);
+            return false;
+        }
+
         mmio_write32(stride_reg, stride);
         mmio_write32(size_reg, (((h - 1) as u32) << 16) | ((w - 1) as u32));
-        mmio_write32(surf_reg, surf);
+        mmio_write32(src_reg, (((w - 1) as u32) << 16) | ((h - 1) as u32));
 
+        // Gen6 primary-plane latch order: surface is written last.
+        mmio_write32(surf_reg, surf);
         let mut plane = old.cntr & !(PLANE_FORMAT_MASK | PLANE_TILED);
         plane |= PLANE_FORMAT_XRGB8888 | PLANE_ENABLE;
-        mmio_write32(plane_regs(pipe).0, plane);
+        mmio_write32(cntr_reg, plane);
 
+        let expected_size = (((h - 1) as u32) << 16) | ((w - 1) as u32);
+        let expected_src = ((w - 1) as u32) << 16 | ((h - 1) as u32);
         let programmed_size = mmio_read32(size_reg);
+        let programmed_src = mmio_read32(src_reg);
         let programmed_stride = mmio_read32(stride_reg);
         let programmed_surf = mmio_read32(surf_reg);
-        if programmed_size != (((h - 1) as u32) << 16 | ((w - 1) as u32))
-            || programmed_stride != stride || programmed_surf != surf
+        let programmed_pfit = mmio_read32(PFIT_CONTROL);
+        if programmed_size != expected_size
+            || programmed_src != expected_src
+            || programmed_stride != stride
+            || programmed_surf != surf
+            || (w == 800 && h == 600 && programmed_pfit & PFIT_ENABLE == 0)
+            || (w == 1366 && h == 768 && programmed_pfit & PFIT_ENABLE != 0)
         {
+            mmio_write32(PFIT_CONTROL, old_pfit);
+            mmio_write32(PFIT_PGM_RATIOS, old_pfit_ratio);
+            mmio_write32(src_reg, old_src);
             rollback_plane(pipe, old, "readback-mismatch");
             return false;
         }
 
         let ok = wait_vblank_pipe(pipe);
         if !ok {
+            mmio_write32(PFIT_CONTROL, old_pfit);
+            mmio_write32(PFIT_PGM_RATIOS, old_pfit_ratio);
+            mmio_write32(src_reg, old_src);
             rollback_plane(pipe, old, "vblank-fail");
         }
         serial::write_str("[KMS] PLANE ");
         serial::write_str(if ok { "PASS" } else { "FAIL" });
         serial::write_str(" pipe=");
         serial::write_usize(pipe as usize);
+        serial::write_str(" geometry=");
+        serial::write_usize(w);
+        serial::write_str("x");
+        serial::write_usize(h);
         serial::write_str("\n");
         ok
     }
 }
+
 
 /// Modeset deliberately accepts only the firmware-selected framebuffer mode.
 /// No arbitrary timing/panel-fitter programming is claimed in this stage.
@@ -473,38 +514,55 @@ pub fn modeset_to(w: u16, h: u16) -> bool {
         if !MMIO_READY || !graphics::ready() || w == 0 || h == 0 {
             return false;
         }
-        let w = w as usize;
-        let h = h as usize;
-        if !current_mode_supported(w, h) {
-            serial::write_str("[KMS] MODESET REFUSE mode-not-firmware-selected\n");
+        if !((w == 1366 && h == 768) || (w == 800 && h == 600)) {
+            serial::write_str("[KMS] MODESET REFUSE unsupported Stage5 mode\n");
             return false;
         }
+        let pipe = match active_pipe() {
+            Some(p) => p,
+            None => {
+                serial::write_str("[KMS] MODESET REFUSE no unique active pipe\n");
+                return false;
+            }
+        };
+        let old_w = graphics::width();
+        let old_h = graphics::height();
         if !forcewake_get() {
             serial::write_str("[KMS] MODESET FORCEWAKE=FAIL\n");
             return false;
         }
-
         let stride = graphics::pitch();
-        let pipe = active_pipe();
-        let ok = if pipe.is_some() {
-            set_plane_surface(0, stride as u32, w as u16, h as u16)
-        } else {
-            false
-        };
-        forcewake_put();
+        if stride < (w as usize).saturating_mul(4) {
+            forcewake_put();
+            serial::write_str("[KMS] MODESET REFUSE pitch\n");
+            return false;
+        }
+
+        let ok = set_plane_surface(0, stride as u32, w, h);
         if ok {
+            if !graphics::resize_geometry(w as usize, h as usize) {
+                serial::write_str("[KMS] MODESET graphics-sync=FAIL\n");
+                forcewake_put();
+                return false;
+            }
             crate::drivers::ps2::clamp_to_screen();
-            serial::write_str("[KMS] MODESET=PASS firmware-mode ");
-            serial::write_usize(w);
+            serial::write_str("[KMS] MODESET=PASS geometry ");
+            serial::write_usize(w as usize);
             serial::write_str("x");
-            serial::write_usize(h);
+            serial::write_usize(h as usize);
             serial::write_str(" pipe=");
-            serial::write_usize(pipe.unwrap() as usize);
+            serial::write_usize(pipe as usize);
+            serial::write_str(" previous=");
+            serial::write_usize(old_w);
+            serial::write_str("x");
+            serial::write_usize(old_h);
             serial::write_str("\n");
         }
+        forcewake_put();
         ok
     }
 }
+
 
 pub fn ready() -> bool { unsafe { MMIO_READY } }
 pub fn forcewake_ready() -> bool { unsafe { FORCEWAKE_READY } }
