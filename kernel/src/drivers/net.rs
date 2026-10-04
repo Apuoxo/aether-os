@@ -292,13 +292,19 @@ unsafe fn r8139_reset() -> bool {
 
 unsafe fn r8139_tx(frame: &[u8]) -> bool {
     if frame.len() > 2048 { return false; }
-    core::ptr::copy_nonoverlapping(frame.as_ptr(), R8139_TXBUF.0.as_mut_ptr(), frame.len());
-    let p = &R8139_TXBUF.0 as *const u8 as usize;
-    out32(R8139_IO + R8139_TSAD0, p as u32);
-    out32(R8139_IO + R8139_TSD0, frame.len() as u32);
+    let entry = R8139_TXIDX & 3;
+    R8139_TXIDX = R8139_TXIDX.wrapping_add(1);
+    core::ptr::copy_nonoverlapping(frame.as_ptr(), R8139_TXBUFS[entry].0.as_mut_ptr(), frame.len());
+    let send_len = core::cmp::max(frame.len(), 60);
+    for i in frame.len()..send_len { R8139_TXBUFS[entry].0[i] = 0; }
+    let p = &R8139_TXBUFS[entry].0 as *const u8 as usize;
+    let tsad = R8139_TSAD0 + (entry as u16) * 4;
+    let tsd = R8139_TSD0 + (entry as u16) * 4;
+    out32(R8139_IO + tsad, p as u32);
+    out32(R8139_IO + tsd, send_len as u32);
     for _ in 0..500_000 {
-        let s = in32(R8139_IO + R8139_TSD0);
-        if (s & R8139_TSD_TOK) != 0 { return true; }
+        let status = in32(R8139_IO + tsd);
+        if (status & R8139_TSD_TOK) != 0 { return true; }
         core::hint::spin_loop();
     }
     false
