@@ -651,12 +651,12 @@ pub fn reasoning_request_id() -> u64 { unsafe { REASONING_REQUEST_ID } }
 ///
 /// The kernel never fabricates a response. A userspace/host bridge may send
 /// one complete line as:
-///   AI_RES:REQ=R<n> DATA=<bounded bytes>
+///   AI_RES:REQ=R<n>:<bounded bytes>
 /// The request id must match the currently waiting reasoning request.
 fn poll_model_bridge() {
     unsafe {
         while let Some(byte) = serial::read_byte() {
-            if byte == b'\\n' || byte == b'\\r' {
+            if byte == b'\n' || byte == b'\r' {
                 if MODEL_BRIDGE_RX_LEN != 0 {
                     process_model_bridge_line(MODEL_BRIDGE_RX_LEN);
                 }
@@ -676,7 +676,6 @@ fn poll_model_bridge() {
 fn process_model_bridge_line(len: usize) {
     unsafe {
         const PREFIX: &[u8] = b"AI_RES:REQ=R";
-        const DATA: &[u8] = b" DATA=";
         if len < PREFIX.len() || !buffer_starts_with(PREFIX, len) {
             return;
         }
@@ -690,17 +689,10 @@ fn process_model_bridge_line(len: usize) {
             i += 1;
             digits += 1;
         }
-        if digits == 0 || i + DATA.len() > len {
+        if digits == 0 || i >= len || MODEL_BRIDGE_RX[i] != b':' {
             return;
         }
-        let mut j = 0usize;
-        while j < DATA.len() {
-            if MODEL_BRIDGE_RX[i + j] != DATA[j] {
-                return;
-            }
-            j += 1;
-        }
-        let start = i + DATA.len();
+        let start = i + 1;
         receive_reasoning_response(request_id, &MODEL_BRIDGE_RX[start..len]);
         serial::write_str("[VIRT BRIDGE] RESPONSE_ACCEPTED REQ=R");
         serial::write_usize(request_id as usize);
