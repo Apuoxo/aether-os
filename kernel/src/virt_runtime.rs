@@ -14,6 +14,8 @@ static mut OBSERVATIONS: u64 = 0;
 static mut EVENTS: u64 = 0;
 static mut ACTIONS: u64 = 0;
 static mut REASONING_REQUESTS: u64 = 0;
+static mut NEXT_REASONING_REQUEST_ID: u64 = 1;
+static mut REASONING_REQUEST_ID: u64 = 0;
 static mut LAST_RAM_TOTAL: usize = 0;
 static mut LAST_RAM_FREE: usize = 0;
 static mut LAST_PID: usize = 0;
@@ -62,6 +64,8 @@ pub fn init() {
         EVENTS = 0;
         ACTIONS = 0;
         REASONING_REQUESTS = 0;
+        NEXT_REASONING_REQUEST_ID = 1;
+        REASONING_REQUEST_ID = 0;
         LAST_RAM_TOTAL = 0;
         LAST_RAM_FREE = 0;
         LAST_PID = 0;
@@ -238,7 +242,12 @@ fn emit_reasoning_request() {
         if LAST_REASONING_GATE != REASONING_GATE_REQUEST {
             return;
         }
-        serial::write_str("AI_REQ:SRC=RUNTIME EVENT=STATE_CHANGE PID=");
+        let request_id = NEXT_REASONING_REQUEST_ID;
+        NEXT_REASONING_REQUEST_ID = NEXT_REASONING_REQUEST_ID.wrapping_add(1);
+        REASONING_REQUEST_ID = request_id;
+        serial::write_str("AI_REQ:REQ=R");
+        serial::write_usize(request_id as usize);
+        serial::write_str(" SRC=RUNTIME EVENT=STATE_CHANGE PID=");
         serial::write_usize(LAST_PROCESS_EVENT_PID);
         serial::write_str(" OLD=");
         serial::write_usize(LAST_PROCESS_EVENT_OLD_STATE as usize);
@@ -255,12 +264,13 @@ fn emit_reasoning_request() {
 }
 
 pub fn reasoning_waiting() -> bool { unsafe { REASONING_WAITING } }
+pub fn reasoning_request_id() -> u64 { unsafe { REASONING_REQUEST_ID } }
 
 /// Accept the bounded response belonging to the runtime reasoning request.
-pub fn receive_reasoning_response(bytes: &[u8]) {
+pub fn receive_reasoning_response(request_id: u64, bytes: &[u8]) {
     if !ready() { return; }
     unsafe {
-        if !REASONING_WAITING { return; }
+        if !REASONING_WAITING || request_id != REASONING_REQUEST_ID { return; }
         let n = bytes.len().min(LAST_REASONING_RESPONSE.len());
         let mut i = 0usize;
         while i < n { LAST_REASONING_RESPONSE[i] = bytes[i]; i += 1; }

@@ -186,6 +186,7 @@ static mut AI_BRIDGE_ACTIVE: bool = false;
 static mut AI_WAITING: bool = false;
 static mut AI_RX: [u8; 128] = [0; 128];
 static mut AI_RX_LEN: usize = 0;
+static mut AI_REQUEST_SEQ: u64 = 1;
 
 fn ai_push_bytes(bytes: &[u8]) {
     unsafe {
@@ -298,7 +299,14 @@ fn ai_terminal_request(bytes: &[u8]) {
     }
     n += qn;
 
-    serial::write_str("AI_REQ:");
+    let request_id = unsafe {
+        let id = AI_REQUEST_SEQ;
+        AI_REQUEST_SEQ = AI_REQUEST_SEQ.wrapping_add(1);
+        id
+    };
+    serial::write_str("AI_REQ:REQ=U");
+    serial::write_usize(request_id as usize);
+    serial::write_str(" ");
     i = 0;
     while i < n { serial::write_byte(req[i]); i += 1; }
     serial::write_str("\n");
@@ -380,10 +388,29 @@ fn ai_transport_poll() {
                 AI_RX_LEN = 0;
                 if len >= 7 && &line[..7] == b"AI_RES:" {
                     let body = &line[7..len];
-                    if crate::virt_runtime::reasoning_waiting() {
-                        crate::virt_runtime::receive_reasoning_response(body);
+                    let mut response_kind = 0u8;
+                    let mut response_id = 0u64;
+                    let mut body_start = 0usize;
+                    if body.len() >= 6 && &body[..5] == b"REQ=" {
+                        let source = body[5];
+                        let mut p = 6usize;
+                        while p < body.len() && body[p] >= b'0' && body[p] <= b'9' {
+                            response_id = response_id.saturating_mul(10).saturating_add((body[p] - b'0') as u64);
+                            p += 1;
+                        }
+                        if p < body.len() && body[p] == b':' {
+                            body_start = p + 1;
+                            response_kind = if source == b'R' { 1 } else if source == b'U' { 2 } else { 0 };
+                        }
+                    }
+                    let body = &body[body_start..];
+                    if response_kind == 1
+                        && crate::virt_runtime::reasoning_waiting()
+                        && response_id == crate::virt_runtime::reasoning_request_id()
+                    {
+                        crate::virt_runtime::receive_reasoning_response(response_id, body);
                         ai_push_bytes(body);
-                    } else if AI_TERMINAL_TARGET {
+                    } else if response_kind == 2 && AI_TERMINAL_TARGET {
                         terminal_write("VIRT: ");
                         if let Ok(text) = core::str::from_utf8(body) {
                             terminal_write(text);

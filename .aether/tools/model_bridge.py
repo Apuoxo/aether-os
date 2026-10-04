@@ -116,11 +116,16 @@ def main() -> int:
                 if line:
                     log(line)
                 if line.startswith("AI_REQ:"):
+                    request = line[7:].strip()
+                    parts = request.split(" ", 1)
+                    request_tag = parts[0] if parts and parts[0].startswith("REQ=") else ""
+                    message = parts[1] if len(parts) == 2 else request
                     try:
-                        answer = model_answer(line[7:].strip(), args.model)
-                        wire = "AI_RES:" + answer.replace("\r", " ").replace("\n", " ") + "\n"
+                        answer = model_answer(message, args.model)
+                        wire = "AI_RES:" + request_tag + ":" + answer.replace("\r", " ").replace("\n", " ") + "\n"
                     except Exception as exc:
-                        wire = "AI_RES:MODEL_ERROR " + str(exc).replace("\r", " ").replace("\n", " ")[:70] + "\n"
+                        wire = "AI_RES:" + request_tag + ":MODEL_ERROR " + str(exc).replace("\r", " ").replace("\n", " ")[:70] + "\n"
+                        log(wire.rstrip("\n"))
                         log(wire.rstrip("\n"))
                     sock.sendall(wire.encode("utf-8", "replace"))
                     log(wire.rstrip("\n"))
