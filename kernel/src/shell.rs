@@ -1356,8 +1356,9 @@ fn cmd_ethdma() {
                     core::ptr::write_volatile((mmio as usize + 0x3E) as *mut u16, 0xFFFF);
                     core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
                     core::ptr::write_volatile((mmio as usize + 0x37) as *mut u8, 0x0C);
-                    // 0x38 is TxPoll. Do not write it here: TX descriptor ownership is
-                    // sufficient to trigger the normal low-priority queue on this hardware.
+                    // RTL8168 requires the normal-priority TxPoll doorbell after the
+                    // descriptor is published and TX/RX are enabled.
+                    core::ptr::write_volatile((mmio as usize + 0x38) as *mut u8, 0x40);
                 }
 
                 write_str("DMA=ENABLED RX=ON TX=ON\n");
