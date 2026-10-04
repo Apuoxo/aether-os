@@ -267,6 +267,16 @@ pub extern "C" fn kernel_main(mbi: usize) -> ! {
     // Capture the real Multiboot RAM value for the graphical boot screen.
     let detected_ram_mib = multiboot_usable_memory_mib(mbi);
     let managed_ram_mib = (mm::total_count() as u64) / 256;
+    serial::write_str("[RAM] Multiboot usable=");
+    serial::write_usize(detected_ram_mib as usize);
+    serial::write_str(" MiB, PMM managed=");
+    serial::write_usize(managed_ram_mib as usize);
+    serial::write_str(" MiB, PMM request=64 MiB\\n");
+    if detected_ram_mib > managed_ram_mib {
+        serial::write_str("[RAM] PMM_LIMIT=YES (detected RAM exceeds managed range)\\n");
+    } else {
+        serial::write_str("[RAM] PMM_LIMIT=NO\\n");
+    }
     vga_mark(4, b'P'); // PMM
     serial::write_str("[OK] PMM\n");
     // Kernel stack must be large: rust_kernel_after_user has big locals; Ring3 TSS uses rsp0
