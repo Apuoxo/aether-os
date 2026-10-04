@@ -369,7 +369,7 @@ unsafe fn r8139_frame_test() -> bool {
     ip[34]=8; ip[35]=0; ip[36]=0; ip[37]=0; ip[38]=0x12; ip[39]=0x34; ip[40]=0; ip[41]=1;
     for i in 42..98 { ip[i]=i as u8; }
     let ics = csum(&ip[34..98]); ip[36]=(ics>>8) as u8; ip[37]=ics as u8;
-    if !r8139_tx(&ip[..98]) { serial::write_str("[NET-QEMU] ICMP TX FAIL\n"); return false; }
+    if !r8139_tx(&ip[..98]) { serial::write_str("[NET-QEMU] ICMP TX FAIL TSD="); serial::write_hex(in32(R8139_IO + R8139_TSD0) as usize); serial::write_str("\n"); return false; }
     serial::write_str("[NET-QEMU] ICMP TX OK\n");
 
     let n2 = r8139_poll_frame(&mut rx, 1_500_000);
