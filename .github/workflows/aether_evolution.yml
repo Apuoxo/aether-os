@@ -1,4 +1,4 @@
-name: Aether evolution validation
+name: Aether evolution validation # AI model bridge validation
 
 on:
   push:
