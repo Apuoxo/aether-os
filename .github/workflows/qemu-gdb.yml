@@ -102,6 +102,7 @@ jobs:
           rc=$?
           cat /tmp/qemu-boot.log
           echo "QEMU_EXIT=$rc"
+          test "$rc" = 0 || test "$rc" = 124
           ! grep -q "PANIC" /tmp/qemu-boot.log
           grep -q "Aether OS Build" /tmp/qemu-boot.log
 
