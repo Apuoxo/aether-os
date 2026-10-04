@@ -283,6 +283,18 @@ pub fn init() {
         }
 
         READY = ETH_FOUND || WIFI_FOUND;
+        let mut observed_mac = [0u8; 6];
+        let mut mi = 0usize;
+        while mi < 6 {
+            observed_mac[mi] = ETH_MAC[mi];
+            mi += 1;
+        }
+        crate::ai_agent::record_network_state(
+            if ETH_FOUND { 1 } else { 0 },
+            if READY { 1 } else { 0 },
+            if LINK_UP { 1 } else { 0 },
+            observed_mac,
+        );
         if !ETH_FOUND {
             serial::write_str("[NET] no Ethernet\n");
         }
