@@ -193,13 +193,42 @@ pub fn init() {
                     }
                     let cmd = (pci_r32(bus, dev, func, 0x04) & 0xFFFF) as u16;
                     pci_w16(bus, dev, func, 0x04, cmd | 0x0006);
-                    let mut bar0 = pci_r32(bus, dev, func, 0x10) as u64;
-                    if bar0 & 0x4 != 0 {
-                        let bar1 = pci_r32(bus, dev, func, 0x14) as u64;
-                        bar0 = (bar0 & !0xF) | (bar1 << 32);
+                    // PCI BAR0 may be an I/O-port BAR (bit 0 = 1), which is
+                    // exactly what the AH532 reports (0x3001 -> base 0x3000).
+                    // Do not treat an I/O BAR as MMIO. Find the first memory BAR
+                    // instead; RTL8168 commonly exposes I/O in BAR0 and MMIO in BAR1.
+                    let raw_bar0 = pci_r32(bus, dev, func, 0x10);
+                    let raw_bar1 = pci_r32(bus, dev, func, 0x14);
+                    let mut bar0 = 0u64;
+                    let mut bar_kind = 0u8; // 0=none, 1=I/O, 2=MMIO
+                    if raw_bar0 & 0x1 != 0 {
+                        bar_kind = 1;
+                    } else if raw_bar0 & 0xFFFF_FFF0 != 0 {
+                        bar0 = (raw_bar0 & !0xF) as u64;
+                        bar_kind = 2;
                     } else {
-                        bar0 &= !0xF;
+                        let mut off = 0x14u8;
+                        while off <= 0x24 {
+                            let raw = pci_r32(bus, dev, func, off);
+                            if raw != 0 && raw != 0xFFFF_FFFF && (raw & 0x1) == 0 {
+                                bar0 = (raw & !0xF) as u64;
+                                bar_kind = 2;
+                                break;
+                            }
+                            off = off.wrapping_add(4);
+                        }
                     }
+                    serial::write_str("[NET] BAR0_RAW=");
+                    serial::write_hex(raw_bar0 as usize);
+                    serial::write_str(" BAR0=");
+                    serial::write_hex((raw_bar0 & !0x3) as usize);
+                    serial::write_str(" BAR0_KIND=");
+                    serial::write_usize(bar_kind as usize);
+                    serial::write_str(" BAR1_RAW=");
+                    serial::write_hex(raw_bar1 as usize);
+                    serial::write_str(" MMIO=");
+                    serial::write_hex(bar0 as usize);
+                    serial::write_str("\n");
 
                     if sub == 0x00 {
                         let is_rtl = vid == 0x10EC
@@ -230,6 +259,8 @@ pub fn init() {
                         serial::write_str(" DID=");
                         serial::write_hex(did as usize);
                         serial::write_str(" BAR0=");
+                        serial::write_hex((raw_bar0 & !0x3) as usize);
+                        serial::write_str(" MMIO=");
                         serial::write_hex(bar0 as usize);
                         if is_rtl {
                             serial::write_str(" RTL81xx\n");
