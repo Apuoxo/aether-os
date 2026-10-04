@@ -187,6 +187,23 @@ pub fn next_ready() -> Option<usize> {
     }
 }
 
+/// Copy the PID of every non-empty process-table entry into a caller-owned buffer.
+/// Returns the number of active entries copied, capped by the buffer length.
+pub fn snapshot_pids(out: &mut [usize; MAX_PROCESSES]) -> usize {
+    unsafe {
+        let mut count = 0usize;
+        let mut i = 0usize;
+        while i < MAX_PROCESSES {
+            if TABLE[i].state != State::Empty {
+                out[count] = TABLE[i].pid;
+                count += 1;
+            }
+            i += 1;
+        }
+        count
+    }
+}
+
 pub fn get(pid: usize) -> Option<Process> {
     unsafe {
         let mut i = 0usize;

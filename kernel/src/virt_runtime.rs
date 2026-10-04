@@ -17,6 +17,8 @@ static mut REASONING_REQUESTS: u64 = 0;
 static mut LAST_RAM_TOTAL: usize = 0;
 static mut LAST_RAM_FREE: usize = 0;
 static mut LAST_PID: usize = 0;
+static mut LAST_PROCESS_IDS: [usize; crate::process::MAX_PROCESSES] = [0; crate::process::MAX_PROCESSES];
+static mut LAST_PROCESS_COUNT: usize = 0;
 
 pub const STATE_OFF: u8 = 0;
 pub const STATE_AWAKE: u8 = 1;
@@ -36,6 +38,8 @@ pub fn init() {
         LAST_RAM_TOTAL = 0;
         LAST_RAM_FREE = 0;
         LAST_PID = 0;
+        LAST_PROCESS_IDS = [0; crate::process::MAX_PROCESSES];
+        LAST_PROCESS_COUNT = 0;
     }
     serial::write_str("[VIRT RUNTIME] ACTIVE STATE=AWAKE heartbeat=RTC-second\n");
 }
@@ -55,6 +59,7 @@ pub fn tick() {
             LAST_SECOND = second;
             HEARTBEATS = HEARTBEATS.wrapping_add(1);
             OBSERVATIONS = OBSERVATIONS.wrapping_add(1);
+            observe_processes();
         }
     }
 }
@@ -82,6 +87,33 @@ pub fn observe_system() {
     serial::write_str(" PID=");
     serial::write_usize(pid);
     serial::write_str("\n");
+}
+
+/// Snapshot every process currently known to the native process table.
+///
+/// The snapshot is metadata-only: it copies PIDs and does not change process
+/// state, scheduling, address spaces or capabilities.
+pub fn observe_processes() {
+    if !ready() {
+        return;
+    }
+    let mut ids = [0usize; crate::process::MAX_PROCESSES];
+    let count = crate::process::snapshot_pids(&mut ids);
+    unsafe {
+        LAST_PROCESS_IDS = ids;
+        LAST_PROCESS_COUNT = count;
+    }
+}
+
+pub fn last_process_count() -> usize {
+    unsafe { LAST_PROCESS_COUNT }
+}
+
+pub fn last_process_pid(index: usize) -> usize {
+    if index >= crate::process::MAX_PROCESSES {
+        return 0;
+    }
+    unsafe { LAST_PROCESS_IDS[index] }
 }
 
 pub fn last_ram_total_pages() -> usize {
