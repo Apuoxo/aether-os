@@ -1,0 +1,58 @@
+name: Aether clock pulse
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: aether-clock
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout persistent state
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Advance repository clock
+        env:
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test -f .state/current_state.json
+          test -f .state/history.json
+          python3 .aether/tools/clock_tick.py
+
+      - name: Persist clock tick atomically
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .state/current_state.json .state/history.json
+          if git diff --cached --quiet; then
+            echo "No clock state change."
+            exit 0
+          fi
+          git commit -m "agent: record clock tick [aether-clock]"
+          git push
+
+      - name: Publish clock evidence
+        if: always()
+        run: |
+          {
+            echo "## Aether clock pulse"
+            echo
+            jq '.clock, .last_wake_reason' .state/current_state.json
+            echo
+            jq '.[-1]' .state/history.json 2>/dev/null || true
+          } >> "$GITHUB_STEP_SUMMARY"
