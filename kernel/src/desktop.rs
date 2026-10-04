@@ -43,7 +43,7 @@ const COL_BTN_FACE: u32 = 0x00D4D0C8;
 const COL_MENU_BG: u32 = 0x00FFFFFF;
 const COL_MENU_HDR: u32 = 0x001665CA;
 
-const MAX_WIN: usize = 15;
+const MAX_WIN: usize = 16;
 const TITLE_H: i32 = 26;
 const TASKBAR_H: usize = 30;
 
@@ -64,6 +64,7 @@ enum WinKind {
     Alarm,
     HelloExe,
     WinampExe,
+    AIChat,
 }
 
 struct Window {
@@ -113,6 +114,8 @@ static mut WINS: [Window; MAX_WIN] = [
         minimized: false, maximized: false, rx: 220, ry: 120, rw: 430, rh: 250 },
     Window { x: 300, y: 120, w: 500, h: 300, kind: WinKind::WinampExe, visible: false, z: 15,
         minimized: false, maximized: false, rx: 300, ry: 120, rw: 500, rh: 300 },
+    Window { x: 90, y: 70, w: 720, h: 420, kind: WinKind::AIChat, visible: true, z: 16,
+        minimized: false, maximized: false, rx: 90, ry: 70, rw: 720, rh: 420 },
 ];
 
 static mut FOCUS: usize = 0; // terminal
@@ -169,6 +172,81 @@ static mut KEYBOARD_CAPS: bool = false;
 static mut KEYBOARD_CTRL: bool = false;
 static mut KEYBOARD_ALT: bool = false;
 
+// Native text-chat surface. This is an interface/transport endpoint, not a
+// claim that a local language model is embedded in the kernel.
+static mut AI_HISTORY: [[u8; 96]; 24] = [[0; 96]; 24];
+static mut AI_HISTORY_LEN: [usize; 24] = [0; 24];
+static mut AI_HISTORY_COUNT: usize = 0;
+static mut AI_INPUT: [u8; 96] = [0; 96];
+static mut AI_INPUT_LEN: usize = 0;
+static mut AI_INPUT_CURSOR: usize = 0;
+static mut AI_READY: bool = false;
+
+fn ai_push_bytes(bytes: &[u8]) {
+    unsafe {
+        if AI_HISTORY_COUNT >= AI_HISTORY.len() {
+            let mut r = 1usize;
+            while r < AI_HISTORY.len() {
+                AI_HISTORY[r - 1] = AI_HISTORY[r];
+                AI_HISTORY_LEN[r - 1] = AI_HISTORY_LEN[r];
+                r += 1;
+            }
+            AI_HISTORY_COUNT = AI_HISTORY.len() - 1;
+        }
+        let row = AI_HISTORY_COUNT;
+        let n = bytes.len().min(AI_HISTORY[row].len());
+        let mut i = 0usize;
+        while i < n { AI_HISTORY[row][i] = bytes[i]; i += 1; }
+        AI_HISTORY_LEN[row] = n;
+        AI_HISTORY_COUNT += 1;
+    }
+}
+fn ai_push(text: &str) { ai_push_bytes(text.as_bytes()); }
+fn ai_contains(input: &[u8], needle: &[u8]) -> bool {
+    if needle.is_empty() || needle.len() > input.len() { return false; }
+    let mut i = 0usize;
+    while i + needle.len() <= input.len() {
+        let mut ok = true;
+        let mut j = 0usize;
+        while j < needle.len() {
+            let mut a = input[i + j]; let mut b = needle[j];
+            if a >= b'A' && a <= b'Z' { a += 32; }
+            if b >= b'A' && b <= b'Z' { b += 32; }
+            if a != b { ok = false; break; }
+            j += 1;
+        }
+        if ok { return true; }
+        i += 1;
+    }
+    false
+}
+fn ai_init() {
+    unsafe { if AI_READY { return; } AI_READY = true; }
+    ai_push("AETHER AI: text interface online.");
+    ai_push("BRIDGE: local kernel endpoint ready; external model not connected.");
+    ai_push("TYPE A MESSAGE AND PRESS ENTER.");
+}
+fn ai_submit() {
+    unsafe {
+        if AI_INPUT_LEN == 0 { return; }
+        let mut line = [0u8; 96]; let prefix = b"YOU: "; let mut n = 0usize;
+        while n < prefix.len() { line[n] = prefix[n]; n += 1; }
+        let mut i = 0usize;
+        while i < AI_INPUT_LEN && n < line.len() { line[n] = AI_INPUT[i]; n += 1; i += 1; }
+        ai_push_bytes(&line[..n]);
+        let input = AI_INPUT; let input_len = AI_INPUT_LEN;
+        AI_INPUT_LEN = 0; AI_INPUT_CURSOR = 0;
+        if ai_contains(&input[..input_len], b"who are you") {
+            ai_push("AETHER: I am the native text endpoint. A language model is not embedded here yet.");
+        } else if ai_contains(&input[..input_len], b"hello") || ai_contains(&input[..input_len], b"hi") {
+            ai_push("AETHER: Hello. The text channel is active.");
+        } else if ai_contains(&input[..input_len], b"status") {
+            ai_push("AETHER: UI online. Transport endpoint ready. Model bridge: pending.");
+        } else {
+            ai_push("AETHER: Message received. The interface is ready for the real AI bridge.");
+        }
+    }
+}
 
 // Windows 7-style Wi-Fi UI state. The list is deliberately empty until the
 // native Intel 2230 scan backend returns real 802.11 results.
@@ -1085,6 +1163,7 @@ fn win_title(kind: WinKind) -> &'static str {
         WinKind::Alarm => "Alarm Clock",
         WinKind::HelloExe => "Hello.exe",
         WinKind::WinampExe => "Winamp.exe",
+        WinKind::AIChat => "Aether AI",
     }
 }
 
@@ -1245,6 +1324,7 @@ fn draw_taskbar_buttons(w: usize, h: usize) {
                     WinKind::Alarm => "Alarm",
                     WinKind::HelloExe => "Hello",
                     WinKind::WinampExe => "Winamp",
+                    WinKind::AIChat => "AI",
                 };
                 let bw = short.len() * 8 + 20;
                 if x + bw > w.saturating_sub(100) {
@@ -2529,6 +2609,50 @@ fn draw_window(idx: usize) {
                 graphics::draw_str(wx+330,cy+248,"Select a track, then Play",COL_TEXT_DIM);
                 graphics::draw_str(wx+330,cy+264,"MP3: native decoder",COL_TEXT_DIM);
             }
+            WinKind::AIChat => {
+                graphics::fill_rect(wx + 3, wy + TITLE_H as usize, ww - 6,
+                    wh - TITLE_H as usize - 3, 0x0013161B);
+                graphics::fill_rect(wx + 5, wy + TITLE_H as usize + 4, ww - 10, 24, 0x001D2229);
+                graphics::draw_str(wx + 16, wy + TITLE_H as usize + 12, "Aether AI / TEXT BRIDGE", 0x00F2F2F2);
+                graphics::draw_str(wx + ww.saturating_sub(170), wy + TITLE_H as usize + 12,
+                    "LOCAL ENDPOINT", 0x0066D966);
+                let top = wy + TITLE_H as usize + 38;
+                let bottom = wy + wh.saturating_sub(48);
+                let visible = if bottom > top { (bottom - top) / 14 } else { 0 };
+                unsafe {
+                    let start = if AI_HISTORY_COUNT > visible { AI_HISTORY_COUNT - visible } else { 0 };
+                    let mut r = start;
+                    let mut row = 0usize;
+                    while r < AI_HISTORY_COUNT && row < visible {
+                        let y = top + row * 14;
+                        let len = AI_HISTORY_LEN[r];
+                        let mut k = 0usize;
+                        while k < len && wx + 12 + k * 8 < wx + ww - 22 {
+                            let c = AI_HISTORY[r][k];
+                            let col = if k < 4 && c == b'Y' { 0x00FFD966 } else { 0x00C0C0C0 };
+                            graphics::draw_char(wx + 12 + k * 8, y, c, col);
+                            k += 1;
+                        }
+                        r += 1; row += 1;
+                    }
+                }
+                let iy = wy + wh - 44;
+                graphics::fill_rect(wx + 8, iy, ww - 16, 28, 0x000B0D10);
+                graphics::border_rect(wx + 8, iy, ww - 16, 28, 0x00505050);
+                graphics::draw_str(wx + 16, iy + 10, "YOU>", 0x0066D966);
+                unsafe {
+                    let mut k = 0usize;
+                    while k < AI_INPUT_LEN && wx + 56 + k * 8 < wx + ww - 22 {
+                        graphics::draw_char(wx + 56 + k * 8, iy + 10, AI_INPUT[k], 0x00E0E0E0);
+                        k += 1;
+                    }
+                    if focused {
+                        graphics::fill_rect(wx + 56 + AI_INPUT_CURSOR * 8, iy + 9, 6, 9, 0x0000D7FF);
+                    }
+                }
+                graphics::draw_str(wx + 12, wy + wh - 12,
+                    "ENTER: send | ESC: menus | BRIDGE: pending", 0x007D8791);
+            }
             WinKind::Alarm => {
                 crate::alarm::alarm_draw(wx as i32 + 3, wy as i32 + TITLE_H);
             }
@@ -3653,6 +3777,22 @@ fn handle_special_key(hid_code: u8) -> bool {
                 0x51 => crate::alarm::alarm_key(crate::alarm::KEY_DOWN),
                 _ => false,
             }
+        } else if WINS[FOCUS].kind == WinKind::AIChat {
+            match hid_code {
+                0x50 => { if AI_INPUT_CURSOR > 0 { AI_INPUT_CURSOR -= 1; DIRTY_WINDOW = FOCUS as i16; } true }
+                0x4F => { if AI_INPUT_CURSOR < AI_INPUT_LEN { AI_INPUT_CURSOR += 1; DIRTY_WINDOW = FOCUS as i16; } true }
+                0x4A => { AI_INPUT_CURSOR = 0; DIRTY_WINDOW = FOCUS as i16; true }
+                0x4D => { AI_INPUT_CURSOR = AI_INPUT_LEN; DIRTY_WINDOW = FOCUS as i16; true }
+                0x4C => {
+                    if AI_INPUT_CURSOR < AI_INPUT_LEN {
+                        let mut i = AI_INPUT_CURSOR;
+                        while i + 1 < AI_INPUT_LEN { AI_INPUT[i] = AI_INPUT[i + 1]; i += 1; }
+                        AI_INPUT_LEN -= 1; AI_INPUT[AI_INPUT_LEN] = 0;
+                    }
+                    DIRTY_WINDOW = FOCUS as i16; true
+                }
+                _ => false,
+            }
         } else if WINS[FOCUS].kind == WinKind::Terminal {
             match hid_code {
                 0x52 => { term_history_prev(); true }
@@ -3715,6 +3855,27 @@ fn handle_key(ch: u8) {
         if WINS[FOCUS].kind == WinKind::Alarm {
             if crate::alarm::alarm_key(ch) {
                 DIRTY_FULL = true;
+            }
+            return;
+        }
+        if WINS[FOCUS].kind == WinKind::AIChat {
+            if ch == b'\n' {
+                ai_submit();
+                DIRTY_FULL = true;
+            } else if ch == 0x08 {
+                if AI_INPUT_CURSOR > 0 {
+                    let remove_at = AI_INPUT_CURSOR - 1;
+                    let mut i = remove_at;
+                    while i + 1 < AI_INPUT_LEN { AI_INPUT[i] = AI_INPUT[i + 1]; i += 1; }
+                    AI_INPUT_LEN -= 1; AI_INPUT_CURSOR -= 1; AI_INPUT[AI_INPUT_LEN] = 0;
+                    DIRTY_WINDOW = FOCUS as i16;
+                }
+            } else if ch >= 32 && ch < 127 && AI_INPUT_LEN < 90 {
+                let mut i = AI_INPUT_LEN;
+                while i > AI_INPUT_CURSOR { AI_INPUT[i] = AI_INPUT[i - 1]; i -= 1; }
+                AI_INPUT[AI_INPUT_CURSOR] = ch;
+                AI_INPUT_LEN += 1; AI_INPUT_CURSOR += 1;
+                DIRTY_WINDOW = FOCUS as i16;
             }
             return;
         }
@@ -3874,9 +4035,13 @@ pub fn run() -> ! {
         "[WINAMP] FORMAT=UNKNOWN_OR_UNSUPPORTED\n[WINAMP] EXECUTION=NOT_ATTEMPTED\n[WINAMP] RESULT=VALIDATION_STOP\n"
     });
     terminal_write("========================================\n");
+    terminal_write("AI: TEXT INTERFACE AUTOSTARTED; TYPE IN AETHER AI WINDOW\n");
+    terminal_write("AI: MODEL BRIDGE=PENDING (NO LOCAL MODEL CLAIM)\n");
     terminal_write("\x1b[32maether>\x1b[0m ");
+    ai_init();
     unsafe {
         DIRTY_FULL = true;
+        FOCUS = 15;
         MX = (graphics::width() / 2) as i32;
         MY = (graphics::height() / 2) as i32;
     }
