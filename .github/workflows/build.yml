@@ -43,6 +43,15 @@ jobs:
           ! grep -q "PANIC" /tmp/aether-qemu.log
           grep -q "Aether OS Build" /tmp/aether-qemu.log
 
+      - name: Publish QEMU diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aether-qemu-diagnostic
+          path: |
+            /tmp/aether-qemu.log
+          if-no-files-found: warn
+
       - name: Publish ISO
         uses: actions/upload-artifact@v4
         with:
