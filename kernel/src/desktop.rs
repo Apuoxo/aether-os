@@ -230,59 +230,73 @@ fn ai_buf_dec(buf: &mut [u8; 96], pos: &mut usize, mut v: usize) {
 fn ai_terminal_request(bytes: &[u8]) {
     let mut req = [0u8; 96];
     let mut n = 0usize;
-    let prefix = b"CTX:AETHER-KERNEL UI=TERM PID=";
+    let prefix = b"CTX=AETHER K=RO PID=";
     let mut i = 0usize;
     while i < prefix.len() && n < 90 { req[n] = prefix[i]; n += 1; i += 1; }
 
     let pid = crate::process::current_pid();
     ai_buf_dec(&mut req, &mut n, pid);
     if n < 90 { req[n] = b' '; n += 1; }
-    if n + 6 < 90 {
-        let mut active = 0usize;
-        let mut p = 1usize;
-        while p <= crate::process::MAX_PROCESSES {
-            if crate::process::get(p).is_some() { active += 1; }
-            p += 1;
+
+    let tag = b"PROC=";
+    i = 0;
+    while i < tag.len() && n < 90 { req[n] = tag[i]; n += 1; i += 1; }
+    let mut active = 0usize;
+    let mut p = 1usize;
+    while p <= crate::process::MAX_PROCESSES {
+        if let Some(proc_) = crate::process::get(p) {
+            active += 1;
+            if n + 8 < 90 {
+                if active == 1 {
+                    req[n] = b'['; n += 1;
+                } else {
+                    req[n] = b','; n += 1;
+                }
+                ai_buf_dec(&mut req, &mut n, proc_.pid);
+                req[n] = b':'; n += 1;
+                let state = match proc_.state {
+                    crate::process::State::Ready => b'R',
+                    crate::process::State::Running => b'X',
+                    crate::process::State::Exited => b'E',
+                    crate::process::State::Empty => b'-',
+                };
+                req[n] = state; n += 1;
+            }
         }
-        let tag = b"PROC=";
-        let mut j = 0usize;
-        while j < tag.len() && n < 90 { req[n] = tag[j]; n += 1; j += 1; }
-        ai_buf_dec(&mut req, &mut n, active);
-        if n < 90 { req[n] = b'/'; n += 1; }
-        ai_buf_dec(&mut req, &mut n, crate::process::MAX_PROCESSES);
+        p += 1;
     }
-    if n + 12 < 90 {
-        let tag = b" RAM=";
-        let mut j = 0usize;
-        while j < tag.len() && n < 90 { req[n] = tag[j]; n += 1; j += 1; }
-        ai_buf_dec(&mut req, &mut n, mm::total_count() / 256);
-        if n < 90 { req[n] = b'M'; n += 1; }
-        if n < 90 { req[n] = b'B'; n += 1; }
-        if n < 90 { req[n] = b' '; n += 1; }
-        let tag2 = b"FREE=";
-        let mut k = 0usize;
-        while k < tag2.len() && n < 90 { req[n] = tag2[k]; n += 1; k += 1; }
-        ai_buf_dec(&mut req, &mut n, mm::free_count() / 256);
-        if n < 90 { req[n] = b'M'; n += 1; }
-        if n < 90 { req[n] = b'B'; n += 1; }
-    }
-    if n + 8 < 90 {
-        let tag = b" FB=";
-        let mut j = 0usize;
-        while j < tag.len() && n < 90 { req[n] = tag[j]; n += 1; j += 1; }
-        ai_buf_dec(&mut req, &mut n, graphics::width());
-        if n < 90 { req[n] = b'x'; n += 1; }
-        ai_buf_dec(&mut req, &mut n, graphics::height());
-    }
-    if n + 5 < 90 {
-        let tag = b" RO Q=";
-        let mut j = 0usize;
-        while j < tag.len() && n < 90 { req[n] = tag[j]; n += 1; j += 1; }
-    }
+    if active > 0 && n < 90 { req[n] = b']'; n += 1; }
+    if n < 90 { req[n] = b' '; n += 1; }
+
+    let tag = b"RAM=";
+    i = 0;
+    while i < tag.len() && n < 90 { req[n] = tag[i]; n += 1; i += 1; }
+    ai_buf_dec(&mut req, &mut n, mm::total_count() / 256);
+    if n < 90 { req[n] = b'M'; n += 1; }
+    if n < 90 { req[n] = b' '; n += 1; }
+
+    let tag = b"FREE=";
+    i = 0;
+    while i < tag.len() && n < 90 { req[n] = tag[i]; n += 1; i += 1; }
+    ai_buf_dec(&mut req, &mut n, mm::free_count() / 256);
+    if n < 90 { req[n] = b'M'; n += 1; }
+    if n < 90 { req[n] = b' '; n += 1; }
+
+    let tag = b"FB=";
+    i = 0;
+    while i < tag.len() && n < 90 { req[n] = tag[i]; n += 1; i += 1; }
+    ai_buf_dec(&mut req, &mut n, graphics::width());
+    if n < 90 { req[n] = b'x'; n += 1; }
+    ai_buf_dec(&mut req, &mut n, graphics::height());
+    if n < 90 { req[n] = b' '; n += 1; }
+
     let room = 90usize.saturating_sub(n);
     let qn = bytes.len().min(room);
     i = 0;
-    while i < qn { req[n + i] = if bytes[i] >= 32 && bytes[i] < 127 { bytes[i] } else { b' ' }; i += 1; }
+    while i < qn {
+        req[n + i] = if bytes[i] >= 32 && bytes[i] < 127 { bytes[i] } else { b' ' };
+        i += 1;
+    }
     n += qn;
 
     serial::write_str("AI_REQ:");
