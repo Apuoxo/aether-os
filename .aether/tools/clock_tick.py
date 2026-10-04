@@ -6,6 +6,29 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
+def record_communication_event(state, event_type, actor, channel, payload, correlation_id=None):
+    communication = state.setdefault("communication", {
+        "schema": 1,
+        "roles": {},
+        "channels": {},
+        "event_contract": {},
+        "sequence": 0
+    })
+    sequence = int(communication.get("sequence", 0)) + 1
+    event = {
+        "event_id": f"comm-{sequence:06d}",
+        "type": event_type,
+        "actor": actor,
+        "channel": channel,
+        "observed_at": payload["observed_at"],
+        "payload": payload
+    }
+    if correlation_id:
+        event["correlation_id"] = correlation_id
+    communication["sequence"] = sequence
+    communication["last_event"] = event
+    return event
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--state", default=".state/current_state.json")
@@ -41,8 +64,24 @@ def main():
     state["updated"] = now.strftime("%Y-%m-%d")
     state["last_wake_reason"] = os.environ.get("GITHUB_EVENT_NAME", "unknown")
 
+    communication_event = record_communication_event(
+        state,
+        "wake",
+        "agent-aether",
+        "github_actions",
+        {
+            "observed_at": now_iso,
+            "tick_counter": tick,
+            "delta_seconds": round(delta, 3),
+            "run_id": os.environ.get("GITHUB_RUN_ID", "unknown")
+        },
+        correlation_id=f"clock-{os.environ.get('GITHUB_RUN_ID', 'unknown')}"
+    )
+
     entry = {
         "type": "clock_tick",
+        "event_id": communication_event["event_id"],
+        "communication_event": communication_event,
         "tick_counter": tick,
         "observed_at": now_iso,
         "delta_seconds": round(delta, 3),
@@ -56,6 +95,7 @@ def main():
     history["schema"] = 1
     history["last_updated"] = now_iso
     history["last_tick_counter"] = tick
+    history["last_communication_event"] = communication_event["event_id"]
 
     state_path.write_text(json.dumps(state, indent=2, ensure_ascii=False) + "\n")
     history_path.write_text(json.dumps(history, indent=2, ensure_ascii=False) + "\n")

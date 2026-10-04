@@ -4,6 +4,29 @@ import argparse, json, os, re
 from datetime import datetime, timezone
 from pathlib import Path
 
+def record_communication_event(state, event_type, actor, channel, payload, correlation_id=None):
+    communication = state.setdefault("communication", {
+        "schema": 1,
+        "roles": {},
+        "channels": {},
+        "event_contract": {},
+        "sequence": 0
+    })
+    sequence = int(communication.get("sequence", 0)) + 1
+    event = {
+        "event_id": f"comm-{sequence:06d}",
+        "type": event_type,
+        "actor": actor,
+        "channel": channel,
+        "observed_at": payload["observed_at"],
+        "payload": payload
+    }
+    if correlation_id:
+        event["correlation_id"] = correlation_id
+    communication["sequence"] = sequence
+    communication["last_event"] = event
+    return event
+
 def marker(text, *needles):
     return any(n.lower() in text.lower() for n in needles)
 
@@ -68,7 +91,25 @@ def main():
         "Inspect the failed marker or exit condition before making another code change."
     )
 
+    communication_event = record_communication_event(
+        state,
+        "observation",
+        "agent-aether",
+        "qemu_serial",
+        {
+            "observed_at": observed_at,
+            "run_id": run_id,
+            "commit": sha,
+            "outcome": outcome,
+            "qemu_exit": args.qemu_exit
+        },
+        correlation_id=f"qemu-{run_id}"
+    )
+
     entry = {
+        "type": "qemu_observation",
+        "event_id": communication_event["event_id"],
+        "communication_event": communication_event,
         "run_id": run_id,
         "commit": sha,
         "observed_at": observed_at,
@@ -107,6 +148,7 @@ def main():
     })
     state["current_hypotheses"][0]["status"] = "supported" if outcome == "success" else "provisional"
     state["next_step"] = next_step
+    state["communication"]["last_event"] = communication_event
     state["last_experience"] = {
         "outcome": outcome,
         "conclusion": conclusion,

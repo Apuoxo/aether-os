@@ -16,6 +16,11 @@
       "id": "autonomy-foundation",
       "status": "in_progress",
       "text": "Implement a bounded repository-native autonomy protocol without assuming unavailable platform capabilities."
+    },
+    {
+      "id": "communication-foundation",
+      "status": "in_progress",
+      "text": "Establish a repository-native communication protocol linking Creator/Architect, Agent/Aether, and User/External through durable channels and bounded state events."
     }
   ],
   "verification": {
@@ -36,7 +41,7 @@
     "stop when required evidence or human authorization is missing",
     "do not create unbounded self-propagating execution"
   ],
-  "next_step": "Use the recorded QEMU evidence as the baseline and choose the next single controlled validation.",
+  "next_step": "Verify the unified communication protocol through repository CI and inspect the resulting evidence before extending live ingress.",
   "last_experience": {
     "outcome": "success",
     "conclusion": "QEMU boot reached Aether Desktop without PANIC; evidence is valid for kernel/ISO/QEMU startup but does not establish AH532 hardware behavior or Ring3 execution.",
@@ -51,5 +56,55 @@
       "Embedded media file open path was reached.",
       "Framebuffer test pattern reached the render stage."
     ]
+  },
+  "communication": {
+    "schema": 1,
+    "roles": {
+      "creator-architect": "Virt; defines evolution vector, higher goals, constraints and acceptance criteria.",
+      "agent-aether": "Repository-native bounded process; reports through state, logs, commits and clock ticks.",
+      "user-external": "Human observer/interactor and source of external/runtime evidence."
+    },
+    "channels": {
+      "github_issues_discussions": "durable requests, decisions and acceptance criteria",
+      "git_commits": "atomic implementation and state transitions",
+      "github_actions": "bounded execution, verification and wakeups",
+      "qemu_serial": "runtime observations from the reproducible lab",
+      "current_state": "current durable communication state",
+      "history": "bounded communication and evidence journal"
+    },
+    "event_contract": {
+      "types": [
+        "request",
+        "decision",
+        "response",
+        "observation",
+        "wake"
+      ],
+      "required_fields": [
+        "event_id",
+        "type",
+        "actor",
+        "channel",
+        "observed_at",
+        "payload"
+      ],
+      "optional_fields": [
+        "correlation_id"
+      ]
+    },
+    "sequence": 1,
+    "last_event": {
+      "event_id": "comm-000001",
+      "type": "request",
+      "actor": "creator-architect",
+      "channel": "chat",
+      "observed_at": "2026-10-04T00:00:00Z",
+      "payload": "Establish the unified Aether communication environment and persist its protocol.",
+      "correlation_id": "unified-communication-foundation"
+    },
+    "integrations": {
+      "clock_tick": "records wake events and advances communication.last_event",
+      "analyze_run": "records QEMU observation events and advances communication.last_event"
+    }
   }
 }
