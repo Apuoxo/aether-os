@@ -268,7 +268,7 @@ fn ai_transport_poll() {
                     ai_push_bytes(body);
                     AI_WAITING = false;
                     AI_BRIDGE_ACTIVE = true;
-                } else if len >= 15 && &line[..15] == b"AI_STATUS:ACTIVE" {
+                } else if len >= 16 && &line[..16] == b"AI_STATUS:ACTIVE" {
                     AI_BRIDGE_ACTIVE = true;
                     ai_push("BRIDGE: external model active.");
                 } else if len >= 6 && &line[..6] == b"AI_IN:" {

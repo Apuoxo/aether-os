@@ -116,8 +116,12 @@ def main() -> int:
                 if line:
                     log(line)
                 if line.startswith("AI_REQ:"):
-                    answer = model_answer(line[7:].strip(), args.model)
-                    wire = "AI_RES:" + answer.replace("\r", " ").replace("\n", " ") + "\n"
+                    try:
+                        answer = model_answer(line[7:].strip(), args.model)
+                        wire = "AI_RES:" + answer.replace("\r", " ").replace("\n", " ") + "\n"
+                    except Exception as exc:
+                        wire = "AI_RES:MODEL_ERROR " + str(exc).replace("\r", " ").replace("\n", " ")[:70] + "\n"
+                        log(wire.rstrip("\n"))
                     sock.sendall(wire.encode("utf-8", "replace"))
                     log(wire.rstrip("\n"))
                     if args.inject:
