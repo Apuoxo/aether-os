@@ -1050,10 +1050,28 @@ fn cmd_ethdiag() {
     write_str("======== ETHDIAG END ========\n");
 }
 
+
+fn cmd_net() {
+    let mut mac = [0u8; 6];
+    crate::drivers::net::mac(&mut mac);
+    write_str("======== AETHER RTL8168 NETWORK ========\n");
+    write_str("DRIVER=RTL8168EVL/8111EVL (r8169 family)\n");
+    write_str("FOUND="); write_str(if crate::drivers::net::found() { "YES" } else { "NO" });
+    write_str(" READY="); write_str(if crate::drivers::net::ready() { "YES" } else { "NO" });
+    write_str(" LINK="); write_str(if crate::drivers::net::link_up() { "UP" } else { "DOWN" });
+    write_str("\nMAC=");
+    for i in 0..6 { write_hex(mac[i] as usize); if i != 5 { write_str(":"); } }
+    write_str("\n");
+    write_str("DATAPATH=MMIO+DMA_RING_POLLING\n");
+    write_str("PROTOCOL=NOT_ENABLED_YET\n");
+    write_str("PING=NEXT_STAGE\n");
+    write_str("=========================================\n");
+}
+
 fn cmd_help() {
     write_str("Aether Terminal - native command interface\n");
     write_str("Core: HELP  CLS  VER  LOG  TANSI  SEARCH <text>\n");
-    write_str("Hardware: KMS5  VINFO  V800  V1366  AUD  AUD2  AUD3  MOUS  USB  WF  ETHDIAG  ETHCHIP\n");
+    write_str("Hardware: KMS5  VINFO  V800  V1366  AUD  AUD2  AUD3  MOUS  USB  WF  ETHDIAG  ETHCHIP  NET\n");
     write_str("Tip: Up/Down recalls command history; arrow keys scroll long output.\n");
 }
 
@@ -1076,7 +1094,7 @@ fn run_line(line: &[u8], len: usize) {
     while e > s && (line[e - 1] == b' ' || line[e - 1] == b'\r') { e -= 1; }
     let clen = e.saturating_sub(s);
 
-    if eq(line, s, clen, b"ETHCHIP") || eq(line, s, clen, b"ethchip") {
+    if eq(line, s, clen, b"NET") || eq(line, s, clen, b"net") {\n        cmd_net();\n    } else if eq(line, s, clen, b"ETHCHIP") || eq(line, s, clen, b"ethchip") {
         cmd_ethchip();
     } else if eq(line, s, clen, b"ETHDIAG") || eq(line, s, clen, b"ethdiag") {
         cmd_ethdiag();
