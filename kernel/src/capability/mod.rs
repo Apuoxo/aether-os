@@ -10,6 +10,11 @@ pub const CAP_EXEC: u32 = 1 << 2;
 pub const CAP_MAP: u32 = 1 << 3;
 pub const CAP_GRANT: u32 = 1 << 4;
 pub const CAP_ADMIN: u32 = 1 << 5;
+pub const CAP_ALL: u32 = CAP_READ | CAP_WRITE | CAP_EXEC | CAP_MAP | CAP_GRANT | CAP_ADMIN;
+
+/// Kernel-owned root authority for the Virt runtime. This is an explicit
+/// capability value; future resource boundaries can audit these rights.
+pub const VIRT_ROOT_CAP: Cap = Cap { id: 0x5652_4954, rights: CAP_ALL };
 
 const SLOT_BITS: usize = 4;
 const SLOT_MASK: usize = (1usize << SLOT_BITS) - 1;
@@ -164,6 +169,9 @@ pub fn self_test() -> bool {
         None => return false,
     };
     if h1 == h2 || t.check(h1, CAP_READ) || !t.check(h2, CAP_READ) {
+        return false;
+    }
+    if !VIRT_ROOT_CAP.permits(CAP_ALL) {
         return false;
     }
     true
