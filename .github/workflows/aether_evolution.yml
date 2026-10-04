@@ -81,6 +81,7 @@ jobs:
           COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN || github.token }}
         run: |
           set +e
+          truncate -s 32M /tmp/aether-state.img
           python3 .aether/tools/model_bridge.py \
             --host 127.0.0.1 \
             --port 45454 \
@@ -90,6 +91,7 @@ jobs:
           BRIDGE_PID=$!
           timeout 70s qemu-system-x86_64 \
             -cdrom kernel/build/aether.iso \
+            -drive file=/tmp/aether-state.img,format=raw,if=ide \
             -chardev socket,id=virtserial,host=127.0.0.1,port=45454,server=on,wait=off,nodelay=on \
             -device isa-serial,chardev=virtserial,iobase=0x3f8,irq=4,index=0 \
             -display none \
@@ -102,6 +104,17 @@ jobs:
           cat /tmp/aether-model-bridge.log
           test "$rc" = 0 || test "$rc" = 124
           ! grep -qi "PANIC" /tmp/aether-model-bridge.log
+          timeout 20s qemu-system-x86_64 \
+            -cdrom kernel/build/aether.iso \
+            -drive file=/tmp/aether-state.img,format=raw,if=ide \
+            -serial file:/tmp/aether-persistence-reboot.log \
+            -display none \
+            -m 128M \
+            -no-reboot
+          reboot_rc=$?
+          cat /tmp/aether-persistence-reboot.log
+          test "$reboot_rc" = 0 || test "$reboot_rc" = 124
+          grep -q '\\[VIRT EXPERIENCE\\] RESTORED /virt.exp' /tmp/aether-persistence-reboot.log
 
       - name: Analyze QEMU experience
         if: always()
