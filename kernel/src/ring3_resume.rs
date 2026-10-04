@@ -27,7 +27,6 @@ pub fn continue_boot() -> ! {
         serial::write_str("[DESKTOP] post-Ring3 start\n");
         drivers::video::init();
         drivers::audio::init();
-        drivers::net::init();
         drivers::wifi::init();
         drivers::pci_usb_diag::dump_usb_controllers();
         drivers::xhci::probe();
