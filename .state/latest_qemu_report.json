@@ -1,14 +1,14 @@
 {
   "schema": 1,
-  "run_id": "37210812989",
-  "commit": "554b2dde54bf81e3f2562feede928f830e4ca237",
-  "observed_at": "2026-10-04T14:52:23.812159Z",
+  "run_id": "37211160942",
+  "commit": "8dbb0430a600054b49539b654a082c6e429f5075",
+  "observed_at": "2026-10-04T14:59:49.897369Z",
   "outcome": "failure",
-  "qemu_exit": 255,
+  "qemu_exit": 124,
   "checks": {
-    "qemu_exit_accepted": false,
+    "qemu_exit_accepted": true,
     "panic_absent": true,
-    "build_banner": false,
+    "build_banner": true,
     "desktop_marker": false,
     "desktop_start": false,
     "ring3_evidence": false
