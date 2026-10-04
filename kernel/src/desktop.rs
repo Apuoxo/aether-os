@@ -412,6 +412,13 @@ fn ai_transport_poll() {
                         }
                     }
                     let body = &body[body_start..];
+                    if response_kind == 1 {
+                        let waiting = crate::virt_runtime::reasoning_waiting();
+                        let expected = crate::virt_runtime::reasoning_request_id();
+                        serial::write_str("AI_RX:REQ=R");
+                        serial::write_usize(response_id as usize);
+                        serial::write_str(if waiting && response_id == expected { " ROUTE=ACCEPT\n" } else { " ROUTE=REJECT\n" });
+                    }
                     if response_kind == 1
                         && crate::virt_runtime::reasoning_waiting()
                         && response_id == crate::virt_runtime::reasoning_request_id()
