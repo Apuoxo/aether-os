@@ -1025,7 +1025,15 @@ fn cmd_ethchip() {
         write_str(" ISR="); write_hex(isr as usize); write_str("\n");
         write_str("RDSAR_LO="); write_hex(rdsar_lo as usize);
         write_str(" TNPDS_LO="); write_hex(tnpds_lo as usize); write_str("\n");
-        write_str("READ_ONLY_REGS=PASS DMA_START=NO\n");
+
+        // Read-only PHY/link snapshot. Do not touch PHY command/control registers.
+        let phystat2 = unsafe { core::ptr::read_volatile((mmio as usize + 0x6C) as *const u8) };
+        let phy1 = ethchip_read32(mmio as usize, 0x60);
+        let phy2 = ethchip_read32(mmio as usize, 0x64);
+        write_str("PHY_STATUS_2="); write_hex(phystat2 as usize);
+        write_str(" PHY_REG60="); write_hex(phy1 as usize);
+        write_str(" PHY_REG64="); write_hex(phy2 as usize); write_str("\n");
+        write_str("PHY_READ_ONLY=PASS DMA_START=NO\n");
 
         write_str("ACTION=NONE RESET=NO DMA=NO TX=NO RX=NO\n");
         break;
