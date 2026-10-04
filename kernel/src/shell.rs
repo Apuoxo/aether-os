@@ -1540,7 +1540,7 @@ fn cmd_ethdma() {
 
                     let mut ack_done=false; let mut ack_idx=0usize; let mut ack_len=0usize;
                     let mut rp2=0usize;
-                    while rp2<2_000_000usize {
+                    while rp2<100_000_000usize {
                         let mut di=0usize;
                         while di<8 {
                             let st=unsafe{core::ptr::read_volatile(rx_desc.add(di*4) as *const u32)};
