@@ -266,6 +266,7 @@ pub extern "C" fn kernel_main(mbi: usize) -> ! {
     serial::write_hex(pmm_start);
     serial::write_str("\n");
     mm::init(pmm_start, 64 * 1024 * 1024);
+    virt_runtime::observe_system();
     // Capture the real Multiboot RAM value for the graphical boot screen.
     let detected_ram_mib = multiboot_usable_memory_mib(mbi);
     let managed_ram_mib = (mm::total_count() as u64) / 256;

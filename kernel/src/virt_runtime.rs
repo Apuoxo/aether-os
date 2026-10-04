@@ -14,6 +14,9 @@ static mut OBSERVATIONS: u64 = 0;
 static mut EVENTS: u64 = 0;
 static mut ACTIONS: u64 = 0;
 static mut REASONING_REQUESTS: u64 = 0;
+static mut LAST_RAM_TOTAL: usize = 0;
+static mut LAST_RAM_FREE: usize = 0;
+static mut LAST_PID: usize = 0;
 
 pub const STATE_OFF: u8 = 0;
 pub const STATE_AWAKE: u8 = 1;
@@ -30,6 +33,9 @@ pub fn init() {
         EVENTS = 0;
         ACTIONS = 0;
         REASONING_REQUESTS = 0;
+        LAST_RAM_TOTAL = 0;
+        LAST_RAM_FREE = 0;
+        LAST_PID = 0;
     }
     serial::write_str("[VIRT RUNTIME] ACTIVE STATE=AWAKE heartbeat=RTC-second\n");
 }
@@ -51,6 +57,43 @@ pub fn tick() {
             OBSERVATIONS = OBSERVATIONS.wrapping_add(1);
         }
     }
+}
+
+/// Capture the first real kernel-state observation owned by Virt Runtime.
+///
+/// This deliberately samples only state that is already initialized and does
+/// not trigger scheduling, I/O, model inference or any other side effect.
+pub fn observe_system() {
+    if !ready() {
+        return;
+    }
+    let total = crate::mm::total_count();
+    let free = crate::mm::free_count();
+    let pid = crate::process::current_pid();
+    unsafe {
+        LAST_RAM_TOTAL = total;
+        LAST_RAM_FREE = free;
+        LAST_PID = pid;
+    }
+    serial::write_str("[VIRT RUNTIME] OBSERVE RAM_TOTAL_PAGES=");
+    serial::write_usize(total);
+    serial::write_str(" RAM_FREE_PAGES=");
+    serial::write_usize(free);
+    serial::write_str(" PID=");
+    serial::write_usize(pid);
+    serial::write_str("\n");
+}
+
+pub fn last_ram_total_pages() -> usize {
+    unsafe { LAST_RAM_TOTAL }
+}
+
+pub fn last_ram_free_pages() -> usize {
+    unsafe { LAST_RAM_FREE }
+}
+
+pub fn last_pid() -> usize {
+    unsafe { LAST_PID }
 }
 
 pub fn ready() -> bool {
