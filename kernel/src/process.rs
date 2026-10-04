@@ -53,6 +53,7 @@ impl Process {
 static mut TABLE: [Process; MAX_PROCESSES] = [Process::empty(); MAX_PROCESSES];
 static mut NEXT_PID: usize = 1;
 static mut CURRENT_PID: usize = 0;
+static mut RUN_TICKS: [u64; MAX_PROCESSES] = [0; MAX_PROCESSES];
 
 pub fn current_pid() -> usize {
     unsafe { CURRENT_PID }
@@ -64,6 +65,57 @@ pub fn set_current(pid: usize) {
 
 pub fn free_count_before() -> usize {
     mm::free_count()
+}
+
+pub fn account_run(pid: usize, ticks: u64) {
+    unsafe {
+        let mut i = 0usize;
+        while i < MAX_PROCESSES {
+            if TABLE[i].pid == pid && TABLE[i].state != State::Empty {
+                RUN_TICKS[i] = RUN_TICKS[i].wrapping_add(ticks);
+                return;
+            }
+            i += 1;
+        }
+    }
+}
+
+pub fn get_run_ticks(pid: usize) -> u64 {
+    unsafe {
+        let mut i = 0usize;
+        while i < MAX_PROCESSES {
+            if TABLE[i].pid == pid && TABLE[i].state != State::Empty {
+                return RUN_TICKS[i];
+            }
+            i += 1;
+        }
+        0
+    }
+}
+
+/// Small native process fixture used only by opt-in SMP terminal validation.
+pub fn create_kernel_test() -> Option<usize> {
+    unsafe {
+        let mut i = 0usize;
+        while i < MAX_PROCESSES {
+            if TABLE[i].state == State::Empty {
+                let pid = NEXT_PID;
+                NEXT_PID += 1;
+                let mut p = Process::empty();
+                p.pid = pid;
+                p.state = State::Ready;
+                p.name[0] = b'S'; p.name[1] = b'M'; p.name[2] = b'P';
+                p.name_len = 3;
+                p.caps.entries[0] = Cap::new(1, CAP_READ);
+                p.caps.used = 1;
+                TABLE[i] = p;
+                RUN_TICKS[i] = 0;
+                return Some(pid);
+            }
+            i += 1;
+        }
+        None
+    }
 }
 
 /// Create process from already-loaded ELF image

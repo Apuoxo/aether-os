@@ -27,6 +27,7 @@ mod fb;
 mod ai_agent;
 mod virt_core;
 mod virt_runtime;
+mod smp;
 mod desktop;
 mod files_mgr;
 mod ring3_resume;
@@ -298,6 +299,7 @@ pub extern "C" fn kernel_main(mbi: usize) -> ! {
     arch::x86_64::idt::init();
     vga_mark(6, b'I'); // IDT
     serial::write_str("[OK] GDT+IDT\n");
+    smp::init();
     if crate::capability::self_test() {
         serial::write_str("[CAP-TEST] rights/derive/revoke PASS\n");
     } else {

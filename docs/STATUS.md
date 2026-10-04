@@ -272,3 +272,5 @@ Use these status words consistently:
 - **Historical** — retained for record; not current behavior.
 
 Never mark a feature Verified merely because a source file or UI exists.
+
+- SMP: opt-in AH532 multi-AP long mode 4/4; CPU1/CPU6/CPU19/CPU20 validation path.
