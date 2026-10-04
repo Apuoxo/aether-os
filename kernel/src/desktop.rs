@@ -339,7 +339,14 @@ fn ai_transport_request(bytes: &[u8]) {
     let mut i = 0usize;
     while i < n { line[p + i] = bytes[i]; i += 1; }
     ai_push_bytes(&line[..p + n]);
-    serial::write_str("AI_REQ:");
+    let request_id = unsafe {
+        let id = AI_REQUEST_SEQ;
+        AI_REQUEST_SEQ = AI_REQUEST_SEQ.wrapping_add(1);
+        id
+    };
+    serial::write_str("AI_REQ:REQ=U");
+    serial::write_usize(request_id as usize);
+    serial::write_str(" ");
     let mut j = 0usize;
     while j < n {
         let b = bytes[j];

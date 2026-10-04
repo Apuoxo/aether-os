@@ -87,7 +87,7 @@ jobs:
             --model "gpt-5.4" \
             > /tmp/aether-model-bridge.log 2>&1 &
           BRIDGE_PID=$!
-          timeout 20s qemu-system-x86_64 \
+          timeout 70s qemu-system-x86_64 \
             -cdrom kernel/build/aether.iso \
             -serial tcp:127.0.0.1:45454,server=on,wait=off,nodelay=on \
             -display none \
