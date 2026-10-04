@@ -54,7 +54,7 @@ pub fn init(mbi: usize, kernel_end: usize) {
         SESSION_ID = sid;
         READY = true;
     }
-    serial::write_str("[VIRT CORE] ID=VIRT MODE=RO LOC=KERNEL BACKEND=EXTERNAL SESSION=");
+    serial::write_str("[VIRT CORE] ID=VIRT MODE=ROOT LOC=KERNEL BACKEND=EXTERNAL RIGHTS=RWMXGA SESSION=");
     serial::write_hex(sid as usize);
     serial::write_str("\n");
 }
