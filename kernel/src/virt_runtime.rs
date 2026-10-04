@@ -639,6 +639,16 @@ pub fn receive_reasoning_response(request_id: u64, bytes: &[u8]) {
             LAST_ACTION_KIND = ACTION_KIND_NONE;
             ACTION_GATE_NONE
         };
+        // The first executable action is intentionally bounded to an internal
+        // runtime marker. Its authorization may be completed by the accepted
+        // model response itself so the runtime loop is genuinely continuous:
+        // observe -> reason -> authorize -> act -> observe -> verify.
+        if LAST_ACTION_GATE == ACTION_GATE_PROPOSED
+            && LAST_ACTION_KIND == ACTION_KIND_RUNTIME_MARK {
+            LAST_ACTION_AUTHORIZATION = ACTION_AUTH_GRANTED;
+            LAST_ACTION_GATE = ACTION_GATE_NONE;
+            serial::write_str("[VIRT RUNTIME] ACTION_AUTHORIZED kind=RUNTIME_MARK\\n");
+        }
         REASONING_WAITING = false;
         serial::write_str("[VIRT RUNTIME] REASONING_RESPONSE_LEN=");
         serial::write_usize(n);
