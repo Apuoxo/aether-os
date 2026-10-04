@@ -209,7 +209,13 @@ pub fn init() {
         SYSTEM_HISTORY_COUNT = 0;
         SYSTEM_HISTORY_NEXT_SEQUENCE = 1;
     }
-    serial::write_str("[VIRT RUNTIME] ACTIVE STATE=AWAKE heartbeat=RTC-second\n");
+    serial::write_str("[VIRT RUNTIME] ACTIVE STATE=AWAKE heartbeat=RTC-second AUTH=");
+    if crate::capability::VIRT_ROOT_CAP.permits(crate::capability::CAP_ALL) {
+        serial::write_str("ROOT");
+    } else {
+        serial::write_str("NONE");
+    }
+    serial::write_str("\n");
 }
 
 pub fn tick() {
