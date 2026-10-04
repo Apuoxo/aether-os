@@ -890,7 +890,6 @@ fn cmd_help() {
     write_str("Aether Terminal - native command interface\n");
     write_str("Core: HELP  CLS  VER  LOG  TANSI  SEARCH <text>\n");
     write_str("Hardware: KMS5  VINFO  V800  V1366  AUD  AUD2  AUD3  MOUS  USB  WF  NET\n");
-    write_str("SMP: CPU1  CPU6  CPU19  CPU20\n");
     write_str("Tip: Up/Down recalls command history; arrow keys scroll long output.\n");
 }
 
@@ -913,83 +912,6 @@ fn run_line(line: &[u8], len: usize) {
     while e > s && (line[e - 1] == b' ' || line[e - 1] == b'\r') { e -= 1; }
     let clen = e.saturating_sub(s);
 
-fn cmd_cpu1() {
-    write_str("CPU1 -> LAPIC=");
-    write_hex(crate::smp::LAPIC_BASE);
-    write_str(" ");
-    write_str(if crate::smp::probe_lapic_only() { "LAPIC_OK\n" } else { "LAPIC_FAIL\n" });
-}
-
-fn cmd_cpu6() {
-    write_str("CPU6 -> ");
-    if crate::smp::stage_all_aps() {
-        write_str("ONLINE=");
-        write_usize(crate::smp::online_count() as usize);
-        write_str("/4 PASS MULTI-AP LONG MODE\n");
-    } else {
-        write_str("FAIL ONLINE=");
-        write_usize(crate::smp::online_count() as usize);
-        write_str("/4\n");
-    }
-}
-
-fn wait_run_ticks(pid: usize, before: u64) -> bool {
-    let mut spins = 0usize;
-    while spins < 2_000_000 {
-        if crate::process::get_run_ticks(pid) >= before + crate::smp::AP_QUANTUM as u64 {
-            return true;
-        }
-        core::hint::spin_loop();
-        spins += 1;
-    }
-    false
-}
-
-fn cmd_cpu19() {
-    if crate::smp::online_count() < 4 {
-        write_str("CPU19 -> REQUIRE CPU6 FIRST\n");
-        return;
-    }
-    let p1 = crate::process::create_kernel_test();
-    let p2 = crate::process::create_kernel_test();
-    let p3 = crate::process::create_kernel_test();
-    let (a,b,c) = match (p1,p2,p3) {
-        (Some(a),Some(b),Some(c)) => (a,b,c),
-        _ => { write_str("CPU19 -> PROC_CREATE_FAIL\n"); return; }
-    };
-    let before = [crate::process::get_run_ticks(a), crate::process::get_run_ticks(b), crate::process::get_run_ticks(c)];
-    let ok = crate::smp::migrate_token(1,a)
-        && crate::smp::migrate_token(2,b)
-        && crate::smp::migrate_token(3,c)
-        && wait_run_ticks(a,before[0])
-        && wait_run_ticks(b,before[1])
-        && wait_run_ticks(c,before[2]);
-    write_str(if ok { "CPU19 -> PASS AP QUANTUM 10\n" } else { "CPU19 -> FAIL AP QUANTUM\n" });
-}
-
-fn cmd_cpu20() {
-    if crate::smp::online_count() < 4 {
-        write_str("CPU20 -> REQUIRE CPU6 FIRST\n");
-        return;
-    }
-    let pid = match crate::process::create_kernel_test() {
-        Some(p) => p,
-        None => { write_str("CPU20 -> PROC_CREATE_FAIL\n"); return; }
-    };
-    let before = crate::process::get_run_ticks(pid);
-    // balance_enqueue() already performs the single enqueue. Do not enqueue
-    // the same PID a second time: that would turn one test quantum into two.
-    let cpu = crate::smp::balance_enqueue(pid);
-    if cpu == 0 {
-        write_str("CPU20 -> RQ_ENQUEUE_FAIL\n");
-        return;
-    }
-    write_str("CPU20 -> ENQ CPU=");
-    write_usize(cpu);
-    write_str("\n");
-    let ok = wait_run_ticks(pid,before);
-    write_str(if ok { "CPU20 -> PASS PURE RQ DRAIN QUANTUM\n" } else { "CPU20 -> FAIL PURE RQ DRAIN\n" });
-}
 
     if eq(line, s, clen, b"CPU1") || eq(line, s, clen, b"cpu1") {
         cmd_cpu1();
