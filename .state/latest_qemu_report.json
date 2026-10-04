@@ -1,21 +1,29 @@
 {
   "schema": 1,
-  "run_id": "37224563454",
-  "commit": "13da709072f1d61f72caf073290731ecf290c85d",
-  "observed_at": "2026-10-04T18:29:11.745294Z",
-  "outcome": "failure",
-  "qemu_exit": 255,
+  "run_id": "37227178690",
+  "commit": "918917aaf1d0f9da6bb1ded426d1631beddb3961",
+  "observed_at": "2026-10-04T19:11:48.750057Z",
+  "outcome": "success",
+  "qemu_exit": 124,
   "checks": {
-    "qemu_exit_accepted": false,
+    "qemu_exit_accepted": true,
     "panic_absent": true,
-    "build_banner": false,
-    "desktop_marker": false,
-    "desktop_start": false,
+    "build_banner": true,
+    "desktop_marker": true,
+    "desktop_start": true,
     "ring3_evidence": false
   },
   "observations": [
-    "No Ring3 execution evidence observed; QEMU validation remains pre-Ring3."
+    "Aether Desktop initialization observed in QEMU serial output.",
+    "Native desktop start marker observed.",
+    "No Ring3 execution evidence observed; QEMU validation remains pre-Ring3.",
+    "QEMU has no Intel Gen6 display controller; this is virtual-hardware evidence, not AH532 evidence.",
+    "QEMU has no native HDA controller; audio hardware behavior is not validated here.",
+    "QEMU has no target Intel WLAN device; Wi-Fi hardware behavior is not validated here.",
+    "QEMU xHCI validation is unavailable in this run.",
+    "Embedded media file open path was reached.",
+    "Framebuffer test pattern reached the render stage."
   ],
-  "conclusion": "QEMU validation did not satisfy all required startup markers; retain the failure as bounded experience.",
-  "next_step": "Inspect the failed marker or exit condition before making another code change."
+  "conclusion": "QEMU boot reached Aether Desktop without PANIC; evidence is valid for kernel/ISO/QEMU startup but does not establish AH532 hardware behavior or Ring3 execution.",
+  "next_step": "Use the recorded QEMU evidence as the baseline and choose the next single controlled validation."
 }
