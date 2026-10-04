@@ -114,6 +114,9 @@ def main() -> int:
                     except Exception as exc:
                         wire = "AI_RES:" + request_tag + ":MODEL_ERROR " + str(exc).replace("\r", " ").replace("\n", " ")[:70] + "\n"
                         log(wire.rstrip("\n"))
+                    # Let the guest return to its RX polling loop before the
+                    # bounded response enters the UART FIFO.
+                    time.sleep(0.05)
                     sock.sendall(wire.encode("utf-8", "replace"))
                     log(wire.rstrip("\n"))
                     if args.inject:
