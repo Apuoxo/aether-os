@@ -196,6 +196,35 @@ fn eq(line: &[u8], s: usize, clen: usize, b: &[u8]) -> bool {
     true
 }
 
+fn cmd_log() {
+    let mut buf = [0u8; 8192];
+    let n = serial::trace_snapshot(&mut buf);
+    write_str("======== AETHER RUNTIME LOG ========\n");
+    write_str("SOURCE=SERIAL TRACE RING (latest 8192 bytes)\n");
+    if n == 0 {
+        write_str("EMPTY\n");
+    } else {
+        let mut i = 0usize;
+        while i < n {
+            let b = buf[i];
+            if b == b'\r' {
+                // Serial CR is paired with LF; do not duplicate it in the GUI.
+            } else if b >= 32 && b < 127 {
+                putc(b);
+            } else if b == b'\n' {
+                putc(b'\n');
+            } else {
+                putc(b'.');
+            }
+            i += 1;
+        }
+        if n > 0 && buf[n - 1] != b'\n' {
+            putc(b'\n');
+        }
+    }
+    write_str("======== LOG END ========\n");
+}
+
 // COMMANDS INTENTIONALLY REMOVED FOR TERMINAL NULL TEST.
 // WiFi implementation command only. All unrelated terminal commands remain removed.
 
@@ -835,7 +864,7 @@ fn cmd_video_mode(w: u16, h: u16) {
 
 fn cmd_help() {
     write_str("Aether Terminal - native command interface\n");
-    write_str("Core: HELP  CLS  VER  TANSI  SEARCH <text>\n");
+    write_str("Core: HELP  CLS  VER  LOG  TANSI  SEARCH <text>\n");
     write_str("Hardware: KMS5  VINFO  V800  V1366  AUD  AUD2  AUD3  MOUS  USB  WF\n");
     write_str("Tip: Up/Down recalls command history; arrow keys scroll long output.\n");
 }
@@ -864,6 +893,8 @@ fn run_line(line: &[u8], len: usize) {
         crate::desktop::terminal_clear();
     } else if eq(line, s, clen, b"VER") || eq(line, s, clen, b"ver") {
         cmd_ver();
+    } else if eq(line, s, clen, b"LOG") || eq(line, s, clen, b"log") {
+        cmd_log();
     } else if eq(line, s, clen, b"TANSI") || eq(line, s, clen, b"tansi") {
         cmd_tansi();
     } else if clen >= 7 && (line[s]==b'S'||line[s]==b's')&&(line[s+1]==b'E'||line[s+1]==b'e')&&(line[s+2]==b'A'||line[s+2]==b'a')&&(line[s+3]==b'R'||line[s+3]==b'r')&&(line[s+4]==b'C'||line[s+4]==b'c')&&(line[s+5]==b'H'||line[s+5]==b'h')&&line[s+6]==b' ' {

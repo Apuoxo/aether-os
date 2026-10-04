@@ -15,6 +15,39 @@ mod ports {
 
 static mut ENABLED: bool = false;
 
+// Bounded runtime trace. The newest bytes are retained so diagnostics can be
+// inspected from the terminal without requiring a network or persistent FS.
+const TRACE_CAP: usize = 8192;
+static mut TRACE: [u8; TRACE_CAP] = [0; TRACE_CAP];
+static mut TRACE_HEAD: usize = 0;
+static mut TRACE_LEN: usize = 0;
+
+fn trace_push(b: u8) {
+    unsafe {
+        TRACE[TRACE_HEAD] = b;
+        TRACE_HEAD = (TRACE_HEAD + 1) % TRACE_CAP;
+        if TRACE_LEN < TRACE_CAP {
+            TRACE_LEN += 1;
+        }
+    }
+}
+
+/// Copy the newest runtime trace bytes in chronological order.
+pub fn trace_snapshot(out: &mut [u8]) -> usize {
+    unsafe {
+        let n = TRACE_LEN.min(out.len());
+        if n == 0 { return 0; }
+        let start = (TRACE_HEAD + TRACE_CAP - TRACE_LEN) % TRACE_CAP;
+        let skip = TRACE_LEN - n;
+        let mut i = 0usize;
+        while i < n {
+            out[i] = TRACE[(start + skip + i) % TRACE_CAP];
+            i += 1;
+        }
+        n
+    }
+}
+
 pub fn init() {
     unsafe {
         use ports::*;
@@ -41,6 +74,7 @@ pub fn write_byte(b: u8) {
         if !ENABLED {
             return;
         }
+        trace_push(b);
         use ports::*;
         // Timeout — never hang if UART stuck
         let mut t = 0u32;
