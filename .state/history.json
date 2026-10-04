@@ -1992,9 +1992,46 @@
       ],
       "conclusion": "QEMU boot reached Aether Desktop without PANIC; evidence is valid for kernel/ISO/QEMU startup but does not establish AH532 hardware behavior or Ring3 execution.",
       "next_step": "Use the recorded QEMU evidence as the baseline and choose the next single controlled validation."
+    },
+    {
+      "type": "qemu_observation",
+      "event_id": "comm-000046",
+      "communication_event": {
+        "event_id": "comm-000046",
+        "type": "observation",
+        "actor": "agent-aether",
+        "channel": "qemu_serial",
+        "observed_at": "2026-10-04T12:56:55.174194Z",
+        "payload": {
+          "observed_at": "2026-10-04T12:56:55.174194Z",
+          "run_id": "37203826491",
+          "commit": "f81447a436b88ec2815d11e8032ffccd0b9a7bc8",
+          "outcome": "failure",
+          "qemu_exit": 255
+        },
+        "correlation_id": "qemu-37203826491"
+      },
+      "run_id": "37203826491",
+      "commit": "f81447a436b88ec2815d11e8032ffccd0b9a7bc8",
+      "observed_at": "2026-10-04T12:56:55.174194Z",
+      "outcome": "failure",
+      "qemu_exit": 255,
+      "checks": {
+        "qemu_exit_accepted": false,
+        "panic_absent": true,
+        "build_banner": false,
+        "desktop_marker": false,
+        "desktop_start": false,
+        "ring3_evidence": false
+      },
+      "observations": [
+        "No Ring3 execution evidence observed; QEMU validation remains pre-Ring3."
+      ],
+      "conclusion": "QEMU validation did not satisfy all required startup markers; retain the failure as bounded experience.",
+      "next_step": "Inspect the failed marker or exit condition before making another code change."
     }
   ],
-  "last_updated": "2026-10-04T12:49:22.164328Z",
-  "last_run_id": "37203313887",
+  "last_updated": "2026-10-04T12:56:55.174194Z",
+  "last_run_id": "37203826491",
   "last_communication_event": "comm-000001"
 }
