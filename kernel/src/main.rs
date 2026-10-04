@@ -43,7 +43,7 @@ mod shell;
 mod userspace;
 mod elf;
 mod elf_blobs;
-mod drivers { pub mod intel_igpu; pub mod intel_kms; pub mod ps2; pub mod xhci; pub mod ata; pub mod ahci; pub mod pci_usb_diag; pub mod video; pub mod audio; pub mod net; pub mod wifi; }
+mod drivers { pub mod intel_igpu; pub mod intel_kms; pub mod ps2; pub mod xhci; pub mod ata; pub mod ahci; pub mod pci_usb_diag; pub mod video; pub mod audio; pub mod wifi; }
 mod personalities {
     pub mod linux;
     pub mod windows;
@@ -449,7 +449,6 @@ pub extern "C" fn kernel_main(mbi: usize) -> ! {
         desktop::terminal_write(if detected_ram_mib > managed_ram_mib { "YES\\n" } else { "NO\\n" });
         drivers::audio::init();
         media_player::init();
-        drivers::net::init();
         drivers::wifi::init();
         drivers::pci_usb_diag::dump_usb_controllers();
         drivers::xhci::probe();

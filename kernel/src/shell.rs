@@ -862,30 +862,6 @@ fn cmd_video_mode(w: u16, h: u16) {
     write_str(" H="); write_usize(crate::graphics::height()); write_str("\n");
 }
 
-fn cmd_net() {
-    let mut mac = [0u8; 6];
-    crate::drivers::net::eth_mac(&mut mac);
-    write_str("======== AETHER NETWORK STATE ========\\n");
-    write_str("ETH="); write_str(if crate::drivers::net::eth_found() { "FOUND" } else { "NO" });
-    write_str(" RTL="); write_str(if crate::drivers::net::eth_is_rtl() { "YES" } else { "NO" });
-    write_str(" READY="); write_str(if crate::drivers::net::ready() { "YES" } else { "NO" });
-    write_str(" LINK="); write_str(if crate::drivers::net::link_up() { "UP" } else { "DOWN/UNKNOWN" });
-    write_str("\\nVID:DID="); write_hex(((crate::drivers::net::eth_vid() as usize) << 16) | crate::drivers::net::eth_did() as usize);
-    write_str(" BAR0="); write_hex(crate::drivers::net::eth_bar0() as usize);
-    write_str("\\nMAC=");
-    let mut i = 0usize;
-    while i < 6 { write_hex(mac[i] as usize); if i + 1 < 6 { write_str(":"); } i += 1; }
-    write_str(" MAC_OK="); write_str(if crate::drivers::net::eth_mac_ok() { "YES" } else { "NO" });
-    let (found, ready, link, observed_mac, count) = crate::ai_agent::last_network_state();
-    write_str("\\nVIRT_NET=OBSERVED FOUND="); write_usize(found as usize);
-    write_str(" READY="); write_usize(ready as usize); write_str(" LINK="); write_usize(link as usize);
-    write_str(" OBS="); write_usize(count as usize); write_str(" MAC=");
-    i = 0usize;
-    while i < 6 { write_hex(observed_mac[i] as usize); if i + 1 < 6 { write_str(":"); } i += 1; }
-    write_str("\\nDATAPATH=NO-TXRX-DMA IP=NONE ARP=NONE ICMP=NONE\\n");
-    write_str("======================================\\n");
-}
-
 fn cmd_help() {
     write_str("Aether Terminal - native command interface\n");
     write_str("Core: HELP  CLS  VER  LOG  TANSI  SEARCH <text>\n");
@@ -938,8 +914,6 @@ fn run_line(line: &[u8], len: usize) {
         write_str("RESULT=");
         write_str(if ok { "EXECUTION-STARTED" } else { "EXECUTION-BLOCKED" });
         write_str("\\n======== WINAMP END ========\\n");
-    } else if eq(line, s, clen, b"NET") || eq(line, s, clen, b"net") {
-        cmd_net();
     } else if eq(line, s, clen, b"WF") || eq(line, s, clen, b"wf") {
         cmd_wf();
     } else if eq(line, s, clen, b"MOUS") || eq(line, s, clen, b"mous") {
