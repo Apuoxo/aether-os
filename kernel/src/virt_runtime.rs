@@ -29,6 +29,7 @@ static mut LAST_PROCESS_EVENT_NEW_STATE: u8 = 0;
 static mut LAST_PROCESS_STATES: [u8; crate::process::MAX_PROCESSES] = [0; crate::process::MAX_PROCESSES];
 static mut PREVIOUS_PROCESS_STATES: [u8; crate::process::MAX_PROCESSES] = [0; crate::process::MAX_PROCESSES];
 static mut LAST_DECISION: u8 = 0;
+static mut LAST_REASONING_GATE: u8 = 0;
 
 pub const PROCESS_EVENT_NONE: u8 = 0;
 pub const PROCESS_EVENT_APPEARED: u8 = 1;
@@ -39,6 +40,10 @@ pub const DECISION_NONE: u8 = 0;
 pub const DECISION_MONITOR: u8 = 1;
 pub const DECISION_INSPECT_PROCESS: u8 = 2;
 pub const DECISION_REVIEW_STATE_CHANGE: u8 = 3;
+
+pub const REASONING_GATE_NONE: u8 = 0;
+pub const REASONING_GATE_SKIP: u8 = 1;
+pub const REASONING_GATE_REQUEST: u8 = 2;
 
 pub const STATE_OFF: u8 = 0;
 pub const STATE_AWAKE: u8 = 1;
@@ -69,6 +74,7 @@ pub fn init() {
         LAST_PROCESS_STATES = [0; crate::process::MAX_PROCESSES];
         PREVIOUS_PROCESS_STATES = [0; crate::process::MAX_PROCESSES];
         LAST_DECISION = DECISION_NONE;
+        LAST_REASONING_GATE = REASONING_GATE_NONE;
     }
     serial::write_str("[VIRT RUNTIME] ACTIVE STATE=AWAKE heartbeat=RTC-second\n");
 }
@@ -83,6 +89,7 @@ pub fn tick() {
             OBSERVATIONS = OBSERVATIONS.wrapping_add(1);
             observe_processes();
             decide();
+            evaluate_reasoning_gate();
         }
     }
 }
@@ -200,6 +207,24 @@ pub fn decide() -> u8 {
     unsafe { LAST_DECISION = decision; }
     decision
 }
+
+/// Decide whether the current decision is important enough to hand to a reasoning backend.
+///
+/// This is only a gate. It does not call a model and does not increment the
+/// reasoning-request counter; that counter remains reserved for an actual
+/// transport request.
+pub fn evaluate_reasoning_gate() -> u8 {
+    let gate = unsafe {
+        match LAST_DECISION {
+            DECISION_REVIEW_STATE_CHANGE => REASONING_GATE_REQUEST,
+            _ => REASONING_GATE_SKIP,
+        }
+    };
+    unsafe { LAST_REASONING_GATE = gate; }
+    gate
+}
+
+pub fn last_reasoning_gate() -> u8 { unsafe { LAST_REASONING_GATE } }
 
 pub fn last_decision() -> u8 { unsafe { LAST_DECISION } }
 pub fn last_process_count() -> usize { unsafe { LAST_PROCESS_COUNT } }
