@@ -57,6 +57,7 @@ static mut LAST_SYSTEM_CHANGE_OLD_STATE: u8 = SYSTEM_STATE_UNKNOWN;
 static mut LAST_SYSTEM_CHANGE_NEW_STATE: u8 = SYSTEM_STATE_UNKNOWN;
 static mut LAST_SYSTEM_CHANGE_SEQUENCE: u32 = 0;
 static mut LAST_UNDERSTANDING: u8 = UNDERSTANDING_NONE;
+static mut EXPERIENCE_RESTORED: bool = false;
 
 /// Fixed three-hour whole-OS operational history.
 /// One snapshot is recorded per runtime heartbeat (one RTC second).
@@ -201,6 +202,7 @@ pub fn init() {
         LAST_SYSTEM_CHANGE_NEW_STATE = SYSTEM_STATE_UNKNOWN;
         LAST_SYSTEM_CHANGE_SEQUENCE = 0;
         LAST_UNDERSTANDING = UNDERSTANDING_NONE;
+        EXPERIENCE_RESTORED = false;
         SYSTEM_HISTORY_STATES =
             [[SYSTEM_STATE_UNKNOWN; SYSTEM_SUBSYSTEM_COUNT]; SYSTEM_HISTORY_SECONDS];
         SYSTEM_HISTORY_HEALTH = [SYSTEM_HEALTH_UNKNOWN; SYSTEM_HISTORY_SECONDS];
@@ -635,6 +637,8 @@ fn emit_reasoning_request() {
         serial::write_usize(LAST_UNDERSTANDING as usize);
         serial::write_str(" DEC=");
         serial::write_usize(LAST_DECISION as usize);
+        serial::write_str(" EXPERIENCE=");
+        serial::write_str(if EXPERIENCE_RESTORED { "RESTORED" } else { "NONE" });
         serial::write_str("\n");
     }
 }
@@ -670,6 +674,23 @@ pub fn receive_reasoning_response(request_id: u64, bytes: &[u8]) {
             serial::write_str("[VIRT RUNTIME] ACTION_AUTHORIZED kind=RUNTIME_MARK\\n");
         }
         REASONING_WAITING = false;
+        let mut record = [0u8; 192];
+        record[0] = b'V'; record[1] = b'X'; record[2] = b'P'; record[3] = b'1';
+        record[4] = LAST_REASONING_CLASSIFICATION;
+        record[5] = LAST_UNDERSTANDING;
+        record[6] = LAST_DECISION;
+        record[7] = SYSTEM_STATE_HEALTH;
+        let id = request_id.to_le_bytes();
+        let mut k = 0usize;
+        while k < 8 { record[8 + k] = id[k]; k += 1; }
+        record[16] = n as u8;
+        let mut r = 0usize;
+        while r < n && r < 128 { record[17 + r] = LAST_REASONING_RESPONSE[r]; r += 1; }
+        if crate::fs::write_large("/virt.exp", &record[..17 + n]) {
+            serial::write_str("[VIRT EXPERIENCE] PERSISTED /virt.exp\\n");
+        } else {
+            serial::write_str("[VIRT EXPERIENCE] PERSIST_FAIL /virt.exp\\n");
+        }
         serial::write_str("[VIRT RUNTIME] REASONING_RESPONSE_LEN=");
         serial::write_usize(n);
         serial::write_str("\n");
@@ -715,6 +736,26 @@ fn classify_reasoning_response(len: usize) -> u8 {
         return REASONING_CLASS_ACTION;
     }
     REASONING_CLASS_TEXT
+}
+
+pub fn restore_persisted_experience() {
+    let mut record = [0u8; 192];
+    let n = match crate::fs::read_large("/virt.exp", &mut record) { Some(n) => n, None => return };
+    if n < 18 || &record[..4] != b"VXP1" { return; }
+    unsafe {
+        LAST_REASONING_CLASSIFICATION = record[4];
+        LAST_UNDERSTANDING = record[5];
+        LAST_DECISION = record[6];
+        SYSTEM_STATE_HEALTH = record[7];
+        let response_len = (record[16] as usize).min(128).min(n.saturating_sub(17));
+        let mut i = 0usize;
+        while i < response_len { LAST_REASONING_RESPONSE[i] = record[17 + i]; i += 1; }
+        LAST_REASONING_RESPONSE_LEN = response_len;
+        EXPERIENCE_RESTORED = true;
+        serial::write_str("[VIRT EXPERIENCE] RESTORED /virt.exp bytes=");
+        serial::write_usize(response_len);
+        serial::write_str("\\n");
+    }
 }
 
 pub fn last_reasoning_response_len() -> usize { unsafe { LAST_REASONING_RESPONSE_LEN } }
