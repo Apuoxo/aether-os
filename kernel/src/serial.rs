@@ -55,7 +55,16 @@ pub fn write_byte(b: u8) {
     }
 }
 
-pub fn read_byte() -> Option<u8> {\n    unsafe {\n        if !ENABLED { return None; }\n        use ports::*;\n        if (inb(0x3F8 + 5) & 0x01) == 0 { return None; }\n        Some(inb(0x3F8))\n    }\n}\n\npub fn write_str(s: &str) {
+pub fn read_byte() -> Option<u8> {
+    unsafe {
+        if !ENABLED { return None; }
+        use ports::*;
+        if (inb(0x3F8 + 5) & 0x01) == 0 { return None; }
+        Some(inb(0x3F8))
+    }
+}
+
+pub fn write_str(s: &str) {
     for &b in s.as_bytes() {
         if b == b'\n' {
             write_byte(b'\r');

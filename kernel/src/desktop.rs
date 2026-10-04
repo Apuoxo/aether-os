@@ -231,7 +231,14 @@ fn ai_transport_request(bytes: &[u8]) {
     unsafe { AI_WAITING = true; }
 }
 
-fn ai_init() {\n    unsafe { if AI_READY { return; } AI_READY = true; }\n    ai_push("AETHER AI: text interface online.");\n    ai_push("BRIDGE: transport endpoint ready; waiting for external model.");\n    ai_push("TYPE A MESSAGE AND PRESS ENTER.");\n}\n\nfn ai_submit() {
+fn ai_init() {
+    unsafe { if AI_READY { return; } AI_READY = true; }
+    ai_push("AETHER AI: text interface online.");
+    ai_push("BRIDGE: transport endpoint ready; waiting for external model.");
+    ai_push("TYPE A MESSAGE AND PRESS ENTER.");
+}
+
+fn ai_submit() {
     unsafe {
         if AI_INPUT_LEN == 0 { return; }
         let input = AI_INPUT;
@@ -4078,7 +4085,8 @@ pub fn run() -> ! {
     render();
 
     loop {
-        ai_transport_poll();\n        ps2::poll();
+        ai_transport_poll();
+        ps2::poll();
         let (pmx, pmy) = ps2::mouse_pos();
         let pbtn = ps2::mouse_buttons();
         unsafe {
