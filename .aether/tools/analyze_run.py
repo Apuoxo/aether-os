@@ -30,7 +30,10 @@ def main():
     desktop = marker(log, "Aether Desktop v1.1 XP", "Aether Desktop")
     banner = marker(log, "Aether OS Build")
     desktop_start = marker(log, "[DESKTOP] starting")
-    ring3 = (\n        marker(log, "entering Ring3", "Ring3 started", "Ring3 execution", "userspace Ring3")\n        and not marker(log, "boot test deferred", "no Ring3")\n    )
+    ring3 = (
+        marker(log, "entering Ring3", "Ring3 started", "Ring3 execution", "userspace Ring3")
+        and not marker(log, "boot test deferred", "no Ring3")
+    )
     outcome = "success" if qemu_exit_ok and not panic and banner and desktop else "failure"
 
     observations = []
