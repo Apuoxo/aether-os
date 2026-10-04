@@ -7,7 +7,8 @@ use crate::serial;
 
 const VID: u16 = 0x10EC;
 const DID: u16 = 0x8168;
-const XID_EVL: u32 = 0x2C8;
+const XID_EVL_MASK: u32 = 0x7C8;
+const XID_EVL_VALUE: u32 = 0x2C8;
 
 const CR: usize = 0x37;
 const TPPOLL: usize = 0x38;
@@ -200,7 +201,7 @@ pub fn init() {
         serial::write_str(" XID=");
         serial::write_hex(xid as usize);
         serial::write_str("\n");
-        if xid != XID_EVL {
+        if (xid & XID_EVL_MASK) != XID_EVL_VALUE {
             serial::write_str("[NET] XID is not RTL8168EVL; read-only probe stops\n");
             return;
         }
