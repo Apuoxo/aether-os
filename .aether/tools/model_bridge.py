@@ -43,7 +43,8 @@ def model_answer(message: str, model: str) -> str:
     )
     answer = " ".join(result.stdout.strip().split())
     if result.returncode != 0 or not answer:
-        raise RuntimeError("external model request failed")
+        detail = answer[:70] if answer else "no model output"
+        raise RuntimeError(f"external model request failed rc={result.returncode} detail={detail}")
     return answer[:90]
 
 

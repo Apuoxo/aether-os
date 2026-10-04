@@ -78,6 +78,7 @@ jobs:
         continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN || github.token }}
         run: |
           set +e
           python3 .aether/tools/model_bridge.py \
@@ -126,7 +127,7 @@ jobs:
           grep -q '^AI_IN:' /tmp/aether-model-bridge.log
           grep -q '^AI_REQ:' /tmp/aether-model-bridge.log
           grep -q '^AI_RES:' /tmp/aether-model-bridge.log
-          ! grep -q '^AI_RES:External model request failed' /tmp/aether-model-bridge.log
+          ! grep -q '^AI_RES:REQ=.*:MODEL_ERROR' /tmp/aether-model-bridge.log
           echo "BIDIRECTIONAL_AI_BRIDGE=PASS"
 
       - name: Persist analyzed experience
