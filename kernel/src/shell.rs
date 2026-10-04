@@ -997,6 +997,13 @@ fn cmd_ethchip() {
         write_str("BDF="); write_usize(bus as usize); write_str(":");
         write_usize(dev as usize); write_str("."); write_usize(func as usize); write_str("\n");
         write_str("PCI=10EC:8168 REV="); write_hex((classreg & 0xFF) as usize); write_str("\n");
+
+        // DMA prerequisite: report PCI Command without changing it.
+        let pci_cmd = pci_cfg_read32(bus, dev, func, 0x04) as u16;
+        write_str("PCI_COMMAND="); write_hex(pci_cmd as usize);
+        write_str(" MEMORY="); write_str(if (pci_cmd & 0x0002) != 0 { "ON" } else { "OFF" });
+        write_str(" BUS_MASTER="); write_str(if (pci_cmd & 0x0004) != 0 { "ON" } else { "OFF" });
+        write_str("\n");
         write_str("BAR2_MMIO="); write_hex(mmio as usize); write_str("\n");
 
         if mmio == 0 || (mmio & 0xFFF) != 0 {
