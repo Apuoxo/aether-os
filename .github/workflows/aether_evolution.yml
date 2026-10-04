@@ -91,7 +91,7 @@ jobs:
           timeout 70s qemu-system-x86_64 \
             -cdrom kernel/build/aether.iso \
             -chardev socket,id=virtserial,host=127.0.0.1,port=45454,server=on,wait=off,nodelay=on \
-            -device isa-serial,chardev=virtserial \
+            -device isa-serial,chardev=virtserial,iobase=0x3f8,irq=4,index=0 \
             -display none \
             -m 128M \
             -no-reboot
