@@ -236,6 +236,7 @@ fn ai_terminal_request(bytes: &[u8]) {
     ai_buf_dec(&mut req, &mut n, pid);
     if n < 90 { req[n] = b' '; n += 1; }
 
+    let mut i = 0usize;
     let tag = b"PROC=";
     i = 0;
     while i < tag.len() && n < 90 { req[n] = tag[i]; n += 1; i += 1; }
