@@ -48,23 +48,9 @@ fn mb_read64(off: usize) -> u64 {
 
 #[inline(always)]
 fn cpuid(leaf: u32, subleaf: u32) -> [u32; 4] {
-    let mut eax = leaf;
-    let mut ebx: u32;
-    let mut ecx = subleaf;
-    let mut edx: u32;
-    unsafe {
-        core::arch::asm!(
-            "cpuid",
-            inout("eax") eax,
-            lateout("ebx") ebx,
-            inout("ecx") ecx,
-            lateout("edx") edx,
-            options(nomem, nostack)
-        );
-    }
-    [eax, ebx, ecx, edx]
+    let r = unsafe { core::arch::x86_64::__cpuid_count(leaf, subleaf) };
+    [r.eax, r.ebx, r.ecx, r.edx]
 }
-
 fn bsp_apic_id() -> u8 { ((cpuid(1,0)[1] >> 24) & 0xff) as u8 }
 
 fn detect_topology() -> usize {
@@ -88,10 +74,11 @@ pub fn init() {
         while i < DETECTED { AP_IDS[i] = i as u8; i += 1; }
         ONLINE = 1;
     }
+    mb_write32(0x10, 1);
     // Detect only. CPU6 owns AP startup.
     if probe_lapic_only() {
         serial::write_str("[SMP] detect logical CPUs=");
-        serial::write_usize(DETECTED);
+        serial::write_usize(unsafe { DETECTED });
         serial::write_str(" BSP=");
         serial::write_usize(bsp_apic_id() as usize);
         serial::write_str(" ONLINE=1 (opt-in)\n");
@@ -105,7 +92,7 @@ pub fn probe_lapic_only() -> bool {
     id != 0xffff_ffff && id != 0
 }
 
-pub fn online_count() -> u32 { unsafe { ONLINE } }
+pub fn online_count() -> u32 { let n = mb_read32(0x10); if n == 0 { 1 } else { n } }
 
 fn build_ap_page_tables() {
     unsafe {
@@ -139,7 +126,7 @@ fn write_gdt() {
         core::ptr::write_volatile(gdt.add(3), 0x00AF9A000000FFFF);
         core::ptr::write_volatile(gdt.add(4), 0x00AF92000000FFFF);
         core::ptr::write_volatile((SHARED + 0x20) as *mut u16, 39);
-        core::ptr::write_volatile((SHARED + 0x22) as *mut u64, (SHARED + 0x30) as u64);
+        core::ptr::write_volatile((SHARED + 0x22) as *mut u32, (SHARED + 0x30) as u32);
     }
 }
 
@@ -190,7 +177,8 @@ fn start_one(apic: u8) {
 }
 
 pub fn stage_all_aps() -> bool {
-    if online_count() >= DETECTED as u32 { return true; }
+    let detected = unsafe { DETECTED };
+    if online_count() >= detected as u32 { return true; }
     if !probe_lapic_only() { return false; }
     build_ap_page_tables();
     write_gdt();
@@ -205,7 +193,7 @@ pub fn stage_all_aps() -> bool {
         if apic != bsp_apic_id() { start_one(apic); }
         i+=1;
     }
-    online_count() == DETECTED as u32
+    online_count() == detected as u32
 }
 
 fn rq_lock() {
