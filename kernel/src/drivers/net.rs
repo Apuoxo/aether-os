@@ -344,10 +344,10 @@ unsafe fn r8139_frame_test() -> bool {
     arp[28]=10; arp[29]=0; arp[30]=2; arp[31]=15;
     for i in 0..6 { arp[32+i]=0; }
     arp[38]=10; arp[39]=0; arp[40]=2; arp[41]=2;
-    if !r8139_tx(&arp[..42]) { return false; }
+    if !r8139_tx(&arp[..42]) { serial::write_str("[NET-QEMU] ARP TX FAIL\\n"); return false; }\n    serial::write_str("[NET-QEMU] ARP TX OK TSD="); serial::write_hex(in32(R8139_IO + R8139_TSD0) as usize); serial::write_str("\\n");
 
     let mut rx = [0u8; 2048];
-    let n = r8139_poll_frame(&mut rx, 1_500_000);
+    let n = r8139_poll_frame(&mut rx, 1_500_000);\n    serial::write_str("[NET-QEMU] ARP RX bytes="); serial::write_hex(n); serial::write_str(" ISR="); serial::write_hex(in16(R8139_IO + R8139_ISR) as usize); serial::write_str(" CAPR="); serial::write_hex(in16(R8139_IO + R8139_CAPR) as usize); serial::write_str("\\n");
     if n < 42 || rx[12] != 0x08 || rx[13] != 0x06 || rx[20] != 0 || rx[21] != 2 {
         return false;
     }
@@ -367,9 +367,9 @@ unsafe fn r8139_frame_test() -> bool {
     ip[34]=8; ip[35]=0; ip[36]=0; ip[37]=0; ip[38]=0x12; ip[39]=0x34; ip[40]=0; ip[41]=1;
     for i in 42..98 { ip[i]=i as u8; }
     let ics = csum(&ip[34..98]); ip[36]=(ics>>8) as u8; ip[37]=ics as u8;
-    if !r8139_tx(&ip[..98]) { return false; }
+    if !r8139_tx(&ip[..98]) { serial::write_str("[NET-QEMU] ICMP TX FAIL\\n"); return false; }\n    serial::write_str("[NET-QEMU] ICMP TX OK\\n");
 
-    let n2 = r8139_poll_frame(&mut rx, 1_500_000);
+    let n2 = r8139_poll_frame(&mut rx, 1_500_000);\n    serial::write_str("[NET-QEMU] ICMP RX bytes="); serial::write_hex(n2); serial::write_str(" ISR="); serial::write_hex(in16(R8139_IO + R8139_ISR) as usize); serial::write_str("\\n");
     n2 >= 42 && rx[12] == 0x08 && rx[13] == 0x00 && rx[14] == 0x45 &&
         rx[23] == 1 && rx[34] == 0 && rx[35] == 0 && rx[38] == 0x12 && rx[39] == 0x34
 }
