@@ -28,8 +28,8 @@
     "qemu_gdb_banner_check": "case_insensitive",
     "latest_ci_verification": "pending_tool_visibility",
     "hardware_evidence": "must remain distinct from QEMU/CI evidence",
-    "latest_evolution_run": "37227857603",
-    "latest_evolution_commit": "566434d980cac03156fe80d4d95cf54cf7afaf6d",
+    "latest_evolution_run": "37228533176",
+    "latest_evolution_commit": "d35d470e6dcdb4346f2ce4b873abca7d0c595603",
     "latest_evolution_outcome": "success",
     "latest_evolution_qemu_exit": 124,
     "latest_evolution_evidence": "serial-log-analyzed"
@@ -92,21 +92,21 @@
         "correlation_id"
       ]
     },
-    "sequence": 97,
+    "sequence": 98,
     "last_event": {
-      "event_id": "comm-000097",
+      "event_id": "comm-000098",
       "type": "observation",
       "actor": "agent-aether",
       "channel": "qemu_serial",
-      "observed_at": "2026-10-04T19:22:32.352667Z",
+      "observed_at": "2026-10-04T19:33:18.409829Z",
       "payload": {
-        "observed_at": "2026-10-04T19:22:32.352667Z",
-        "run_id": "37227857603",
-        "commit": "566434d980cac03156fe80d4d95cf54cf7afaf6d",
+        "observed_at": "2026-10-04T19:33:18.409829Z",
+        "run_id": "37228533176",
+        "commit": "d35d470e6dcdb4346f2ce4b873abca7d0c595603",
         "outcome": "success",
         "qemu_exit": 124
       },
-      "correlation_id": "qemu-37227857603"
+      "correlation_id": "qemu-37228533176"
     },
     "integrations": {
       "clock_tick": "records wake events and advances communication.last_event",
