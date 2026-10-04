@@ -862,10 +862,47 @@ fn cmd_video_mode(w: u16, h: u16) {
     write_str(" H="); write_usize(crate::graphics::height()); write_str("\n");
 }
 
+fn pci_cfg_read32(bus: u8, dev: u8, func: u8, off: u8) -> u32 {
+    let addr = 0x8000_0000u32 | ((bus as u32) << 16) | ((dev as u32) << 11) | ((func as u32) << 8) | ((off as u32) & 0xFC);
+    unsafe {
+        core::arch::asm!("out dx, eax", in("dx") 0xCF8u16, in("eax") addr, options(nostack, preserves_flags));
+        let value: u32;
+        core::arch::asm!("in eax, dx", in("dx") 0xCFCu16, out("eax") value, options(nostack, preserves_flags));
+        value
+    }
+}
+
+fn cmd_ethdiag() {
+    write_str("======== ETHERNET PCI DIAGNOSTIC ========\n");
+    write_str("MODE=READ_ONLY PCI_CONFIG\n");
+    let mut found = 0usize;
+    for bus in 0u8..=31 { for dev in 0u8..32 { for func in 0u8..8 {
+        let id = pci_cfg_read32(bus, dev, func, 0x00);
+        if id == 0 || id == 0xFFFF_FFFF { continue; }
+        let classreg = pci_cfg_read32(bus, dev, func, 0x08);
+        if ((classreg >> 24) & 0xFF) != 0x02 || ((classreg >> 16) & 0xFF) != 0x00 { continue; }
+        found += 1;
+        let cmdstat = pci_cfg_read32(bus, dev, func, 0x04);
+        let hdr = pci_cfg_read32(bus, dev, func, 0x0C);
+        let subsys = pci_cfg_read32(bus, dev, func, 0x2C);
+        write_str("NIC["); write_usize(found); write_str("] BDF="); write_usize(bus as usize); write_str(":"); write_usize(dev as usize); write_str("."); write_usize(func as usize);
+        write_str(" VID:DID="); write_hex((id & 0xFFFF) as usize); write_str(":"); write_hex((id >> 16) as usize); write_str("\n");
+        write_str("CLASS="); write_hex(((classreg >> 24)&0xFF) as usize); write_str(" SUBCLASS="); write_hex(((classreg >> 16)&0xFF) as usize);
+        write_str(" REV="); write_hex((classreg&0xFF) as usize); write_str(" HEADER="); write_hex(((hdr>>16)&0xFF) as usize); write_str("\n");
+        write_str("CMD="); write_hex((cmdstat&0xFFFF) as usize); write_str(" STATUS="); write_hex((cmdstat>>16) as usize); write_str(" IRQ="); write_hex(((hdr>>8)&0xFF) as usize); write_str("\n");
+        write_str("SUBSYS=VENDOR "); write_hex((subsys&0xFFFF) as usize); write_str(" DEVICE "); write_hex((subsys>>16) as usize); write_str("\n");
+        let mut off=0x10u8; let mut n=0usize;
+        while n<6 { write_str("BAR"); write_usize(n); write_str("="); write_hex(pci_cfg_read32(bus,dev,func,off) as usize); if n==2 || n==5 { write_str("\n"); } else { write_str(" "); } off+=4; n+=1; }
+    }}}
+    write_str("FOUND="); write_usize(found); write_str("\n");
+    write_str("ACTION=NONE RESET=NO BAR_WRITE=NO MMIO=NO DMA=NO\n");
+    write_str("======== ETHDIAG END ========\n");
+}
+
 fn cmd_help() {
     write_str("Aether Terminal - native command interface\n");
     write_str("Core: HELP  CLS  VER  LOG  TANSI  SEARCH <text>\n");
-    write_str("Hardware: KMS5  VINFO  V800  V1366  AUD  AUD2  AUD3  MOUS  USB  WF  NET\n");
+    write_str("Hardware: KMS5  VINFO  V800  V1366  AUD  AUD2  AUD3  MOUS  USB  WF  ETHDIAG  NET\n");
     write_str("Tip: Up/Down recalls command history; arrow keys scroll long output.\n");
 }
 
@@ -888,7 +925,9 @@ fn run_line(line: &[u8], len: usize) {
     while e > s && (line[e - 1] == b' ' || line[e - 1] == b'\r') { e -= 1; }
     let clen = e.saturating_sub(s);
 
-    if eq(line, s, clen, b"HELP") || eq(line, s, clen, b"help") {
+    if eq(line, s, clen, b"ETHDIAG") || eq(line, s, clen, b"ethdiag") {
+        cmd_ethdiag();
+    } else if eq(line, s, clen, b"HELP") || eq(line, s, clen, b"help") {
         cmd_help();
     } else if eq(line, s, clen, b"CLS") || eq(line, s, clen, b"cls") {
         crate::desktop::terminal_clear();
