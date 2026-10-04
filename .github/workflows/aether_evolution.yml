@@ -20,6 +20,7 @@ on:
 
 permissions:
   contents: write
+  copilot-requests: write
 
 concurrency:
   group: aether-evolution-${{ github.ref }}
@@ -69,24 +70,41 @@ jobs:
         working-directory: kernel
         run: make iso
 
-      - name: Boot and validate in QEMU
+      - name: Install model bridge
+        run: npm install -g @github/copilot
+
+      - name: Boot QEMU with bidirectional AI bridge
         id: qemu
         continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set +e
+          python3 .aether/tools/model_bridge.py \
+            --host 127.0.0.1 \
+            --port 45454 \
+            --inject "What is Aether OS and what is this text channel?" \
+            --model "gpt-5.4" \
+            > /tmp/aether-model-bridge.log 2>&1 &
+          BRIDGE_PID=$!
           timeout 20s qemu-system-x86_64 \
             -cdrom kernel/build/aether.iso \
-            -serial file:/tmp/aether-evolution-qemu.log \
+            -serial tcp:127.0.0.1:45454,server=on,wait=off,nodelay=on \
             -display none \
             -m 128M \
             -no-reboot
           rc=$?
+          kill "$BRIDGE_PID" 2>/dev/null || true
+          wait "$BRIDGE_PID" 2>/dev/null || true
           set -e
           echo "QEMU_EXIT=$rc" | tee /tmp/aether-evolution-qemu.exit
-          cat /tmp/aether-evolution-qemu.log
+          cat /tmp/aether-model-bridge.log
           test "$rc" = 0 || test "$rc" = 124
-          ! grep -qi "PANIC" /tmp/aether-evolution-qemu.log
-          grep -qi "Aether OS Build" /tmp/aether-evolution-qemu.log
+          ! grep -qi "PANIC" /tmp/aether-model-bridge.log
+          grep -q "AI_REQ:" /tmp/aether-model-bridge.log
+          grep -q "AI_RES:" /tmp/aether-model-bridge.log
+          grep -q "AI_STATUS:ACTIVE" /tmp/aether-model-bridge.log
+          grep -qi "Aether OS Build" /tmp/aether-model-bridge.log
 
       - name: Analyze QEMU experience
         if: always()
@@ -98,7 +116,7 @@ jobs:
             rc=255
           fi
           python3 .aether/tools/analyze_run.py \
-            --log /tmp/aether-evolution-qemu.log \
+            --log /tmp/aether-model-bridge.log \
             --state .state/current_state.json \
             --history .state/history.json \
             --report .state/latest_qemu_report.json \
@@ -124,6 +142,6 @@ jobs:
         with:
           name: aether-evolution-qemu-evidence
           path: |
-            /tmp/aether-evolution-qemu.log
+            /tmp/aether-model-bridge.log
             /tmp/aether-evolution-qemu.exit
             .state/latest_qemu_report.json

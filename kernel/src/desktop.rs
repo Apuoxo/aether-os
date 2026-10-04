@@ -181,6 +181,10 @@ static mut AI_INPUT: [u8; 96] = [0; 96];
 static mut AI_INPUT_LEN: usize = 0;
 static mut AI_INPUT_CURSOR: usize = 0;
 static mut AI_READY: bool = false;
+static mut AI_BRIDGE_ACTIVE: bool = false;
+static mut AI_WAITING: bool = false;
+static mut AI_RX: [u8; 128] = [0; 128];
+static mut AI_RX_LEN: usize = 0;
 
 fn ai_push_bytes(bytes: &[u8]) {
     unsafe {
@@ -202,48 +206,74 @@ fn ai_push_bytes(bytes: &[u8]) {
     }
 }
 fn ai_push(text: &str) { ai_push_bytes(text.as_bytes()); }
-fn ai_contains(input: &[u8], needle: &[u8]) -> bool {
-    if needle.is_empty() || needle.len() > input.len() { return false; }
+
+fn ai_transport_request(bytes: &[u8]) {
+    let n = bytes.len().min(90);
+    let mut line = [0u8; 96];
+    let prefix = b"YOU: ";
+    let mut p = 0usize;
+    while p < prefix.len() { line[p] = prefix[p]; p += 1; }
     let mut i = 0usize;
-    while i + needle.len() <= input.len() {
-        let mut ok = true;
-        let mut j = 0usize;
-        while j < needle.len() {
-            let mut a = input[i + j]; let mut b = needle[j];
-            if a >= b'A' && a <= b'Z' { a += 32; }
-            if b >= b'A' && b <= b'Z' { b += 32; }
-            if a != b { ok = false; break; }
-            j += 1;
+    while i < n { line[p + i] = bytes[i]; i += 1; }
+    ai_push_bytes(&line[..p + n]);
+    serial::write_str("AI_REQ:");
+    let mut j = 0usize;
+    while j < n {
+        let b = bytes[j];
+        if b >= 32 && b < 127 && b != b'\r' && b != b'\n' {
+            serial::write_byte(b);
+        } else {
+            serial::write_byte(b' ');
         }
-        if ok { return true; }
-        i += 1;
+        j += 1;
     }
-    false
+    serial::write_str("\n");
+    unsafe { AI_WAITING = true; }
 }
-fn ai_init() {
-    unsafe { if AI_READY { return; } AI_READY = true; }
-    ai_push("AETHER AI: text interface online.");
-    ai_push("BRIDGE: local kernel endpoint ready; external model not connected.");
-    ai_push("TYPE A MESSAGE AND PRESS ENTER.");
-}
-fn ai_submit() {
+
+fn ai_init() {\n    unsafe { if AI_READY { return; } AI_READY = true; }\n    ai_push("AETHER AI: text interface online.");\n    ai_push("BRIDGE: transport endpoint ready; waiting for external model.");\n    ai_push("TYPE A MESSAGE AND PRESS ENTER.");\n}\n\nfn ai_submit() {
     unsafe {
         if AI_INPUT_LEN == 0 { return; }
-        let mut line = [0u8; 96]; let prefix = b"YOU: "; let mut n = 0usize;
-        while n < prefix.len() { line[n] = prefix[n]; n += 1; }
-        let mut i = 0usize;
-        while i < AI_INPUT_LEN && n < line.len() { line[n] = AI_INPUT[i]; n += 1; i += 1; }
-        ai_push_bytes(&line[..n]);
-        let input = AI_INPUT; let input_len = AI_INPUT_LEN;
-        AI_INPUT_LEN = 0; AI_INPUT_CURSOR = 0;
-        if ai_contains(&input[..input_len], b"who are you") {
-            ai_push("AETHER: I am the native text endpoint. A language model is not embedded here yet.");
-        } else if ai_contains(&input[..input_len], b"hello") || ai_contains(&input[..input_len], b"hi") {
-            ai_push("AETHER: Hello. The text channel is active.");
-        } else if ai_contains(&input[..input_len], b"status") {
-            ai_push("AETHER: UI online. Transport endpoint ready. Model bridge: pending.");
-        } else {
-            ai_push("AETHER: Message received. The interface is ready for the real AI bridge.");
+        let input = AI_INPUT;
+        let input_len = AI_INPUT_LEN;
+        AI_INPUT_LEN = 0;
+        AI_INPUT_CURSOR = 0;
+        ai_transport_request(&input[..input_len]);
+    }
+}
+
+fn ai_transport_poll() {
+    let mut count = 0usize;
+    while count < 64 {
+        let b = match serial::read_byte() {
+            Some(v) => v,
+            None => break,
+        };
+        count += 1;
+        unsafe {
+            if b == b'\r' || b == b'\n' {
+                if AI_RX_LEN == 0 { continue; }
+                let line = AI_RX;
+                let len = AI_RX_LEN;
+                AI_RX_LEN = 0;
+                if len >= 7 && &line[..7] == b"AI_RES:" {
+                    let body = &line[7..len];
+                    ai_push_bytes(body);
+                    AI_WAITING = false;
+                    AI_BRIDGE_ACTIVE = true;
+                } else if len >= 15 && &line[..15] == b"AI_STATUS:ACTIVE" {
+                    AI_BRIDGE_ACTIVE = true;
+                    ai_push("BRIDGE: external model active.");
+                } else if len >= 6 && &line[..6] == b"AI_IN:" {
+                    let body = &line[6..len];
+                    if !body.is_empty() { ai_transport_request(body); }
+                }
+            } else if AI_RX_LEN < AI_RX.len() {
+                AI_RX[AI_RX_LEN] = b;
+                AI_RX_LEN += 1;
+            } else {
+                AI_RX_LEN = 0;
+            }
         }
     }
 }
@@ -2615,7 +2645,7 @@ fn draw_window(idx: usize) {
                 graphics::fill_rect(wx + 5, wy + TITLE_H as usize + 4, ww - 10, 24, 0x001D2229);
                 graphics::draw_str(wx + 16, wy + TITLE_H as usize + 12, "Aether AI / TEXT BRIDGE", 0x00F2F2F2);
                 graphics::draw_str(wx + ww.saturating_sub(170), wy + TITLE_H as usize + 12,
-                    "LOCAL ENDPOINT", 0x0066D966);
+                    if unsafe { AI_BRIDGE_ACTIVE } { "MODEL BRIDGE: ACTIVE" } else { "MODEL BRIDGE: WAITING" }, 0x0066D966);
                 let top = wy + TITLE_H as usize + 38;
                 let bottom = wy + wh.saturating_sub(48);
                 let visible = if bottom > top { (bottom - top) / 14 } else { 0 };
@@ -2651,7 +2681,7 @@ fn draw_window(idx: usize) {
                     }
                 }
                 graphics::draw_str(wx + 12, wy + wh - 12,
-                    "ENTER: send | ESC: menus | BRIDGE: pending", 0x007D8791);
+                    "ENTER: send | ESC: menus | MODEL BRIDGE: external", 0x007D8791);
             }
             WinKind::Alarm => {
                 crate::alarm::alarm_draw(wx as i32 + 3, wy as i32 + TITLE_H);
@@ -4048,7 +4078,7 @@ pub fn run() -> ! {
     render();
 
     loop {
-        ps2::poll();
+        ai_transport_poll();\n        ps2::poll();
         let (pmx, pmy) = ps2::mouse_pos();
         let pbtn = ps2::mouse_buttons();
         unsafe {
