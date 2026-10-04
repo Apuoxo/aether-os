@@ -417,6 +417,11 @@ fn ai_transport_poll() {
                         && response_id == crate::virt_runtime::reasoning_request_id()
                     {
                         crate::virt_runtime::receive_reasoning_response(response_id, body);
+                        serial::write_str("AI_ACK:REQ=R");
+                        serial::write_usize(response_id as usize);
+                        serial::write_str(" CLASS=");
+                        serial::write_usize(crate::virt_runtime::last_reasoning_classification() as usize);
+                        serial::write_str("\n");
                         ai_push_bytes(body);
                     } else if response_kind == 2 && AI_TERMINAL_TARGET {
                         terminal_write("VIRT: ");

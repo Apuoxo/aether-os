@@ -57,8 +57,6 @@ static mut LAST_SYSTEM_CHANGE_OLD_STATE: u8 = SYSTEM_STATE_UNKNOWN;
 static mut LAST_SYSTEM_CHANGE_NEW_STATE: u8 = SYSTEM_STATE_UNKNOWN;
 static mut LAST_SYSTEM_CHANGE_SEQUENCE: u32 = 0;
 static mut LAST_UNDERSTANDING: u8 = UNDERSTANDING_NONE;
-static mut MODEL_BRIDGE_RX: [u8; 256] = [0; 256];
-static mut MODEL_BRIDGE_RX_LEN: usize = 0;
 
 /// Fixed three-hour whole-OS operational history.
 /// One snapshot is recorded per runtime heartbeat (one RTC second).
@@ -203,8 +201,6 @@ pub fn init() {
         LAST_SYSTEM_CHANGE_NEW_STATE = SYSTEM_STATE_UNKNOWN;
         LAST_SYSTEM_CHANGE_SEQUENCE = 0;
         LAST_UNDERSTANDING = UNDERSTANDING_NONE;
-        MODEL_BRIDGE_RX = [0; 256];
-        MODEL_BRIDGE_RX_LEN = 0;
         SYSTEM_HISTORY_STATES =
             [[SYSTEM_STATE_UNKNOWN; SYSTEM_SUBSYSTEM_COUNT]; SYSTEM_HISTORY_SECONDS];
         SYSTEM_HISTORY_HEALTH = [SYSTEM_HEALTH_UNKNOWN; SYSTEM_HISTORY_SECONDS];
@@ -224,7 +220,6 @@ pub fn init() {
 
 pub fn tick() {
     if !ready() { return; }
-    poll_model_bridge();
     let (_, _, _, _, _, second) = crate::time::rtc_read();
     unsafe {
         if second != LAST_SECOND {
@@ -646,73 +641,6 @@ fn emit_reasoning_request() {
 
 pub fn reasoning_waiting() -> bool { unsafe { REASONING_WAITING } }
 pub fn reasoning_request_id() -> u64 { unsafe { REASONING_REQUEST_ID } }
-
-/// Poll the external model transport without blocking the runtime.
-///
-/// The kernel never fabricates a response. A userspace/host bridge may send
-/// one complete line as:
-///   AI_RES:REQ=R<n>:<bounded bytes>
-/// The request id must match the currently waiting reasoning request.
-fn poll_model_bridge() {
-    unsafe {
-        while let Some(byte) = serial::read_byte() {
-            if byte == b'\n' || byte == b'\r' {
-                if MODEL_BRIDGE_RX_LEN != 0 {
-                    process_model_bridge_line(MODEL_BRIDGE_RX_LEN);
-                }
-                MODEL_BRIDGE_RX_LEN = 0;
-                continue;
-            }
-            if MODEL_BRIDGE_RX_LEN < MODEL_BRIDGE_RX.len() {
-                MODEL_BRIDGE_RX[MODEL_BRIDGE_RX_LEN] = byte;
-                MODEL_BRIDGE_RX_LEN += 1;
-            } else {
-                MODEL_BRIDGE_RX_LEN = 0;
-            }
-        }
-    }
-}
-
-fn process_model_bridge_line(len: usize) {
-    unsafe {
-        const PREFIX: &[u8] = b"AI_RES:REQ=R";
-        if len < PREFIX.len() || !buffer_starts_with(PREFIX, len) {
-            return;
-        }
-        let mut i = PREFIX.len();
-        let mut request_id = 0u64;
-        let mut digits = 0usize;
-        while i < len && MODEL_BRIDGE_RX[i] >= b'0' && MODEL_BRIDGE_RX[i] <= b'9' {
-            request_id = request_id
-                .saturating_mul(10)
-                .saturating_add((MODEL_BRIDGE_RX[i] - b'0') as u64);
-            i += 1;
-            digits += 1;
-        }
-        if digits == 0 || i >= len || MODEL_BRIDGE_RX[i] != b':' {
-            return;
-        }
-        let start = i + 1;
-        receive_reasoning_response(request_id, &MODEL_BRIDGE_RX[start..len]);
-        serial::write_str("AI_ACK:REQ=R");
-        serial::write_usize(request_id as usize);
-        serial::write_str(" CLASS=");
-        serial::write_usize(last_reasoning_classification() as usize);
-        serial::write_str("\n");
-    }
-}
-
-fn buffer_starts_with(prefix: &[u8], len: usize) -> bool {
-    if len < prefix.len() { return false; }
-    unsafe {
-        let mut i = 0usize;
-        while i < prefix.len() {
-            if MODEL_BRIDGE_RX[i] != prefix[i] { return false; }
-            i += 1;
-        }
-    }
-    true
-}
 
 /// Accept the bounded response belonging to the runtime reasoning request.
 pub fn receive_reasoning_response(request_id: u64, bytes: &[u8]) {
