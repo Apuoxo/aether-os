@@ -25,6 +25,7 @@ mod storage;
 mod storage_hw_diag;
 mod fb;
 mod ai_agent;
+mod virt_core;
 mod desktop;
 mod files_mgr;
 mod ring3_resume;
@@ -255,6 +256,7 @@ pub extern "C" fn kernel_main(mbi: usize) -> ! {
     // 2230 firmware increased the kernel beyond the old fixed 2 MiB boundary,
     // which caused early page allocations to overwrite the kernel itself.
     let kernel_end = unsafe { &__kernel_end as *const u8 as usize };
+    virt_core::init(mbi, kernel_end);
     let pmm_start = (kernel_end + 0x1F_FFFF) & !0x1F_FFFF;
     serial::write_str("[PMM] kernel_end=");
     serial::write_hex(kernel_end);

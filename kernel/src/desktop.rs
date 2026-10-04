@@ -231,10 +231,7 @@ fn ai_buf_dec(buf: &mut [u8; 96], pos: &mut usize, mut v: usize) {
 fn ai_terminal_request(bytes: &[u8]) {
     let mut req = [0u8; 96];
     let mut n = 0usize;
-    let prefix = b"CTX=AETHER K=RO PID=";
-    let mut i = 0usize;
-    while i < prefix.len() && n < 90 { req[n] = prefix[i]; n += 1; i += 1; }
-
+    crate::virt_core::append_context(&mut req, &mut n);
     let pid = crate::process::current_pid();
     ai_buf_dec(&mut req, &mut n, pid);
     if n < 90 { req[n] = b' '; n += 1; }
