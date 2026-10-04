@@ -953,6 +953,9 @@ fn ethchip_mdio_write(mmio: usize, phy_reg: u8, value: u16) -> bool {
     for _ in 0..1_000_000usize {
         let v = ethchip_read32(mmio, 0x60);
         if (v & 0x8000_0000) == 0 {
+            // RTL8168 hardware requires a short quiet interval after write
+            // completion before issuing the next PHYAR command.
+            for _ in 0..2_000usize { core::hint::spin_loop(); }
             return true;
         }
     }
@@ -1121,7 +1124,7 @@ fn cmd_ethlink() {
     write_str("MODE=RTL8168 MDIO ONLY\n");
     write_str("XID_CHECK=MASK(0x7C8)==0x2C8\n");
 
-    let found = false;
+    let mut found = false;
     'outer: for bus in 0u8..=31 {
         for dev in 0u8..32 {
             for func in 0u8..8 {
