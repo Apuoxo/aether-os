@@ -2174,9 +2174,39 @@
       ],
       "conclusion": "QEMU validation did not satisfy all required startup markers; retain the failure as bounded experience.",
       "next_step": "Inspect the failed marker or exit condition before making another code change."
+    },
+    {
+      "type": "heartbeat_observation",
+      "event_id": "comm-000081",
+      "communication_event": {
+        "event_id": "comm-000081",
+        "type": "observation",
+        "actor": "agent-aether",
+        "channel": "github_actions",
+        "observed_at": "2026-10-04T16:24:58Z",
+        "payload": {
+          "observed_at": "2026-10-04T16:24:58Z",
+          "run_id": "37216413400",
+          "commit": "5af17dbd7de74a99972d1f4882599651fe524b42",
+          "outcome": "local_build_and_iso_pass",
+          "qemu_evidence": "unavailable"
+        },
+        "correlation_id": "heartbeat-37216413400"
+      },
+      "run_id": "37216413400",
+      "commit": "5af17dbd7de74a99972d1f4882599651fe524b42",
+      "observed_at": "2026-10-04T16:24:58Z",
+      "outcome": "local_build_and_iso_pass",
+      "observations": [
+        "The latest Actions failure was 11 unresolved SMP shell API references after the module was reduced to the BSP-only foundation.",
+        "Local kernel and ISO builds passed after adapting the shell diagnostics.",
+        "QEMU did not run locally because execution was blocked by the environment permission gate; no real-AH532 evidence is available."
+      ],
+      "conclusion": "The compile mismatch is fixed locally; pull-request checks remain the next bounded validation.",
+      "next_step": "Inspect the PR build and QEMU checks, and leave the PR open if review or policy blocks merge."
     }
   ],
-  "last_updated": "2026-10-04T16:11:06.976797Z",
-  "last_run_id": "37215750651",
-  "last_communication_event": "comm-000001"
+  "last_updated": "2026-10-04T16:24:58Z",
+  "last_run_id": "37216413400",
+  "last_communication_event": "comm-000081"
 }

@@ -26,13 +26,13 @@
   "verification": {
     "last_known_qemu_gdb_fix_commit": "6803178c4603445bc126fdf99d01688bc65ca90e",
     "qemu_gdb_banner_check": "case_insensitive",
-    "latest_ci_verification": "pending_tool_visibility",
+    "latest_ci_verification": "Runs 37215750638 and 37215750651 failed during kernel compilation with 11 unresolved SMP shell API references; local kernel and ISO builds passed, QEMU remains unverified.",
     "hardware_evidence": "must remain distinct from QEMU/CI evidence",
     "latest_evolution_run": "37215750651",
     "latest_evolution_commit": "d79b83b750faf298cb420746b76a6baf4da7cee3",
-    "latest_evolution_outcome": "failure",
-    "latest_evolution_qemu_exit": 255,
-    "latest_evolution_evidence": "serial-log-analyzed"
+    "latest_evolution_outcome": "build_failure_before_qemu",
+    "latest_evolution_qemu_exit": null,
+    "latest_evolution_evidence": "kernel-compile-log"
   },
   "operating_rules": [
     "inspect -> decide -> change -> commit -> verify -> CI -> inspect evidence -> continue",
@@ -41,13 +41,31 @@
     "stop when required evidence or human authorization is missing",
     "do not create unbounded self-propagating execution"
   ],
-  "next_step": "Inspect the failed marker or exit condition before making another code change.",
+  "next_step": "Open one PR for the BSP-only SMP shell compatibility fix and inspect its build and QEMU checks; do not infer AH532 behavior.",
   "last_experience": {
-    "outcome": "failure",
-    "conclusion": "QEMU validation did not satisfy all required startup markers; retain the failure as bounded experience.",
+    "outcome": "build_failure_before_qemu",
+    "conclusion": "The kernel failed compilation before ISO creation or QEMU startup. The workflow's QEMU exit value 255 was a missing-file fallback, not a QEMU result.",
     "observations": [
-      "No Ring3 execution evidence observed; QEMU validation remains pre-Ring3."
+      "Build run 37215750638 and evolution run 37215750651 reported 11 E0425 errors because shell.rs referenced SMP APIs removed by the BSP-only reset.",
+      "The evolution workflow skipped ISO creation and QEMU after the kernel build failed.",
+      "Local kernel and ISO builds passed after updating the shell diagnostics.",
+      "A local QEMU launch was blocked by the environment permission gate; no QEMU or AH532 evidence was produced."
     ]
+  },
+  "last_heartbeat": {
+    "run_id": "37216413400",
+    "trigger": "schedule",
+    "hypothesis": "The latest CI failures come from shell SMP diagnostics still calling APIs removed when smp.rs returned to a BSP-only foundation.",
+    "action": "Adapted CPU1/CPU6/CPU19/CPU20 diagnostics to the current read-only/BSP-only SMP API without attempting AP startup or scheduling.",
+    "evidence": [
+      "Run 37215750638 failed kernel compilation with 11 E0425 unresolved SMP symbols from kernel/src/shell.rs.",
+      "Run 37215750651 reported the same compile failure; ISO and QEMU steps were skipped, and its QEMU exit 255 was only the workflow fallback for a missing exit file.",
+      "Local make -C kernel kernel passed.",
+      "Local make -C kernel iso passed.",
+      "Local QEMU execution was denied by the environment permission gate; QEMU and real-AH532 evidence are unavailable."
+    ],
+    "result": "The stale shell/API mismatch is corrected and local build/ISO validation passes; remote pull-request checks are still required.",
+    "next_step": "Push this branch, create at most one PR to main, and inspect the required checks and any QEMU evidence; leave the PR open if review or policy blocks merging."
   },
   "communication": {
     "schema": 1,
@@ -84,21 +102,21 @@
         "correlation_id"
       ]
     },
-    "sequence": 80,
+    "sequence": 81,
     "last_event": {
-      "event_id": "comm-000080",
+      "event_id": "comm-000081",
       "type": "observation",
       "actor": "agent-aether",
-      "channel": "qemu_serial",
-      "observed_at": "2026-10-04T16:11:06.976797Z",
+      "channel": "github_actions",
+      "observed_at": "2026-10-04T16:24:58Z",
       "payload": {
-        "observed_at": "2026-10-04T16:11:06.976797Z",
-        "run_id": "37215750651",
-        "commit": "d79b83b750faf298cb420746b76a6baf4da7cee3",
-        "outcome": "failure",
-        "qemu_exit": 255
+        "observed_at": "2026-10-04T16:24:58Z",
+        "run_id": "37216413400",
+        "commit": "5af17dbd7de74a99972d1f4882599651fe524b42",
+        "outcome": "local_build_and_iso_pass",
+        "qemu_evidence": "unavailable"
       },
-      "correlation_id": "qemu-37215750651"
+      "correlation_id": "heartbeat-37216413400"
     },
     "integrations": {
       "clock_tick": "records wake events and advances communication.last_event",

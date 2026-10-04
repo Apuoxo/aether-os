@@ -3,19 +3,20 @@
   "run_id": "37215750651",
   "commit": "d79b83b750faf298cb420746b76a6baf4da7cee3",
   "observed_at": "2026-10-04T16:11:06.976797Z",
-  "outcome": "failure",
-  "qemu_exit": 255,
+  "outcome": "not_run",
+  "qemu_exit": null,
   "checks": {
-    "qemu_exit_accepted": false,
-    "panic_absent": true,
-    "build_banner": false,
-    "desktop_marker": false,
-    "desktop_start": false,
-    "ring3_evidence": false
+    "qemu_exit_accepted": null,
+    "panic_absent": null,
+    "build_banner": null,
+    "desktop_marker": null,
+    "desktop_start": null,
+    "ring3_evidence": null
   },
   "observations": [
-    "No Ring3 execution evidence observed; QEMU validation remains pre-Ring3."
+    "QEMU did not run because kernel compilation failed with unresolved SMP shell API references.",
+    "The workflow supplied exit 255 because its QEMU exit file did not exist; this value is not QEMU runtime evidence."
   ],
-  "conclusion": "QEMU validation did not satisfy all required startup markers; retain the failure as bounded experience.",
-  "next_step": "Inspect the failed marker or exit condition before making another code change."
+  "conclusion": "Kernel compilation failed before ISO creation or QEMU startup; no QEMU runtime result is available.",
+  "next_step": "Validate the BSP-only SMP shell compatibility fix through the pull-request build and QEMU checks."
 }
