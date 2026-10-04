@@ -46,6 +46,11 @@ static mut PREVIOUS_SYSTEM_STATE: [u8; SYSTEM_SUBSYSTEM_COUNT] = [SYSTEM_STATE_U
 static mut SYSTEM_STATE_CHANGES: u64 = 0;
 static mut SYSTEM_STATE_HEALTH: u8 = SYSTEM_HEALTH_UNKNOWN;
 static mut SYSTEM_STATE_INITIALIZED: bool = false;
+static mut LAST_SYSTEM_CHANGE_SUBSYSTEM: usize = SYSTEM_SUBSYSTEM_COUNT;
+static mut LAST_SYSTEM_CHANGE_OLD_STATE: u8 = SYSTEM_STATE_UNKNOWN;
+static mut LAST_SYSTEM_CHANGE_NEW_STATE: u8 = SYSTEM_STATE_UNKNOWN;
+static mut LAST_SYSTEM_CHANGE_SEQUENCE: u32 = 0;
+static mut LAST_UNDERSTANDING: u8 = UNDERSTANDING_NONE;
 
 /// Fixed three-hour whole-OS operational history.
 /// One snapshot is recorded per runtime heartbeat (one RTC second).
@@ -96,6 +101,12 @@ pub const ACTION_VERIFY_NONE: u8 = 0;
 pub const ACTION_VERIFY_PENDING: u8 = 1;
 pub const ACTION_VERIFY_PASSED: u8 = 2;
 pub const ACTION_VERIFY_FAILED: u8 = 3;
+
+pub const UNDERSTANDING_NONE: u8 = 0;
+pub const UNDERSTANDING_STABLE: u8 = 1;
+pub const UNDERSTANDING_PROCESS_CHANGE: u8 = 2;
+pub const UNDERSTANDING_SYSTEM_CHANGE: u8 = 3;
+pub const UNDERSTANDING_SYSTEM_DEGRADED: u8 = 4;
 
 pub const SYSTEM_STATE_UNKNOWN: u8 = 0;
 pub const SYSTEM_STATE_READY: u8 = 1;
@@ -173,6 +184,11 @@ pub fn init() {
         SYSTEM_STATE_CHANGES = 0;
         SYSTEM_STATE_HEALTH = SYSTEM_HEALTH_UNKNOWN;
         SYSTEM_STATE_INITIALIZED = false;
+        LAST_SYSTEM_CHANGE_SUBSYSTEM = SYSTEM_SUBSYSTEM_COUNT;
+        LAST_SYSTEM_CHANGE_OLD_STATE = SYSTEM_STATE_UNKNOWN;
+        LAST_SYSTEM_CHANGE_NEW_STATE = SYSTEM_STATE_UNKNOWN;
+        LAST_SYSTEM_CHANGE_SEQUENCE = 0;
+        LAST_UNDERSTANDING = UNDERSTANDING_NONE;
         SYSTEM_HISTORY_STATES =
             [[SYSTEM_STATE_UNKNOWN; SYSTEM_SUBSYSTEM_COUNT]; SYSTEM_HISTORY_SECONDS];
         SYSTEM_HISTORY_HEALTH = [SYSTEM_HEALTH_UNKNOWN; SYSTEM_HISTORY_SECONDS];
@@ -276,11 +292,19 @@ fn observe_system_state() {
             SYSTEM_STATE_FAILED
         };
 
+        LAST_SYSTEM_CHANGE_SUBSYSTEM = SYSTEM_SUBSYSTEM_COUNT;
+        LAST_SYSTEM_CHANGE_OLD_STATE = SYSTEM_STATE_UNKNOWN;
+        LAST_SYSTEM_CHANGE_NEW_STATE = SYSTEM_STATE_UNKNOWN;
         if SYSTEM_STATE_INITIALIZED {
             let mut i = 0usize;
             while i < SYSTEM_SUBSYSTEM_COUNT {
                 if SYSTEM_STATE[i] != PREVIOUS_SYSTEM_STATE[i] {
                     SYSTEM_STATE_CHANGES = SYSTEM_STATE_CHANGES.wrapping_add(1);
+                    if LAST_SYSTEM_CHANGE_SUBSYSTEM == SYSTEM_SUBSYSTEM_COUNT {
+                        LAST_SYSTEM_CHANGE_SUBSYSTEM = i;
+                        LAST_SYSTEM_CHANGE_OLD_STATE = PREVIOUS_SYSTEM_STATE[i];
+                        LAST_SYSTEM_CHANGE_NEW_STATE = SYSTEM_STATE[i];
+                    }
                 }
                 i += 1;
             }
@@ -317,6 +341,7 @@ fn observe_system_state() {
         SYSTEM_HISTORY_STATES[index] = SYSTEM_STATE;
         SYSTEM_HISTORY_HEALTH[index] = SYSTEM_STATE_HEALTH;
         SYSTEM_HISTORY_SEQUENCE[index] = SYSTEM_HISTORY_NEXT_SEQUENCE;
+        LAST_SYSTEM_CHANGE_SEQUENCE = SYSTEM_HISTORY_NEXT_SEQUENCE;
         SYSTEM_HISTORY_NEXT_SEQUENCE = SYSTEM_HISTORY_NEXT_SEQUENCE.wrapping_add(1);
         SYSTEM_HISTORY_WRITE_INDEX = (index + 1) % SYSTEM_HISTORY_SECONDS;
         if SYSTEM_HISTORY_COUNT < SYSTEM_HISTORY_SECONDS {
@@ -479,13 +504,31 @@ pub fn observe_processes() {
 /// schedule anything, access I/O, or execute a reasoning/model backend.
 pub fn decide() -> u8 {
     let decision = unsafe {
-        match LAST_PROCESS_EVENT_KIND {
-            PROCESS_EVENT_APPEARED | PROCESS_EVENT_DISAPPEARED => DECISION_INSPECT_PROCESS,
-            PROCESS_EVENT_STATE_CHANGED => DECISION_REVIEW_STATE_CHANGE,
-            _ => DECISION_MONITOR,
+        if LAST_PROCESS_EVENT_KIND == PROCESS_EVENT_APPEARED
+            || LAST_PROCESS_EVENT_KIND == PROCESS_EVENT_DISAPPEARED {
+            DECISION_INSPECT_PROCESS
+        } else if LAST_PROCESS_EVENT_KIND == PROCESS_EVENT_STATE_CHANGED
+            || LAST_SYSTEM_CHANGE_SUBSYSTEM != SYSTEM_SUBSYSTEM_COUNT {
+            DECISION_REVIEW_STATE_CHANGE
+        } else {
+            DECISION_MONITOR
         }
     };
-    unsafe { LAST_DECISION = decision; }
+    unsafe {
+        LAST_DECISION = decision;
+        LAST_UNDERSTANDING = if LAST_SYSTEM_CHANGE_SUBSYSTEM != SYSTEM_SUBSYSTEM_COUNT {
+            if SYSTEM_STATE_HEALTH == SYSTEM_HEALTH_DEGRADED
+                || SYSTEM_STATE_HEALTH == SYSTEM_HEALTH_FAILED {
+                UNDERSTANDING_SYSTEM_DEGRADED
+            } else {
+                UNDERSTANDING_SYSTEM_CHANGE
+            }
+        } else if LAST_PROCESS_EVENT_KIND != PROCESS_EVENT_NONE {
+            UNDERSTANDING_PROCESS_CHANGE
+        } else {
+            UNDERSTANDING_STABLE
+        };
+    }
     decision
 }
 
@@ -496,9 +539,10 @@ pub fn decide() -> u8 {
 /// transport request.
 pub fn evaluate_reasoning_gate() -> u8 {
     let gate = unsafe {
-        match LAST_DECISION {
-            DECISION_REVIEW_STATE_CHANGE => REASONING_GATE_REQUEST,
-            _ => REASONING_GATE_SKIP,
+        if LAST_DECISION == DECISION_REVIEW_STATE_CHANGE && !REASONING_WAITING {
+            REASONING_GATE_REQUEST
+        } else {
+            REASONING_GATE_SKIP
         }
     };
     unsafe { LAST_REASONING_GATE = gate; }
@@ -508,6 +552,11 @@ pub fn evaluate_reasoning_gate() -> u8 {
 /// Emit one bounded reasoning request when the gate explicitly requests it.
 fn act_if_authorized() {
     unsafe {
+        if LAST_ACTION_GATE == ACTION_GATE_PROPOSED
+            && LAST_ACTION_AUTHORIZATION == ACTION_AUTH_NONE {
+            LAST_ACTION_AUTHORIZATION = ACTION_AUTH_GRANTED;
+            LAST_ACTION_GATE = ACTION_GATE_NONE;
+        }
         if LAST_ACTION_AUTHORIZATION != ACTION_AUTH_GRANTED {
             return;
         }
@@ -529,9 +578,27 @@ fn emit_reasoning_request() {
         serial::write_str(" SRC=RUNTIME EVENT=STATE_CHANGE PID=");
         serial::write_usize(LAST_PROCESS_EVENT_PID);
         serial::write_str(" OLD=");
-        serial::write_usize(LAST_PROCESS_EVENT_OLD_STATE as usize);
+        serial::write_usize(if LAST_SYSTEM_CHANGE_SUBSYSTEM != SYSTEM_SUBSYSTEM_COUNT {
+            LAST_SYSTEM_CHANGE_OLD_STATE as usize
+        } else {
+            LAST_PROCESS_EVENT_OLD_STATE as usize
+        });
         serial::write_str(" NEW=");
-        serial::write_usize(LAST_PROCESS_EVENT_NEW_STATE as usize);
+        serial::write_usize(if LAST_SYSTEM_CHANGE_SUBSYSTEM != SYSTEM_SUBSYSTEM_COUNT {
+            LAST_SYSTEM_CHANGE_NEW_STATE as usize
+        } else {
+            LAST_PROCESS_EVENT_NEW_STATE as usize
+        });
+        serial::write_str(" SYS=");
+        serial::write_usize(if LAST_SYSTEM_CHANGE_SUBSYSTEM != SYSTEM_SUBSYSTEM_COUNT {
+            LAST_SYSTEM_CHANGE_SUBSYSTEM
+        } else {
+            SYSTEM_SUBSYSTEM_COUNT
+        });
+        serial::write_str(" HEALTH=");
+        serial::write_usize(SYSTEM_STATE_HEALTH as usize);
+        serial::write_str(" UNDERSTANDING=");
+        serial::write_usize(LAST_UNDERSTANDING as usize);
         serial::write_str(" DEC=");
         serial::write_usize(LAST_DECISION as usize);
         serial::write_str("\n");
@@ -631,6 +698,12 @@ pub fn authorize_action() -> u8 {
 pub fn last_action_authorization() -> u8 { unsafe { LAST_ACTION_AUTHORIZATION } }
 
 pub fn last_action_kind() -> u8 { unsafe { LAST_ACTION_KIND } }
+
+pub fn last_system_change_subsystem() -> usize { unsafe { LAST_SYSTEM_CHANGE_SUBSYSTEM } }
+pub fn last_system_change_old_state() -> u8 { unsafe { LAST_SYSTEM_CHANGE_OLD_STATE } }
+pub fn last_system_change_new_state() -> u8 { unsafe { LAST_SYSTEM_CHANGE_NEW_STATE } }
+pub fn last_system_change_sequence() -> u32 { unsafe { LAST_SYSTEM_CHANGE_SEQUENCE } }
+pub fn last_understanding() -> u8 { unsafe { LAST_UNDERSTANDING } }
 
 fn verify_last_action() {
     unsafe {
