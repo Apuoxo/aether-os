@@ -88,8 +88,19 @@ pub fn init() {
 }
 
 pub fn probe_lapic_only() -> bool {
+    let cr3 = unsafe { crate::mm::paging::read_cr3() };
+    let mapped = unsafe {
+        crate::mm::paging::map_page(
+            cr3,
+            LAPIC_BASE,
+            LAPIC_BASE,
+            crate::mm::paging::PAGE_PRESENT | crate::mm::paging::PAGE_WRITE,
+        )
+    };
+    if !mapped { return false; }
+    unsafe { crate::mm::paging::load_cr3(cr3); }
     let id = unsafe { mmio_read32(LAPIC_BASE + 0x20) };
-    id != 0xffff_ffff && id != 0
+    id != 0xffff_ffff
 }
 
 pub fn online_count() -> u32 { let n = mb_read32(0x10); if n == 0 { 1 } else { n } }
