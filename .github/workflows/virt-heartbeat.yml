@@ -75,8 +75,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          cat > /tmp/virt-heartbeat-prompt.md <<'EOF'
+          cat > /tmp/virt-heartbeat-prompt.md <<EOF
           You are the bounded Aether OS engineering heartbeat.
+
+          Runtime values: RUN_ID=$RUN_ID TRIGGER_NAME=$TRIGGER_NAME RECOVERY_BRANCH=$RECOVERY_BRANCH RECOVERY_SHA=$RECOVERY_SHA
 
           This is an autonomous GitHub Actions cycle. Work directly in the checked-out repository, but never modify or push main directly.
 
