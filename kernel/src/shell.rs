@@ -1002,6 +1002,20 @@ fn cmd_ethchip() {
             write_str("VARIANT=UNKNOWN_XID\n");
         }
 
+        let mac0 = unsafe { core::ptr::read_volatile((mmio as usize + 0x00) as *const u8) };
+        let mac1 = unsafe { core::ptr::read_volatile((mmio as usize + 0x01) as *const u8) };
+        let mac2 = unsafe { core::ptr::read_volatile((mmio as usize + 0x02) as *const u8) };
+        let mac3 = unsafe { core::ptr::read_volatile((mmio as usize + 0x03) as *const u8) };
+        let mac4 = unsafe { core::ptr::read_volatile((mmio as usize + 0x04) as *const u8) };
+        let mac5 = unsafe { core::ptr::read_volatile((mmio as usize + 0x05) as *const u8) };
+        write_str("MAC=");
+        write_hex(mac0 as usize); write_str(":");
+        write_hex(mac1 as usize); write_str(":");
+        write_hex(mac2 as usize); write_str(":");
+        write_hex(mac3 as usize); write_str(":");
+        write_hex(mac4 as usize); write_str(":");
+        write_hex(mac5 as usize); write_str("\n");
+
         write_str("ACTION=NONE RESET=NO DMA=NO TX=NO RX=NO\n");
         break;
     } if found { break; }}}
