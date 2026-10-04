@@ -1298,17 +1298,17 @@ fn cmd_ethdma() {
                     while j < 6 { *tx.add(j) = 0xFF; *tx.add(6 + j) = core::ptr::read_volatile((mmio as usize + j) as *const u8); j += 1; }
                     *tx.add(12)=0x08; *tx.add(13)=0x00;
                     *tx.add(14)=0x45; *tx.add(15)=0; // IPv4, IHL=5
-                    *tx.add(16)=0; *tx.add(17)=0x11; // total length 273
+                    *tx.add(16)=0x01; *tx.add(17)=0x1D; // total length 285
                     *tx.add(18)=0x81; *tx.add(19)=0x68; *tx.add(20)=0x40; *tx.add(21)=0;
                     *tx.add(22)=64; *tx.add(23)=17; // UDP
                     *tx.add(24)=0; *tx.add(25)=0; // checksum filled below
                     for j in 26..30 { *tx.add(j)=0; }
                     for j in 30..34 { *tx.add(j)=0xFF; }
                     *tx.add(34)=0; *tx.add(35)=68; *tx.add(36)=0; *tx.add(37)=67;
-                    *tx.add(38)=1; *tx.add(39)=5; *tx.add(40)=0; *tx.add(41)=0xF5; // UDP len 245
+                    *tx.add(38)=1; *tx.add(39)=5; *tx.add(40)=0x01; *tx.add(41)=0x09; // UDP len 265
                     *tx.add(42)=0; *tx.add(43)=0; // UDP checksum disabled for IPv4
                     *tx.add(42)=0; *tx.add(43)=0;
-                    let b=44usize;
+                    let b=42usize;
                     *tx.add(b)=1; *tx.add(b+1)=1; *tx.add(b+2)=6; *tx.add(b+3)=0;
                     *tx.add(b+4)=(dhcp_xid>>24) as u8; *tx.add(b+5)=(dhcp_xid>>16) as u8;
                     *tx.add(b+6)=(dhcp_xid>>8) as u8; *tx.add(b+7)=dhcp_xid as u8;
