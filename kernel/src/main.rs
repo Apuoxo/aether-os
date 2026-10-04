@@ -251,16 +251,17 @@ pub extern "C" fn kernel_main(mbi: usize) -> ! {
     vga_mark(3, b'S'); // serial init done (or skipped)
     serial::write_str("\nAETHER OS Build 178\n");
     serial::write_str("AETHER v1.7-hw\n\n");
-    // Stage 1 PMM consumes the Multiboot2 memory map and reserves the
-    // linked kernel image through .bss. The bitmap is placed in usable RAM.
+    // PMM must begin after the linked kernel image + .bss. The embedded
+    // 2230 firmware increased the kernel beyond the old fixed 2 MiB boundary,
+    // which caused early page allocations to overwrite the kernel itself.
     let kernel_end = unsafe { &__kernel_end as *const u8 as usize };
+    let pmm_start = (kernel_end + 0x1F_FFFF) & !0x1F_FFFF;
     serial::write_str("[PMM] kernel_end=");
     serial::write_hex(kernel_end);
+    serial::write_str(" start=");
+    serial::write_hex(pmm_start);
     serial::write_str("\n");
-    if !mm::init(mbi, kernel_end) {
-        serial::write_str("[PMM] INIT FAIL\n");
-        loop { unsafe { core::arch::asm!("hlt"); } }
-    }
+    mm::init(pmm_start, 64 * 1024 * 1024);
     // Capture the real Multiboot RAM value for the graphical boot screen.
     let detected_ram_mib = multiboot_usable_memory_mib(mbi);
     let managed_ram_mib = (mm::total_count() as u64) / 256;
