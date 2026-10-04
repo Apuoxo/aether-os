@@ -3,51 +3,6 @@
   "entries": [
     {
       "type": "qemu_observation",
-      "event_id": "comm-000060",
-      "communication_event": {
-        "event_id": "comm-000060",
-        "type": "observation",
-        "actor": "agent-aether",
-        "channel": "qemu_serial",
-        "observed_at": "2026-10-04T13:49:42.354029Z",
-        "payload": {
-          "observed_at": "2026-10-04T13:49:42.354029Z",
-          "run_id": "37206884545",
-          "commit": "5a68d817168e2aaf29c2cbc99798d2b18ecf5c04",
-          "outcome": "success",
-          "qemu_exit": 124
-        },
-        "correlation_id": "qemu-37206884545"
-      },
-      "run_id": "37206884545",
-      "commit": "5a68d817168e2aaf29c2cbc99798d2b18ecf5c04",
-      "observed_at": "2026-10-04T13:49:42.354029Z",
-      "outcome": "success",
-      "qemu_exit": 124,
-      "checks": {
-        "qemu_exit_accepted": true,
-        "panic_absent": true,
-        "build_banner": true,
-        "desktop_marker": true,
-        "desktop_start": true,
-        "ring3_evidence": false
-      },
-      "observations": [
-        "Aether Desktop initialization observed in QEMU serial output.",
-        "Native desktop start marker observed.",
-        "No Ring3 execution evidence observed; QEMU validation remains pre-Ring3.",
-        "QEMU has no Intel Gen6 display controller; this is virtual-hardware evidence, not AH532 evidence.",
-        "QEMU has no native HDA controller; audio hardware behavior is not validated here.",
-        "QEMU has no target Intel WLAN device; Wi-Fi hardware behavior is not validated here.",
-        "QEMU xHCI validation is unavailable in this run.",
-        "Embedded media file open path was reached.",
-        "Framebuffer test pattern reached the render stage."
-      ],
-      "conclusion": "QEMU boot reached Aether Desktop without PANIC; evidence is valid for kernel/ISO/QEMU startup but does not establish AH532 hardware behavior or Ring3 execution.",
-      "next_step": "Use the recorded QEMU evidence as the baseline and choose the next single controlled validation."
-    },
-    {
-      "type": "qemu_observation",
       "event_id": "comm-000061",
       "communication_event": {
         "event_id": "comm-000061",
@@ -2114,10 +2069,47 @@
       ],
       "conclusion": "QEMU boot reached Aether Desktop without PANIC; evidence is valid for kernel/ISO/QEMU startup but does not establish AH532 hardware behavior or Ring3 execution.",
       "next_step": "Use the recorded QEMU evidence as the baseline and choose the next single controlled validation."
+    },
+    {
+      "type": "qemu_observation",
+      "event_id": "comm-000110",
+      "communication_event": {
+        "event_id": "comm-000110",
+        "type": "observation",
+        "actor": "agent-aether",
+        "channel": "qemu_serial",
+        "observed_at": "2026-10-04T21:11:28.853837Z",
+        "payload": {
+          "observed_at": "2026-10-04T21:11:28.853837Z",
+          "run_id": "37235011871",
+          "commit": "7dac18ab521559df36eee961ae9ffcd46c2423e0",
+          "outcome": "failure",
+          "qemu_exit": 255
+        },
+        "correlation_id": "qemu-37235011871"
+      },
+      "run_id": "37235011871",
+      "commit": "7dac18ab521559df36eee961ae9ffcd46c2423e0",
+      "observed_at": "2026-10-04T21:11:28.853837Z",
+      "outcome": "failure",
+      "qemu_exit": 255,
+      "checks": {
+        "qemu_exit_accepted": false,
+        "panic_absent": true,
+        "build_banner": false,
+        "desktop_marker": false,
+        "desktop_start": false,
+        "ring3_evidence": false
+      },
+      "observations": [
+        "No Ring3 execution evidence observed; QEMU validation remains pre-Ring3."
+      ],
+      "conclusion": "QEMU validation did not satisfy all required startup markers; retain the failure as bounded experience.",
+      "next_step": "Inspect the failed marker or exit condition before making another code change."
     }
   ],
-  "last_updated": "2026-10-04T21:04:09.314582Z",
-  "last_run_id": "37234390256",
+  "last_updated": "2026-10-04T21:11:28.853837Z",
+  "last_run_id": "37235011871",
   "last_communication_event": "comm-000105",
   "last_tick_counter": 2
 }
