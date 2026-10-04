@@ -1051,11 +1051,11 @@ fn cmd_ethchip() {
         write_str(" PHY_REG64_RAW="); write_hex(phy2 as usize); write_str("\n");
 
         // MDIO reads issue read transactions through PHYAR; no PHY register is written.
-        let phy_id1 = ethchip_mdio_read(mmio as usize, 0);
-        let phy_id2 = ethchip_mdio_read(mmio as usize, 1);
-        let phy_bmcr = ethchip_mdio_read(mmio as usize, 2);
-        let phy_bmsr_1 = ethchip_mdio_read(mmio as usize, 3);
-        let phy_bmsr_2 = ethchip_mdio_read(mmio as usize, 3);
+        let phy_bmcr = ethchip_mdio_read(mmio as usize, 0);
+        let phy_bmsr_1 = ethchip_mdio_read(mmio as usize, 1);
+        let phy_bmsr_2 = ethchip_mdio_read(mmio as usize, 1);
+        let phy_id1 = ethchip_mdio_read(mmio as usize, 2);
+        let phy_id2 = ethchip_mdio_read(mmio as usize, 3);
         let phy_anar = ethchip_mdio_read(mmio as usize, 4);
         let phy_anlpar = ethchip_mdio_read(mmio as usize, 5);
 
