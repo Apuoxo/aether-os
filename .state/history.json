@@ -3,46 +3,6 @@
   "entries": [
     {
       "type": "qemu_observation",
-      "event_id": "comm-000035",
-      "communication_event": {
-        "event_id": "comm-000035",
-        "type": "observation",
-        "actor": "agent-aether",
-        "channel": "qemu_serial",
-        "observed_at": "2026-10-04T11:37:16.140293Z",
-        "payload": {
-          "observed_at": "2026-10-04T11:37:16.140293Z",
-          "run_id": "37199288770",
-          "commit": "66068759759a7ebd5fa53663c69a1c1e6bd83b72",
-          "outcome": "failure",
-          "qemu_exit": 124
-        },
-        "correlation_id": "qemu-37199288770"
-      },
-      "run_id": "37199288770",
-      "commit": "66068759759a7ebd5fa53663c69a1c1e6bd83b72",
-      "observed_at": "2026-10-04T11:37:16.140293Z",
-      "outcome": "failure",
-      "qemu_exit": 124,
-      "checks": {
-        "qemu_exit_accepted": true,
-        "panic_absent": true,
-        "build_banner": true,
-        "desktop_marker": false,
-        "desktop_start": true,
-        "ring3_evidence": false
-      },
-      "observations": [
-        "Native desktop start marker observed.",
-        "No Ring3 execution evidence observed; QEMU validation remains pre-Ring3.",
-        "QEMU has no Intel Gen6 display controller; this is virtual-hardware evidence, not AH532 evidence.",
-        "Framebuffer test pattern reached the render stage."
-      ],
-      "conclusion": "QEMU validation did not satisfy all required startup markers; retain the failure as bounded experience.",
-      "next_step": "Inspect the failed marker or exit condition before making another code change."
-    },
-    {
-      "type": "qemu_observation",
       "event_id": "comm-000036",
       "communication_event": {
         "event_id": "comm-000036",
@@ -2163,9 +2123,46 @@
       ],
       "conclusion": "QEMU boot reached Aether Desktop without PANIC; evidence is valid for kernel/ISO/QEMU startup but does not establish AH532 hardware behavior or Ring3 execution.",
       "next_step": "Use the recorded QEMU evidence as the baseline and choose the next single controlled validation."
+    },
+    {
+      "type": "qemu_observation",
+      "event_id": "comm-000085",
+      "communication_event": {
+        "event_id": "comm-000085",
+        "type": "observation",
+        "actor": "agent-aether",
+        "channel": "qemu_serial",
+        "observed_at": "2026-10-04T17:35:15.936395Z",
+        "payload": {
+          "observed_at": "2026-10-04T17:35:15.936395Z",
+          "run_id": "37221017935",
+          "commit": "e8d14fd637720540dbb805e687cf89f322517761",
+          "outcome": "failure",
+          "qemu_exit": 255
+        },
+        "correlation_id": "qemu-37221017935"
+      },
+      "run_id": "37221017935",
+      "commit": "e8d14fd637720540dbb805e687cf89f322517761",
+      "observed_at": "2026-10-04T17:35:15.936395Z",
+      "outcome": "failure",
+      "qemu_exit": 255,
+      "checks": {
+        "qemu_exit_accepted": false,
+        "panic_absent": true,
+        "build_banner": false,
+        "desktop_marker": false,
+        "desktop_start": false,
+        "ring3_evidence": false
+      },
+      "observations": [
+        "No Ring3 execution evidence observed; QEMU validation remains pre-Ring3."
+      ],
+      "conclusion": "QEMU validation did not satisfy all required startup markers; retain the failure as bounded experience.",
+      "next_step": "Inspect the failed marker or exit condition before making another code change."
     }
   ],
-  "last_updated": "2026-10-04T17:21:40.904029Z",
-  "last_run_id": "37220052914",
+  "last_updated": "2026-10-04T17:35:15.936395Z",
+  "last_run_id": "37221017935",
   "last_communication_event": "comm-000001"
 }
