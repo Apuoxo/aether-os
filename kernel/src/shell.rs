@@ -925,6 +925,22 @@ fn ethchip_read32(mmio: usize, off: usize) -> u32 {
     unsafe { core::ptr::read_volatile((mmio + off) as *const u32) }
 }
 
+fn ethchip_mdio_read(mmio: usize, phy_reg: u8) -> Option<u16> {
+    unsafe {
+        core::ptr::write_volatile(
+            (mmio + 0x60) as *mut u32,
+            ((phy_reg as u32) & 0x1F) << 16,
+        );
+    }
+    for _ in 0..1_000_000usize {
+        let v = ethchip_read32(mmio, 0x60);
+        if (v & 0x8000_0000) != 0 {
+            return Some((v & 0xFFFF) as u16);
+        }
+    }
+    None
+}
+
 fn ethchip_map_page(phys: usize) -> bool {
     unsafe {
         let cr3 = crate::mm::paging::kernel_cr3();
@@ -1031,9 +1047,39 @@ fn cmd_ethchip() {
         let phy1 = ethchip_read32(mmio as usize, 0x60);
         let phy2 = ethchip_read32(mmio as usize, 0x64);
         write_str("PHY_STATUS_2="); write_hex(phystat2 as usize);
-        write_str(" PHY_REG60="); write_hex(phy1 as usize);
-        write_str(" PHY_REG64="); write_hex(phy2 as usize); write_str("\n");
-        write_str("PHY_READ_ONLY=PASS DMA_START=NO\n");
+        write_str(" PHYAR_BEFORE="); write_hex(phy1 as usize);
+        write_str(" PHY_REG64_RAW="); write_hex(phy2 as usize); write_str("\n");
+
+        // MDIO reads issue read transactions through PHYAR; no PHY register is written.
+        let phy_id1 = ethchip_mdio_read(mmio as usize, 0);
+        let phy_id2 = ethchip_mdio_read(mmio as usize, 1);
+        let phy_bmcr = ethchip_mdio_read(mmio as usize, 2);
+        let phy_bmsr = ethchip_mdio_read(mmio as usize, 3);
+        let phy_anar = ethchip_mdio_read(mmio as usize, 4);
+        let phy_anlpar = ethchip_mdio_read(mmio as usize, 5);
+
+        write_str("MDIO_PHYID1="); match phy_id1 {
+            Some(v) => write_hex(v as usize), None => write_str("TIMEOUT"),
+        }
+        write_str(" PHYID2="); match phy_id2 {
+            Some(v) => write_hex(v as usize), None => write_str("TIMEOUT"),
+        }
+        write_str("\n");
+        write_str("MDIO_BMCR="); match phy_bmcr {
+            Some(v) => write_hex(v as usize), None => write_str("TIMEOUT"),
+        }
+        write_str(" BMSR="); match phy_bmsr {
+            Some(v) => write_hex(v as usize), None => write_str("TIMEOUT"),
+        }
+        write_str("\n");
+        write_str("MDIO_ANAR="); match phy_anar {
+            Some(v) => write_hex(v as usize), None => write_str("TIMEOUT"),
+        }
+        write_str(" ANLPAR="); match phy_anlpar {
+            Some(v) => write_hex(v as usize), None => write_str("TIMEOUT"),
+        }
+        write_str("\n");
+        write_str("MDIO_READ=PASS PHY_WRITE=NO RESET=NO DMA_START=NO\n");
 
         write_str("ACTION=NONE RESET=NO DMA=NO TX=NO RX=NO\n");
         break;
