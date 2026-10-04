@@ -436,10 +436,10 @@ pub extern "C" fn kernel_main(mbi: usize) -> ! {
         drivers::video::init();
         draw_boot_ram_screen(detected_ram_mib, managed_ram_mib);
         desktop::terminal_write("RAM DETECTED: ");
-        desktop::terminal_write("\n");
-        desktop::terminal_write("PMM MANAGED: ");
-        desktop::terminal_write("\n");
-        desktop::terminal_write("PMM LIMIT: ");
+        desktop::terminal_write_usize(detected_ram_mib as usize);
+        desktop::terminal_write(" MiB\\nPMM MANAGED: ");
+        desktop::terminal_write_usize(managed_ram_mib as usize);
+        desktop::terminal_write(" MiB\\nPMM LIMIT: ");
         desktop::terminal_write(if detected_ram_mib > managed_ram_mib { "YES\\n" } else { "NO\\n" });
         drivers::audio::init();
         media_player::init();
