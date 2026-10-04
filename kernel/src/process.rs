@@ -204,6 +204,31 @@ pub fn snapshot_pids(out: &mut [usize; MAX_PROCESSES]) -> usize {
     }
 }
 
+
+/// Copy PID/state pairs for every non-empty process-table entry.
+pub fn snapshot_states(
+    pids: &mut [usize; MAX_PROCESSES],
+    states: &mut [u8; MAX_PROCESSES],
+) -> usize {
+    unsafe {
+        let mut count = 0usize;
+        let mut i = 0usize;
+        while i < MAX_PROCESSES {
+            if TABLE[i].state != State::Empty {
+                pids[count] = TABLE[i].pid;
+                states[count] = match TABLE[i].state {
+                    State::Empty => 0,
+                    State::Ready => 1,
+                    State::Running => 2,
+                    State::Exited => 3,
+                };
+                count += 1;
+            }
+            i += 1;
+        }
+        count
+    }
+}
 pub fn get(pid: usize) -> Option<Process> {
     unsafe {
         let mut i = 0usize;
