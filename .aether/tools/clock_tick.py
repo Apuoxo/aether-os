@@ -75,7 +75,7 @@ def main():
             "delta_seconds": round(delta, 3),
             "run_id": os.environ.get("GITHUB_RUN_ID", "unknown")
         },
-        correlation_id=f"clock-{os.environ.get("GITHUB_RUN_ID", "unknown")}"
+        correlation_id=f"clock-{os.environ.get('GITHUB_RUN_ID', 'unknown')}"
     )
 
     entry = {
