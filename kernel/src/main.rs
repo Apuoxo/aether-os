@@ -435,6 +435,12 @@ pub extern "C" fn kernel_main(mbi: usize) -> ! {
         serial::write_str("[DESKTOP] starting (no Ring3)\n");
         drivers::video::init();
         draw_boot_ram_screen(detected_ram_mib, managed_ram_mib);
+        desktop::terminal_write("RAM DETECTED: ");
+        desktop::terminal_write("\n");
+        desktop::terminal_write("PMM MANAGED: ");
+        desktop::terminal_write("\n");
+        desktop::terminal_write("PMM LIMIT: ");
+        desktop::terminal_write(if detected_ram_mib > managed_ram_mib { "YES\\n" } else { "NO\\n" });
         drivers::audio::init();
         media_player::init();
         drivers::net::init();
