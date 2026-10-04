@@ -39,6 +39,8 @@ static mut LAST_REASONING_CLASSIFICATION: u8 = 0;
 static mut LAST_ACTION_GATE: u8 = 0;
 static mut LAST_ACTION_AUTHORIZATION: u8 = 0;
 static mut LAST_ACTION_KIND: u8 = 0;
+static mut ACTION_VERIFY_STATE: u8 = 0;
+static mut ACTION_VERIFY_EXPECTED_COUNT: u64 = 0;
 
 pub const PROCESS_EVENT_NONE: u8 = 0;
 pub const PROCESS_EVENT_APPEARED: u8 = 1;
@@ -71,6 +73,11 @@ pub const ACTION_AUTH_GRANTED: u8 = 1;
 // It performs no device I/O, process mutation, filesystem write, or model call.
 pub const ACTION_KIND_NONE: u8 = 0;
 pub const ACTION_KIND_RUNTIME_MARK: u8 = 1;
+
+pub const ACTION_VERIFY_NONE: u8 = 0;
+pub const ACTION_VERIFY_PENDING: u8 = 1;
+pub const ACTION_VERIFY_PASSED: u8 = 2;
+pub const ACTION_VERIFY_FAILED: u8 = 3;
 
 pub const STATE_OFF: u8 = 0;
 pub const STATE_AWAKE: u8 = 1;
@@ -111,6 +118,8 @@ pub fn init() {
         LAST_ACTION_GATE = ACTION_GATE_NONE;
         LAST_ACTION_AUTHORIZATION = ACTION_AUTH_NONE;
         LAST_ACTION_KIND = ACTION_KIND_NONE;
+        ACTION_VERIFY_STATE = ACTION_VERIFY_NONE;
+        ACTION_VERIFY_EXPECTED_COUNT = 0;
     }
     serial::write_str("[VIRT RUNTIME] ACTIVE STATE=AWAKE heartbeat=RTC-second\n");
 }
@@ -128,6 +137,7 @@ pub fn tick() {
             evaluate_reasoning_gate();
             emit_reasoning_request();
             act_if_authorized();
+            verify_last_action();
         }
     }
 }
@@ -389,6 +399,21 @@ pub fn last_action_authorization() -> u8 { unsafe { LAST_ACTION_AUTHORIZATION } 
 
 pub fn last_action_kind() -> u8 { unsafe { LAST_ACTION_KIND } }
 
+fn verify_last_action() {
+    unsafe {
+        if ACTION_VERIFY_STATE != ACTION_VERIFY_PENDING { return; }
+        if ACTIONS == ACTION_VERIFY_EXPECTED_COUNT {
+            ACTION_VERIFY_STATE = ACTION_VERIFY_PASSED;
+            serial::write_str("[VIRT RUNTIME] ACTION_VERIFY=PASSED kind=RUNTIME_MARK\\n");
+        } else {
+            ACTION_VERIFY_STATE = ACTION_VERIFY_FAILED;
+            serial::write_str("[VIRT RUNTIME] ACTION_VERIFY=FAILED kind=RUNTIME_MARK\\n");
+        }
+    }
+}
+
+pub fn action_verify_state() -> u8 { unsafe { ACTION_VERIFY_STATE } }
+
 /// Execute exactly one explicitly authorized, bounded internal action.
 /// No external I/O or arbitrary code execution is reachable from this path.
 pub fn execute_authorized_action() -> u8 {
@@ -402,6 +427,8 @@ pub fn execute_authorized_action() -> u8 {
             return ACTION_AUTH_NONE;
         }
         ACTIONS = ACTIONS.wrapping_add(1);
+        ACTION_VERIFY_EXPECTED_COUNT = ACTIONS;
+        ACTION_VERIFY_STATE = ACTION_VERIFY_PENDING;
         serial::write_str("[VIRT RUNTIME] ACTION_EXECUTED kind=RUNTIME_MARK\\n");
         LAST_ACTION_AUTHORIZATION = ACTION_AUTH_NONE;
         LAST_ACTION_KIND = ACTION_KIND_NONE;
