@@ -2,6 +2,9 @@ name: Aether QEMU GDB lab
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/qemu-gdb.yml'
 
 jobs:
   gdb-smoke:
