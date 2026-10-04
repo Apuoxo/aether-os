@@ -4076,6 +4076,7 @@ pub fn run() -> ! {
     terminal_write("AI: MODEL BRIDGE=PENDING (NO LOCAL MODEL CLAIM)\n");
     terminal_write("\x1b[32maether>\x1b[0m ");
     ai_init();
+    serial::write_str("AI_STATUS:READY\n");
     unsafe {
         DIRTY_FULL = true;
         FOCUS = 15;

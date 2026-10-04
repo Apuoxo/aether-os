@@ -42,7 +42,9 @@ def model_answer(message: str, model: str) -> str:
         timeout=45, check=False, env=dict(os.environ),
     )
     answer = " ".join(result.stdout.strip().split())
-    return (answer or "External model returned no text.")[:90]
+    if result.returncode != 0 or not answer:
+        raise RuntimeError("external model request failed")
+    return answer[:90]
 
 
 def connect(host: str, port: int, timeout: float = 30.0) -> socket.socket:
@@ -67,6 +69,28 @@ def main() -> int:
     args = ap.parse_args()
 
     sock = connect(args.host, args.port)
+    buf = b""
+    ready_deadline = time.monotonic() + 45.0
+    guest_ready = False
+    while not guest_ready:
+        try:
+            chunk = sock.recv(1024)
+        except socket.timeout:
+            if time.monotonic() >= ready_deadline:
+                raise TimeoutError("guest AI transport ready timeout")
+            continue
+        if not chunk:
+            raise RuntimeError("guest closed AI transport before ready")
+        buf += chunk
+        while b"\n" in buf:
+            raw, buf = buf.split(b"\n", 1)
+            line = raw.decode("utf-8", "replace").rstrip("\r")
+            if line:
+                log(line)
+            if line == "AI_STATUS:READY":
+                guest_ready = True
+                break
+
     sock.sendall(b"AI_STATUS:ACTIVE\n")
     log("AI_STATUS:ACTIVE")
     if args.inject:
@@ -74,7 +98,6 @@ def main() -> int:
         sock.sendall(("AI_IN:" + payload + "\n").encode("utf-8", "replace"))
         log("AI_IN:" + payload)
 
-    buf = b""
     deadline = time.monotonic() + 60.0 if args.inject else None
     try:
         while True:
