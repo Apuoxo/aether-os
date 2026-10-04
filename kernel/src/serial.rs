@@ -66,6 +66,25 @@ pub fn init() {
         outb(0x3F8 + 2, 0xC7);
         outb(0x3F8 + 4, 0x0B);
         ENABLED = true;
+
+        // Verify the guest UART RX path independently of the external chardev.
+        outb(0x3F8 + 4, 0x1B); // MCR loopback + normal modem bits
+        outb(0x3F8, 0x55);
+        let mut t = 0u32;
+        let mut rx = 0u8;
+        while t < 100_000 {
+            if (inb(0x3F8 + 5) & 0x01) != 0 {
+                rx = inb(0x3F8);
+                break;
+            }
+            t += 1;
+        }
+        outb(0x3F8 + 4, 0x0B);
+        write_str(if rx == 0x55 {
+            "[SERIAL] RX_LOOPBACK=PASS\n"
+        } else {
+            "[SERIAL] RX_LOOPBACK=FAIL\n"
+        });
     }
 }
 
