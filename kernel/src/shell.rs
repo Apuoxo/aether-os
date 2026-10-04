@@ -1356,7 +1356,7 @@ fn cmd_ethdma() {
                     core::ptr::write_volatile((mmio as usize + 0x24) as *mut u32, (tx_ring >> 32) as u32);
                     core::ptr::write_volatile((mmio as usize + 0xDA) as *mut u16, 2048);
                     let rcr_old = core::ptr::read_volatile((mmio as usize + 0x44) as *const u32);
-                    let rcr = (rcr_old & !0x3F) | 0x0000_000A;
+                    // During DHCP, accept broadcast plus unicast Ethernet frames. Some embedded DHCP servers\n                    // answer the broadcast REQUEST with an ACK addressed to yiaddr before the\n                    // client has configured that address. Keep this broad only for the bring-up\n                    // path; the later IP stack will tighten filtering when it becomes stateful.\n                    let rcr = (rcr_old & !0x3F) | 0x0000_000B;
                     core::ptr::write_volatile((mmio as usize + 0x44) as *mut u32, rcr);
                     core::ptr::write_volatile((mmio as usize + 0x3C) as *mut u16, 0);
                     core::ptr::write_volatile((mmio as usize + 0x3E) as *mut u16, 0xFFFF);
