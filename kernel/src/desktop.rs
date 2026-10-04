@@ -6,6 +6,7 @@ use crate::fs;
 use crate::serial;
 use crate::input;
 use crate::wallpaper;
+use crate::mm;
 
 // XP Luna-inspired colors (original Aether theme, not Microsoft assets)
 const COL_SKY_TOP: u32 = 0x003A6EA5;
