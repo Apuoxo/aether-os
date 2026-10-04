@@ -941,6 +941,24 @@ fn ethchip_mdio_read(mmio: usize, phy_reg: u8) -> Option<u16> {
     None
 }
 
+fn ethchip_mdio_write(mmio: usize, phy_reg: u8, value: u16) -> bool {
+    unsafe {
+        core::ptr::write_volatile(
+            (mmio + 0x60) as *mut u32,
+            0x8000_0000
+                | (((phy_reg as u32) & 0x1F) << 16)
+                | value as u32,
+        );
+    }
+    for _ in 0..1_000_000usize {
+        let v = ethchip_read32(mmio, 0x60);
+        if (v & 0x8000_0000) == 0 {
+            return true;
+        }
+    }
+    false
+}
+
 fn ethchip_map_page(phys: usize) -> bool {
     unsafe {
         let cr3 = crate::mm::paging::kernel_cr3();
@@ -1001,7 +1019,9 @@ fn cmd_ethchip() {
         write_str("CHIPCMD="); write_hex(chipcmd as usize);
         write_str(" PHYSTATUS="); write_hex(phystat as usize); write_str("\n");
 
-        if xid == 0x380 {
+        if (xid & 0x7C8) == 0x2C8 {
+            write_str("VARIANT=RTL8168EVL/8111EVL\n");
+        } else if xid == 0x380 {
             write_str("VARIANT=RTL8168B/8111B\n");
         } else if xid == 0x3C0 || xid == 0x3C2 || xid == 0x3C3 {
             write_str("VARIANT=RTL8168C/8111C\n");
@@ -1096,6 +1116,100 @@ fn cmd_ethchip() {
     write_str("======== ETHCHIP END ========\n");
 }
 
+fn cmd_ethlink() {
+    write_str("======== ETHERNET LINK CONTROL ========\n");
+    write_str("MODE=RTL8168 MDIO ONLY\n");
+    write_str("XID_CHECK=MASK(0x7C8)==0x2C8\n");
+
+    let found = false;
+    'outer: for bus in 0u8..=31 {
+        for dev in 0u8..32 {
+            for func in 0u8..8 {
+                let id = pci_cfg_read32(bus, dev, func, 0x00);
+                if id == 0 || id == 0xFFFF_FFFF { continue; }
+                let classreg = pci_cfg_read32(bus, dev, func, 0x08);
+                if ((classreg >> 24) & 0xFF) != 0x02 || ((classreg >> 16) & 0xFF) != 0x00 { continue; }
+                if (id & 0xFFFF) != 0x10EC || ((id >> 16) & 0xFFFF) != 0x8168 { continue; }
+
+                let bar_lo = pci_cfg_read32(bus, dev, func, 0x18);
+                let bar_hi = pci_cfg_read32(bus, dev, func, 0x1C);
+                let mmio = ((bar_hi as u64) << 32) | ((bar_lo & 0xFFFF_FFF0) as u64);
+                if mmio == 0 || (mmio & 0xFFF) != 0 {
+                    write_str("RESULT=NO_VALID_MMIO_BAR2\n");
+                    found = true;
+                    break;
+                }
+                if !ethchip_map_page(mmio as usize) {
+                    write_str("RESULT=MMIO_MAP_FAIL\n");
+                    found = true;
+                    break;
+                }
+
+                let txcfg = ethchip_read32(mmio as usize, 0x40);
+                let xid = (txcfg >> 20) & 0xFCF;
+                write_str("BDF="); write_usize(bus as usize); write_str(":");
+                write_usize(dev as usize); write_str("."); write_usize(func as usize); write_str("\n");
+                write_str("TXCONFIG="); write_hex(txcfg as usize);
+                write_str(" XID="); write_hex(xid as usize); write_str("\n");
+
+                if (xid & 0x7C8) != 0x2C8 {
+                    write_str("XID_CHECK=FAIL\n");
+                    write_str("ACTION=NONE RESET=NO DMA=NO\n");
+                    break 'outer;
+                }
+                write_str("XID_CHECK=PASS VARIANT=RTL8168EVL/8111EVL\n");
+
+                let bmcr = ethchip_mdio_read(mmio as usize, 0);
+                let bmsr_before = ethchip_mdio_read(mmio as usize, 1);
+                let anar = ethchip_mdio_read(mmio as usize, 4);
+                let gctl = ethchip_mdio_read(mmio as usize, 9);
+                let gstat = ethchip_mdio_read(mmio as usize, 10);
+
+                write_str("BEFORE BMCR="); match bmcr { Some(v) => write_hex(v as usize), None => write_str("TIMEOUT") }
+                write_str(" BMSR="); match bmsr_before { Some(v) => write_hex(v as usize), None => write_str("TIMEOUT") }
+                write_str(" ANAR="); match anar { Some(v) => write_hex(v as usize), None => write_str("TIMEOUT") }
+                write_str(" REG9="); match gctl { Some(v) => write_hex(v as usize), None => write_str("TIMEOUT") }
+                write_str(" REG10="); match gstat { Some(v) => write_hex(v as usize), None => write_str("TIMEOUT") }
+                write_str("\n");
+
+                let restart = match bmcr {
+                    Some(v) => ethchip_mdio_write(mmio as usize, 0, v | 0x0200),
+                    None => false,
+                };
+                write_str("RESTART_AN="); write_str(if restart { "ISSUED" } else { "WRITE_FAIL" }); write_str("\n");
+
+                let mut complete = false;
+                let mut link = false;
+                let mut ticks = 0usize;
+                while ticks < 5_000_000usize {
+                    if let Some(v) = ethchip_mdio_read(mmio as usize, 1) {
+                        complete = (v & 0x0020) != 0;
+                        link = (v & 0x0004) != 0;
+                        if complete && link { break; }
+                    }
+                    ticks += 1;
+                }
+
+                let bmsr_final_1 = ethchip_mdio_read(mmio as usize, 1);
+                let bmsr_final_2 = ethchip_mdio_read(mmio as usize, 1);
+                let gstat_final = ethchip_mdio_read(mmio as usize, 10);
+
+                write_str("AFTER BMSR1="); match bmsr_final_1 { Some(v) => write_hex(v as usize), None => write_str("TIMEOUT") }
+                write_str(" BMSR2="); match bmsr_final_2 { Some(v) => write_hex(v as usize), None => write_str("TIMEOUT") }
+                write_str(" REG10="); match gstat_final { Some(v) => write_hex(v as usize), None => write_str("TIMEOUT") }
+                write_str(" ANEG="); write_str(if complete { "COMPLETE" } else { "INCOMPLETE" });
+                write_str(" LINK="); write_str(if link { "UP" } else { "DOWN" }); write_str("\n");
+                write_str("WAIT_TICKS="); write_usize(ticks); write_str("\n");
+                write_str("DMA_START=NO RESET=NO\n");
+                write_str("======== ETHLINK END ========\n");
+                found = true;
+                break 'outer;
+            }
+        }
+    }
+    if !found { write_str("RESULT=RTL8168_NOT_FOUND\n"); write_str("======== ETHLINK END ========\n"); }
+}
+
 fn cmd_ethdiag() {
     write_str("======== ETHERNET PCI DIAGNOSTIC ========\n");
     write_str("MODE=READ_ONLY PCI_CONFIG\n");
@@ -1158,7 +1272,7 @@ fn cmd_net() {
 fn cmd_help() {
     write_str("Aether Terminal - native command interface\n");
     write_str("Core: HELP  CLS  VER  LOG  TANSI  SEARCH <text>\n");
-    write_str("Hardware: KMS5  VINFO  V800  V1366  AUD  AUD2  AUD3  MOUS  USB  WF  ETHDIAG  ETHCHIP  NET\n");
+    write_str("Hardware: KMS5  VINFO  V800  V1366  AUD  AUD2  AUD3  MOUS  USB  WF  ETHDIAG  ETHCHIP  ETHLINK  NET\n");
     write_str("Tip: Up/Down recalls command history; arrow keys scroll long output.\n");
 }
 
@@ -1186,7 +1300,9 @@ fn run_line(line: &[u8], len: usize) {
     } else if eq(line, s, clen, b"ETHCHIP") || eq(line, s, clen, b"ethchip") {
         cmd_ethchip();
     } else if eq(line, s, clen, b"ETHDIAG") || eq(line, s, clen, b"ethdiag") {
-        cmd_ethdiag();
+        cmd_ethdiag(); 
+    } else if eq(line, s, clen, b"ETHLINK") || eq(line, s, clen, b"ethlink") {
+        cmd_ethlink();
     } else if eq(line, s, clen, b"HELP") || eq(line, s, clen, b"help") {
         cmd_help();
     } else if eq(line, s, clen, b"CLS") || eq(line, s, clen, b"cls") {
