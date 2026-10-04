@@ -85,7 +85,7 @@ jobs:
             --host 127.0.0.1 \
             --port 45454 \
             --inject "What is Aether OS and what is this text channel?" \
-            --model "gpt-5.4" \
+            --model "auto" \
             > /tmp/aether-model-bridge.log 2>&1 &
           BRIDGE_PID=$!
           timeout 70s qemu-system-x86_64 \

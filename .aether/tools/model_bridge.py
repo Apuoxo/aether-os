@@ -66,7 +66,7 @@ def main() -> int:
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=45454)
     ap.add_argument("--inject")
-    ap.add_argument("--model", default="gpt-5.4")
+    ap.add_argument("--model", default="auto")
     args = ap.parse_args()
 
     # The guest currently has no AI_STATUS:READY handshake marker. The TCP
