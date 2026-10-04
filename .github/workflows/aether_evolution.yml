@@ -115,6 +115,29 @@ jobs:
           cat /tmp/aether-persistence-reboot.log
           test "$reboot_rc" = 0 || test "$reboot_rc" = 124
           grep -q '\\[VIRT EXPERIENCE\\] RESTORED /virt.exp' /tmp/aether-persistence-reboot.log
+          AETHER_MODEL_COMMAND='python3 -c "print(\\\'ACTION: RUNTIME_MARK\\\')"' \\
+            python3 .aether/tools/model_bridge.py \\
+              --host 127.0.0.1 \\
+              --port 45454 \\
+              --model "auto" \\
+              > /tmp/aether-action-bridge.log 2>&1 &
+          ACTION_BRIDGE_PID=$!
+          timeout 20s qemu-system-x86_64 \\
+            -cdrom kernel/build/aether.iso \\
+            -drive file=/tmp/aether-state.img,format=raw,if=ide \\
+            -chardev socket,id=virtserial2,host=127.0.0.1,port=45454,server=on,wait=off,nodelay=on \\
+            -device isa-serial,chardev=virtserial2,iobase=0x3f8,irq=4,index=0 \\
+            -display none \\
+            -m 128M \\
+            -no-reboot
+          action_rc=$?
+          kill "$ACTION_BRIDGE_PID" 2>/dev/null || true
+          wait "$ACTION_BRIDGE_PID" 2>/dev/null || true
+          cat /tmp/aether-action-bridge.log
+          test "$action_rc" = 0 || test "$action_rc" = 124
+          grep -q '\\[VIRT RUNTIME\\] ACTION_EXECUTED kind=RUNTIME_MARK' /tmp/aether-action-bridge.log
+          grep -q '\\[VIRT RUNTIME\\] ACTION_OBSERVED count=' /tmp/aether-action-bridge.log
+          grep -q '\\[VIRT RUNTIME\\] ACTION_VERIFY=PASSED kind=RUNTIME_MARK' /tmp/aether-action-bridge.log
 
       - name: Analyze QEMU experience
         if: always()
