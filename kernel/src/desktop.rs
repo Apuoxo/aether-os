@@ -1627,7 +1627,8 @@ fn keyboard_key_to_ascii(label:&str,shift:bool,caps:bool)->Option<u8>{
 fn keyboard_emit(label:&str){
     unsafe{
         let target=KEYBOARD_TARGET;
-        if target>=MAX_WIN||!WINS[target].visible||WINS[target].kind!=WinKind::Terminal{return;}
+        if target>=MAX_WIN||!WINS[target].visible||
+           (WINS[target].kind!=WinKind::Terminal && WINS[target].kind!=WinKind::AIChat){return;}
         if label=="SHIFT"{KEYBOARD_SHIFT=!KEYBOARD_SHIFT;DIRTY_FULL=true;return;}
         if label=="CAPS"{KEYBOARD_CAPS=!KEYBOARD_CAPS;DIRTY_FULL=true;return;}
         if label=="CTRL"{KEYBOARD_CTRL=!KEYBOARD_CTRL;DIRTY_FULL=true;return;}
@@ -1662,7 +1663,8 @@ fn keyboard_emit(label:&str){
 
 fn handle_terminal_keyboard_button(mx:i32,my:i32)->bool{
     unsafe{
-        if FOCUS>=MAX_WIN||!WINS[FOCUS].visible||WINS[FOCUS].kind!=WinKind::Terminal{return false;}
+        if FOCUS>=MAX_WIN||!WINS[FOCUS].visible||
+           (WINS[FOCUS].kind!=WinKind::Terminal && WINS[FOCUS].kind!=WinKind::AIChat){return false;}
         let w=&WINS[FOCUS];
         let bx=w.x+w.w-84;
         let by=w.y+TITLE_H+4;
@@ -1681,7 +1683,8 @@ fn handle_terminal_keyboard_button(mx:i32,my:i32)->bool{
 
 fn draw_terminal_keyboard(idx:usize){
     unsafe{
-        if !KEYBOARD_OPEN||idx>=MAX_WIN||!WINS[idx].visible||WINS[idx].kind!=WinKind::Terminal{return;}
+        if !KEYBOARD_OPEN||idx>=MAX_WIN||!WINS[idx].visible||
+           (WINS[idx].kind!=WinKind::Terminal && WINS[idx].kind!=WinKind::AIChat){return;}
         let w=&WINS[idx];
         let wx=w.x as usize;
         let wy=w.y as usize;
@@ -1734,7 +1737,8 @@ fn draw_terminal_keyboard(idx:usize){
 
 fn handle_terminal_keyboard_click(mx:i32,my:i32)->bool{
     unsafe{
-        if !KEYBOARD_OPEN||FOCUS>=MAX_WIN||!WINS[FOCUS].visible||WINS[FOCUS].kind!=WinKind::Terminal{return false;}
+        if !KEYBOARD_OPEN||FOCUS>=MAX_WIN||!WINS[FOCUS].visible||
+           (WINS[FOCUS].kind!=WinKind::Terminal && WINS[FOCUS].kind!=WinKind::AIChat){return false;}
         let w=&WINS[FOCUS];
         let wx=w.x;
         let wy=w.y;
@@ -2651,6 +2655,11 @@ fn draw_window(idx: usize) {
                     wh - TITLE_H as usize - 3, 0x0013161B);
                 graphics::fill_rect(wx + 5, wy + TITLE_H as usize + 4, ww - 10, 24, 0x001D2229);
                 graphics::draw_str(wx + 16, wy + TITLE_H as usize + 12, "Aether AI / TEXT BRIDGE", 0x00F2F2F2);
+                let ai_kb_x = wx + ww.saturating_sub(84);
+                graphics::fill_rect(ai_kb_x, wy + TITLE_H as usize + 4, 30, 20,
+                    if unsafe { KEYBOARD_OPEN && KEYBOARD_TARGET == idx } { 0x003E9CCB } else { 0x00282F38 });
+                graphics::border_rect(ai_kb_x, wy + TITLE_H as usize + 4, 30, 20, 0x006A747C);
+                graphics::draw_str(ai_kb_x + 7, wy + TITLE_H as usize + 10, "KB", 0x00F2F2F2);
                 graphics::draw_str(wx + ww.saturating_sub(170), wy + TITLE_H as usize + 12,
                     if unsafe { AI_BRIDGE_ACTIVE } { "MODEL BRIDGE: ACTIVE" } else { "MODEL BRIDGE: WAITING" }, 0x0066D966);
                 let top = wy + TITLE_H as usize + 38;
@@ -2673,7 +2682,9 @@ fn draw_window(idx: usize) {
                         r += 1; row += 1;
                     }
                 }
-                let iy = wy + wh - 44;
+                let keyboard_for_ai = unsafe { KEYBOARD_OPEN && KEYBOARD_TARGET == idx };
+                let keyboard_h = if keyboard_for_ai { terminal_keyboard_height(w.w) } else { 0 };
+                let iy = wy + wh.saturating_sub(44 + keyboard_h);
                 graphics::fill_rect(wx + 8, iy, ww - 16, 28, 0x000B0D10);
                 graphics::border_rect(wx + 8, iy, ww - 16, 28, 0x00505050);
                 graphics::draw_str(wx + 16, iy + 10, "YOU>", 0x0066D966);
@@ -2687,8 +2698,14 @@ fn draw_window(idx: usize) {
                         graphics::fill_rect(wx + 56 + AI_INPUT_CURSOR * 8, iy + 9, 6, 9, 0x0000D7FF);
                     }
                 }
-                graphics::draw_str(wx + 12, wy + wh - 12,
-                    "ENTER: send | ESC: menus | MODEL BRIDGE: external", 0x007D8791);
+                if !keyboard_for_ai {
+                    graphics::draw_str(wx + 12, wy + wh - 12,
+                        "ENTER: send | ESC: menus | MODEL BRIDGE: external", 0x007D8791);
+                } else {
+                    graphics::draw_str(wx + 12, iy + 36,
+                        "Keyboard: on-screen input", 0x007D8791);
+                    draw_terminal_keyboard(idx);
+                }
             }
             WinKind::Alarm => {
                 crate::alarm::alarm_draw(wx as i32 + 3, wy as i32 + TITLE_H);
