@@ -1526,7 +1526,7 @@ fn cmd_net() {
 fn cmd_help() {
     write_str("Aether Terminal - native command interface\n");
     write_str("Core: HELP  CLS  VER  LOG  TANSI  SEARCH <text>\n");
-    write_str("Hardware: KMS5  VINFO  V800  V1366  AUD  AUD2  AUD3  MOUS  USB  WF  ETHDIAG  ETHCHIP  ETHLINK  NET\n");
+    write_str("Hardware: KMS5  VINFO  V800  V1366  AUD  AUD2  AUD3  MOUS  USB  WF  ETHDIAG  ETHCHIP  ETHLINK  ETHDMA  NET\n");
     write_str("Tip: Up/Down recalls command history; arrow keys scroll long output.\n");
 }
 
@@ -1557,6 +1557,8 @@ fn run_line(line: &[u8], len: usize) {
         cmd_ethdiag(); 
     } else if eq(line, s, clen, b"ETHLINK") || eq(line, s, clen, b"ethlink") {
         cmd_ethlink();
+    } else if eq(line, s, clen, b"ETHDMA") || eq(line, s, clen, b"ethdma") {
+        cmd_ethdma();
     } else if eq(line, s, clen, b"HELP") || eq(line, s, clen, b"help") {
         cmd_help();
     } else if eq(line, s, clen, b"CLS") || eq(line, s, clen, b"cls") {
