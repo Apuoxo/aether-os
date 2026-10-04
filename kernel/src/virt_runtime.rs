@@ -47,6 +47,19 @@ static mut SYSTEM_STATE_CHANGES: u64 = 0;
 static mut SYSTEM_STATE_HEALTH: u8 = SYSTEM_HEALTH_UNKNOWN;
 static mut SYSTEM_STATE_INITIALIZED: bool = false;
 
+/// Fixed three-hour whole-OS operational history.
+/// One snapshot is recorded per runtime heartbeat (one RTC second).
+/// 10,800 entries is the hard upper bound; new snapshots overwrite the oldest.
+pub const SYSTEM_HISTORY_SECONDS: usize = 3 * 60 * 60;
+static mut SYSTEM_HISTORY_STATES: [[u8; SYSTEM_SUBSYSTEM_COUNT]; SYSTEM_HISTORY_SECONDS] =
+    [[SYSTEM_STATE_UNKNOWN; SYSTEM_SUBSYSTEM_COUNT]; SYSTEM_HISTORY_SECONDS];
+static mut SYSTEM_HISTORY_HEALTH: [u8; SYSTEM_HISTORY_SECONDS] =
+    [SYSTEM_HEALTH_UNKNOWN; SYSTEM_HISTORY_SECONDS];
+static mut SYSTEM_HISTORY_SEQUENCE: [u32; SYSTEM_HISTORY_SECONDS] = [0; SYSTEM_HISTORY_SECONDS];
+static mut SYSTEM_HISTORY_WRITE_INDEX: usize = 0;
+static mut SYSTEM_HISTORY_COUNT: usize = 0;
+static mut SYSTEM_HISTORY_NEXT_SEQUENCE: u32 = 1;
+
 pub const PROCESS_EVENT_NONE: u8 = 0;
 pub const PROCESS_EVENT_APPEARED: u8 = 1;
 pub const PROCESS_EVENT_DISAPPEARED: u8 = 2;
@@ -160,6 +173,13 @@ pub fn init() {
         SYSTEM_STATE_CHANGES = 0;
         SYSTEM_STATE_HEALTH = SYSTEM_HEALTH_UNKNOWN;
         SYSTEM_STATE_INITIALIZED = false;
+        SYSTEM_HISTORY_STATES =
+            [[SYSTEM_STATE_UNKNOWN; SYSTEM_SUBSYSTEM_COUNT]; SYSTEM_HISTORY_SECONDS];
+        SYSTEM_HISTORY_HEALTH = [SYSTEM_HEALTH_UNKNOWN; SYSTEM_HISTORY_SECONDS];
+        SYSTEM_HISTORY_SEQUENCE = [0; SYSTEM_HISTORY_SECONDS];
+        SYSTEM_HISTORY_WRITE_INDEX = 0;
+        SYSTEM_HISTORY_COUNT = 0;
+        SYSTEM_HISTORY_NEXT_SEQUENCE = 1;
     }
     serial::write_str("[VIRT RUNTIME] ACTIVE STATE=AWAKE heartbeat=RTC-second\n");
 }
@@ -290,6 +310,18 @@ fn observe_system_state() {
         } else {
             SYSTEM_HEALTH_READY
         };
+
+        // Store the completed snapshot after all state and health values exist.
+        // The fixed ring overwrites the oldest entry after reaching capacity.
+        let index = SYSTEM_HISTORY_WRITE_INDEX;
+        SYSTEM_HISTORY_STATES[index] = SYSTEM_STATE;
+        SYSTEM_HISTORY_HEALTH[index] = SYSTEM_STATE_HEALTH;
+        SYSTEM_HISTORY_SEQUENCE[index] = SYSTEM_HISTORY_NEXT_SEQUENCE;
+        SYSTEM_HISTORY_NEXT_SEQUENCE = SYSTEM_HISTORY_NEXT_SEQUENCE.wrapping_add(1);
+        SYSTEM_HISTORY_WRITE_INDEX = (index + 1) % SYSTEM_HISTORY_SECONDS;
+        if SYSTEM_HISTORY_COUNT < SYSTEM_HISTORY_SECONDS {
+            SYSTEM_HISTORY_COUNT += 1;
+        }
     }
 }
 
@@ -300,6 +332,48 @@ pub fn system_state(subsystem: usize) -> u8 {
 
 pub fn system_state_health() -> u8 { unsafe { SYSTEM_STATE_HEALTH } }
 pub fn system_state_changes() -> u64 { unsafe { SYSTEM_STATE_CHANGES } }
+
+/// Number of snapshots currently retained, capped at three hours.
+pub fn system_history_count() -> usize { unsafe { SYSTEM_HISTORY_COUNT } }
+
+/// Fixed ring capacity in one-second snapshots.
+pub fn system_history_capacity() -> usize { SYSTEM_HISTORY_SECONDS }
+
+/// Sequence number of the newest retained snapshot, or zero when empty.
+pub fn system_history_latest_sequence() -> u32 {
+    unsafe {
+        if SYSTEM_HISTORY_COUNT == 0 { return 0; }
+        let index = if SYSTEM_HISTORY_WRITE_INDEX == 0 {
+            SYSTEM_HISTORY_SECONDS - 1
+        } else {
+            SYSTEM_HISTORY_WRITE_INDEX - 1
+        };
+        SYSTEM_HISTORY_SEQUENCE[index]
+    }
+}
+
+/// Copy one retained snapshot. Offset zero is newest; one is previous, etc.
+pub fn system_history_read(
+    offset: usize,
+    states: &mut [u8; SYSTEM_SUBSYSTEM_COUNT],
+    health: &mut u8,
+    sequence: &mut u32,
+) -> bool {
+    unsafe {
+        if offset >= SYSTEM_HISTORY_COUNT { return false; }
+        let newest = if SYSTEM_HISTORY_WRITE_INDEX == 0 {
+            SYSTEM_HISTORY_SECONDS - 1
+        } else {
+            SYSTEM_HISTORY_WRITE_INDEX - 1
+        };
+        let index = (newest + SYSTEM_HISTORY_SECONDS - (offset % SYSTEM_HISTORY_SECONDS))
+            % SYSTEM_HISTORY_SECONDS;
+        *states = SYSTEM_HISTORY_STATES[index];
+        *health = SYSTEM_HISTORY_HEALTH[index];
+        *sequence = SYSTEM_HISTORY_SEQUENCE[index];
+        true
+    }
+}
 
 pub fn observe_system() {
     if !ready() { return; }
