@@ -136,12 +136,15 @@ pub fn observe_processes() {
             PROCESS_BASELINE_READY = true;
             return;
         }
+
         let mut i = 0usize;
         while i < count {
             let pid = ids[i];
+            let mut found = false;
             let mut j = 0usize;
             while j < PREVIOUS_PROCESS_COUNT {
                 if PREVIOUS_PROCESS_IDS[j] == pid {
+                    found = true;
                     if PREVIOUS_PROCESS_STATES[j] != states[i] {
                         EVENTS = EVENTS.wrapping_add(1);
                         LAST_PROCESS_EVENT_PID = pid;
@@ -160,8 +163,48 @@ pub fn observe_processes() {
                 }
                 j += 1;
             }
+            if !found {
+                EVENTS = EVENTS.wrapping_add(1);
+                LAST_PROCESS_EVENT_PID = pid;
+                LAST_PROCESS_EVENT_KIND = PROCESS_EVENT_APPEARED;
+                LAST_PROCESS_EVENT_OLD_STATE = 0;
+                LAST_PROCESS_EVENT_NEW_STATE = states[i];
+                serial::write_str("[VIRT RUNTIME] PROCESS APPEARED PID=");
+                serial::write_usize(pid);
+                serial::write_str("\n");
+                break;
+            }
             i += 1;
         }
+
+        if LAST_PROCESS_EVENT_KIND == PROCESS_EVENT_NONE {
+            let mut p = 0usize;
+            while p < PREVIOUS_PROCESS_COUNT {
+                let pid = PREVIOUS_PROCESS_IDS[p];
+                let mut found = false;
+                let mut j = 0usize;
+                while j < count {
+                    if ids[j] == pid {
+                        found = true;
+                        break;
+                    }
+                    j += 1;
+                }
+                if !found {
+                    EVENTS = EVENTS.wrapping_add(1);
+                    LAST_PROCESS_EVENT_PID = pid;
+                    LAST_PROCESS_EVENT_KIND = PROCESS_EVENT_DISAPPEARED;
+                    LAST_PROCESS_EVENT_OLD_STATE = PREVIOUS_PROCESS_STATES[p];
+                    LAST_PROCESS_EVENT_NEW_STATE = 0;
+                    serial::write_str("[VIRT RUNTIME] PROCESS DISAPPEARED PID=");
+                    serial::write_usize(pid);
+                    serial::write_str("\n");
+                    break;
+                }
+                p += 1;
+            }
+        }
+
         PREVIOUS_PROCESS_IDS = ids;
         PREVIOUS_PROCESS_STATES = states;
         PREVIOUS_PROCESS_COUNT = count;
