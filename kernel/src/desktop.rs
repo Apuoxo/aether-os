@@ -380,7 +380,10 @@ fn ai_transport_poll() {
                 AI_RX_LEN = 0;
                 if len >= 7 && &line[..7] == b"AI_RES:" {
                     let body = &line[7..len];
-                    if AI_TERMINAL_TARGET {
+                    if crate::virt_runtime::reasoning_waiting() {
+                        crate::virt_runtime::receive_reasoning_response(body);
+                        ai_push_bytes(body);
+                    } else if AI_TERMINAL_TARGET {
                         terminal_write("VIRT: ");
                         if let Ok(text) = core::str::from_utf8(body) {
                             terminal_write(text);

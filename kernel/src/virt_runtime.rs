@@ -30,6 +30,9 @@ static mut LAST_PROCESS_STATES: [u8; crate::process::MAX_PROCESSES] = [0; crate:
 static mut PREVIOUS_PROCESS_STATES: [u8; crate::process::MAX_PROCESSES] = [0; crate::process::MAX_PROCESSES];
 static mut LAST_DECISION: u8 = 0;
 static mut LAST_REASONING_GATE: u8 = 0;
+static mut REASONING_WAITING: bool = false;
+static mut LAST_REASONING_RESPONSE_LEN: usize = 0;
+static mut LAST_REASONING_RESPONSE: [u8; 128] = [0; 128];
 
 pub const PROCESS_EVENT_NONE: u8 = 0;
 pub const PROCESS_EVENT_APPEARED: u8 = 1;
@@ -75,6 +78,9 @@ pub fn init() {
         PREVIOUS_PROCESS_STATES = [0; crate::process::MAX_PROCESSES];
         LAST_DECISION = DECISION_NONE;
         LAST_REASONING_GATE = REASONING_GATE_NONE;
+        REASONING_WAITING = false;
+        LAST_REASONING_RESPONSE_LEN = 0;
+        LAST_REASONING_RESPONSE = [0; 128];
     }
     serial::write_str("[VIRT RUNTIME] ACTIVE STATE=AWAKE heartbeat=RTC-second\n");
 }
@@ -242,9 +248,31 @@ fn emit_reasoning_request() {
         serial::write_usize(LAST_DECISION as usize);
         serial::write_str("\n");
         REASONING_REQUESTS = REASONING_REQUESTS.wrapping_add(1);
+        REASONING_WAITING = true;
+        LAST_REASONING_RESPONSE_LEN = 0;
         LAST_REASONING_GATE = REASONING_GATE_NONE;
     }
 }
+
+pub fn reasoning_waiting() -> bool { unsafe { REASONING_WAITING } }
+
+/// Accept the bounded response belonging to the runtime reasoning request.
+pub fn receive_reasoning_response(bytes: &[u8]) {
+    if !ready() { return; }
+    unsafe {
+        if !REASONING_WAITING { return; }
+        let n = bytes.len().min(LAST_REASONING_RESPONSE.len());
+        let mut i = 0usize;
+        while i < n { LAST_REASONING_RESPONSE[i] = bytes[i]; i += 1; }
+        LAST_REASONING_RESPONSE_LEN = n;
+        REASONING_WAITING = false;
+        serial::write_str("[VIRT RUNTIME] REASONING_RESPONSE_LEN=");
+        serial::write_usize(n);
+        serial::write_str("\n");
+    }
+}
+
+pub fn last_reasoning_response_len() -> usize { unsafe { LAST_REASONING_RESPONSE_LEN } }
 
 pub fn last_reasoning_gate() -> u8 { unsafe { LAST_REASONING_GATE } }
 
