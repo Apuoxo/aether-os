@@ -432,9 +432,46 @@
       ],
       "conclusion": "QEMU validation did not satisfy all required startup markers; retain the failure as bounded experience.",
       "next_step": "Inspect the failed marker or exit condition before making another code change."
+    },
+    {
+      "type": "qemu_observation",
+      "event_id": "comm-000010",
+      "communication_event": {
+        "event_id": "comm-000010",
+        "type": "observation",
+        "actor": "agent-aether",
+        "channel": "qemu_serial",
+        "observed_at": "2026-10-04T09:09:41.664155Z",
+        "payload": {
+          "observed_at": "2026-10-04T09:09:41.664155Z",
+          "run_id": "37191188782",
+          "commit": "571d50b49606bf1925b4a5b5c617771501676a48",
+          "outcome": "failure",
+          "qemu_exit": 255
+        },
+        "correlation_id": "qemu-37191188782"
+      },
+      "run_id": "37191188782",
+      "commit": "571d50b49606bf1925b4a5b5c617771501676a48",
+      "observed_at": "2026-10-04T09:09:41.664155Z",
+      "outcome": "failure",
+      "qemu_exit": 255,
+      "checks": {
+        "qemu_exit_accepted": false,
+        "panic_absent": true,
+        "build_banner": false,
+        "desktop_marker": false,
+        "desktop_start": false,
+        "ring3_evidence": false
+      },
+      "observations": [
+        "No Ring3 execution evidence observed; QEMU validation remains pre-Ring3."
+      ],
+      "conclusion": "QEMU validation did not satisfy all required startup markers; retain the failure as bounded experience.",
+      "next_step": "Inspect the failed marker or exit condition before making another code change."
     }
   ],
-  "last_updated": "2026-10-04T09:06:44.502176Z",
-  "last_run_id": "37191023710",
+  "last_updated": "2026-10-04T09:09:41.664155Z",
+  "last_run_id": "37191188782",
   "last_communication_event": "comm-000001"
 }
