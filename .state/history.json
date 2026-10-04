@@ -3,51 +3,6 @@
   "entries": [
     {
       "type": "qemu_observation",
-      "event_id": "comm-000002",
-      "communication_event": {
-        "event_id": "comm-000002",
-        "type": "observation",
-        "actor": "agent-aether",
-        "channel": "qemu_serial",
-        "observed_at": "2026-10-04T07:42:38.478204Z",
-        "payload": {
-          "observed_at": "2026-10-04T07:42:38.478204Z",
-          "run_id": "37186541691",
-          "commit": "c82693eb8b240ba54cd6d7141fa38fde55494253",
-          "outcome": "success",
-          "qemu_exit": 124
-        },
-        "correlation_id": "qemu-37186541691"
-      },
-      "run_id": "37186541691",
-      "commit": "c82693eb8b240ba54cd6d7141fa38fde55494253",
-      "observed_at": "2026-10-04T07:42:38.478204Z",
-      "outcome": "success",
-      "qemu_exit": 124,
-      "checks": {
-        "qemu_exit_accepted": true,
-        "panic_absent": true,
-        "build_banner": true,
-        "desktop_marker": true,
-        "desktop_start": true,
-        "ring3_evidence": false
-      },
-      "observations": [
-        "Aether Desktop initialization observed in QEMU serial output.",
-        "Native desktop start marker observed.",
-        "No Ring3 execution evidence observed; QEMU validation remains pre-Ring3.",
-        "QEMU has no Intel Gen6 display controller; this is virtual-hardware evidence, not AH532 evidence.",
-        "QEMU has no native HDA controller; audio hardware behavior is not validated here.",
-        "QEMU has no target Intel WLAN device; Wi-Fi hardware behavior is not validated here.",
-        "QEMU xHCI validation is unavailable in this run.",
-        "Embedded media file open path was reached.",
-        "Framebuffer test pattern reached the render stage."
-      ],
-      "conclusion": "QEMU boot reached Aether Desktop without PANIC; evidence is valid for kernel/ISO/QEMU startup but does not establish AH532 hardware behavior or Ring3 execution.",
-      "next_step": "Use the recorded QEMU evidence as the baseline and choose the next single controlled validation."
-    },
-    {
-      "type": "qemu_observation",
       "event_id": "comm-000003",
       "communication_event": {
         "event_id": "comm-000003",
@@ -2158,9 +2113,54 @@
       ],
       "conclusion": "QEMU boot reached Aether Desktop without PANIC; evidence is valid for kernel/ISO/QEMU startup but does not establish AH532 hardware behavior or Ring3 execution.",
       "next_step": "Use the recorded QEMU evidence as the baseline and choose the next single controlled validation."
+    },
+    {
+      "type": "qemu_observation",
+      "event_id": "comm-000052",
+      "communication_event": {
+        "event_id": "comm-000052",
+        "type": "observation",
+        "actor": "agent-aether",
+        "channel": "qemu_serial",
+        "observed_at": "2026-10-04T13:24:53.176778Z",
+        "payload": {
+          "observed_at": "2026-10-04T13:24:53.176778Z",
+          "run_id": "37205380536",
+          "commit": "f324b7d97c374d8f02ee9446d0f0c3c1877f8177",
+          "outcome": "success",
+          "qemu_exit": 124
+        },
+        "correlation_id": "qemu-37205380536"
+      },
+      "run_id": "37205380536",
+      "commit": "f324b7d97c374d8f02ee9446d0f0c3c1877f8177",
+      "observed_at": "2026-10-04T13:24:53.176778Z",
+      "outcome": "success",
+      "qemu_exit": 124,
+      "checks": {
+        "qemu_exit_accepted": true,
+        "panic_absent": true,
+        "build_banner": true,
+        "desktop_marker": true,
+        "desktop_start": true,
+        "ring3_evidence": false
+      },
+      "observations": [
+        "Aether Desktop initialization observed in QEMU serial output.",
+        "Native desktop start marker observed.",
+        "No Ring3 execution evidence observed; QEMU validation remains pre-Ring3.",
+        "QEMU has no Intel Gen6 display controller; this is virtual-hardware evidence, not AH532 evidence.",
+        "QEMU has no native HDA controller; audio hardware behavior is not validated here.",
+        "QEMU has no target Intel WLAN device; Wi-Fi hardware behavior is not validated here.",
+        "QEMU xHCI validation is unavailable in this run.",
+        "Embedded media file open path was reached.",
+        "Framebuffer test pattern reached the render stage."
+      ],
+      "conclusion": "QEMU boot reached Aether Desktop without PANIC; evidence is valid for kernel/ISO/QEMU startup but does not establish AH532 hardware behavior or Ring3 execution.",
+      "next_step": "Use the recorded QEMU evidence as the baseline and choose the next single controlled validation."
     }
   ],
-  "last_updated": "2026-10-04T13:21:33.588233Z",
-  "last_run_id": "37205214895",
+  "last_updated": "2026-10-04T13:24:53.176778Z",
+  "last_run_id": "37205380536",
   "last_communication_event": "comm-000001"
 }
