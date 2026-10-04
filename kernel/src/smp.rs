@@ -28,7 +28,7 @@ const READY_TABLE: usize = SHARED + 0xD00;
 const STATUS_MAGIC: usize = SHARED + 0x14;
 
 static mut DETECTED: usize = 1;
-static mut ONLINE: u32 = 1;
+static ONLINE: AtomicU32 = AtomicU32::new(1);
 static RQ_LOCK: AtomicU32 = AtomicU32::new(0);
 
 #[inline(always)]
@@ -109,7 +109,7 @@ pub fn probe_lapic_only() -> bool {
 }
 
 pub fn online_count() -> u32 {
-    unsafe { ONLINE }
+    ONLINE.load(Ordering::Acquire)
 }
 
 fn build_ap_page_tables() {
@@ -267,7 +267,6 @@ fn clear_boot_state() {
     while i < MAX_AP {
         unsafe {
             core::ptr::write_volatile((APIC_TABLE + i * 4) as *mut u32, 0);
-            core::ptr::write_volatile((READY_TABLE + i * 4) as *mut u32, 0);
         }
         i += 1;
     }
@@ -280,12 +279,12 @@ fn ap_entry_phys() -> usize {
 fn wait_for_aps(target: usize, spins: usize) -> usize {
     let mut n = 0usize;
     while n < spins {
-        let online = unsafe { ONLINE as usize };
+        let online = ONLINE.load(Ordering::Acquire) as usize
         if online >= target { return online; }
         core::hint::spin_loop();
         n += 1;
     }
-    unsafe { ONLINE as usize }
+    ONLINE.load(Ordering::Acquire) as usize
 }
 
 pub fn stage_all_aps() -> bool {
@@ -349,26 +348,18 @@ pub extern "C" fn ap_kernel_entry() -> ! {
 
     // The bootstrap stack is already unique. From here on every AP has a real
     // Rust stack and can safely publish its identity before entering idle.
-    let mut slot = 0usize;
-    while slot < MAX_AP {
-        let ready = unsafe { core::ptr::read_volatile((READY_TABLE + slot * 4) as *const u32) };
-        if ready == 0 {
-            break;
-        }
-        slot += 1;
-    }
-    if slot < MAX_AP {
+    // APIC ID is the hardware identity. Do not derive it from startup order.
+    // The APIC table has 256 four-byte slots and fits entirely in the shared
+    // low-memory page below 0x8000. Store APIC_ID+1 so zero remains "not ready".
+    if apic < 256 {
         unsafe {
-            core::ptr::write_volatile((APIC_TABLE + slot * 4) as *mut u32, apic as u32);
-            core::ptr::write_volatile((READY_TABLE + slot * 4) as *mut u32, 1);
-            ONLINE = ONLINE.wrapping_add(1);
+            core::ptr::write_volatile((APIC_TABLE + apic * 4) as *mut u32, (apic + 1) as u32);
         }
+        ONLINE.fetch_add(1, Ordering::AcqRel);
     }
 
     serial::write_str("[SMP] AP LONG64 READY APIC=");
     serial::write_usize(apic);
-    serial::write_str(" SLOT=");
-    serial::write_usize(slot);
     serial::write_str("\n");
 
     loop {
