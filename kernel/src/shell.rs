@@ -1331,7 +1331,7 @@ fn cmd_ethdma() {
                 // Ethernet frame: 14-byte Ethernet header + 296-byte IPv4 packet.
                 let tx_desc = tx_ring as *mut u32;
                 unsafe {
-                    core::ptr::write_volatile(tx_desc.add(0), 310 | 0x3000_0000);
+                    core::ptr::write_volatile(tx_desc.add(0), 310 | 0x7000_0000);
                     core::ptr::write_volatile(tx_desc.add(1), 0);
                     core::ptr::write_volatile(tx_desc.add(2), tx_bufs[0] as u32);
                     core::ptr::write_volatile(tx_desc.add(3), (tx_bufs[0] >> 32) as u32);
@@ -1507,7 +1507,7 @@ fn cmd_ethdma() {
                         core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
 
                         core::ptr::write_volatile((mmio as usize+0x3E) as *mut u16, 0xFFFF);
-                        core::ptr::write_volatile(tx_desc.add(0), 317 | 0x3000_0000);
+                        core::ptr::write_volatile(tx_desc.add(0), 317 | 0x7000_0000);
                         core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
                         core::ptr::write_volatile(tx_desc.add(0), 317 | 0xB000_0000);
                         core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
