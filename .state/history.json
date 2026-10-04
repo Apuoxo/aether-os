@@ -2,33 +2,6 @@
   "schema": 1,
   "entries": [
     {
-      "run_id": "37185474653",
-      "commit": "a1a761ef1a3e4d6d043c198eb2d482c760080ecb",
-      "observed_at": "2026-10-04T07:21:39.780294Z",
-      "outcome": "success",
-      "qemu_exit": 124,
-      "checks": {
-        "qemu_exit_accepted": true,
-        "panic_absent": true,
-        "build_banner": true,
-        "desktop_marker": true,
-        "desktop_start": true,
-        "ring3_evidence": true
-      },
-      "observations": [
-        "Aether Desktop initialization observed in QEMU serial output.",
-        "Native desktop start marker observed.",
-        "QEMU has no Intel Gen6 display controller; this is virtual-hardware evidence, not AH532 evidence.",
-        "QEMU has no native HDA controller; audio hardware behavior is not validated here.",
-        "QEMU has no target Intel WLAN device; Wi-Fi hardware behavior is not validated here.",
-        "QEMU xHCI validation is unavailable in this run.",
-        "Embedded media file open path was reached.",
-        "Framebuffer test pattern reached the render stage."
-      ],
-      "conclusion": "QEMU boot reached Aether Desktop without PANIC; evidence is valid for kernel/ISO/QEMU startup but does not establish AH532 hardware behavior or Ring3 execution.",
-      "next_step": "Use the recorded QEMU evidence as the baseline and choose the next single controlled validation."
-    },
-    {
       "run_id": "37185872039",
       "commit": "7d022bb0a9571e46a0484ec6a8355eafbccaaf1e",
       "observed_at": "2026-10-04T07:29:31.731169Z",
@@ -2066,9 +2039,54 @@
       ],
       "conclusion": "QEMU validation did not satisfy all required startup markers; retain the failure as bounded experience.",
       "next_step": "Inspect the failed marker or exit condition before making another code change."
+    },
+    {
+      "type": "qemu_observation",
+      "event_id": "comm-000048",
+      "communication_event": {
+        "event_id": "comm-000048",
+        "type": "observation",
+        "actor": "agent-aether",
+        "channel": "qemu_serial",
+        "observed_at": "2026-10-04T13:03:01.881319Z",
+        "payload": {
+          "observed_at": "2026-10-04T13:03:01.881319Z",
+          "run_id": "37204096322",
+          "commit": "3ca3c413993762f5b9209798ac1e521737a18a3b",
+          "outcome": "success",
+          "qemu_exit": 124
+        },
+        "correlation_id": "qemu-37204096322"
+      },
+      "run_id": "37204096322",
+      "commit": "3ca3c413993762f5b9209798ac1e521737a18a3b",
+      "observed_at": "2026-10-04T13:03:01.881319Z",
+      "outcome": "success",
+      "qemu_exit": 124,
+      "checks": {
+        "qemu_exit_accepted": true,
+        "panic_absent": true,
+        "build_banner": true,
+        "desktop_marker": true,
+        "desktop_start": true,
+        "ring3_evidence": false
+      },
+      "observations": [
+        "Aether Desktop initialization observed in QEMU serial output.",
+        "Native desktop start marker observed.",
+        "No Ring3 execution evidence observed; QEMU validation remains pre-Ring3.",
+        "QEMU has no Intel Gen6 display controller; this is virtual-hardware evidence, not AH532 evidence.",
+        "QEMU has no native HDA controller; audio hardware behavior is not validated here.",
+        "QEMU has no target Intel WLAN device; Wi-Fi hardware behavior is not validated here.",
+        "QEMU xHCI validation is unavailable in this run.",
+        "Embedded media file open path was reached.",
+        "Framebuffer test pattern reached the render stage."
+      ],
+      "conclusion": "QEMU boot reached Aether Desktop without PANIC; evidence is valid for kernel/ISO/QEMU startup but does not establish AH532 hardware behavior or Ring3 execution.",
+      "next_step": "Use the recorded QEMU evidence as the baseline and choose the next single controlled validation."
     }
   ],
-  "last_updated": "2026-10-04T12:58:55.590387Z",
-  "last_run_id": "37203946227",
+  "last_updated": "2026-10-04T13:03:01.881319Z",
+  "last_run_id": "37204096322",
   "last_communication_event": "comm-000001"
 }
