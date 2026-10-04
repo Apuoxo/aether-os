@@ -161,13 +161,33 @@ unsafe fn init_rings() {
 
 pub fn init() {
     unsafe {
-        FOUND = false; READY = false; LINK = false; MMIO = 0;
+        FOUND = false; READY = false; LINK = false; MMIO = 0; MAC = [0; 6];
+
         let Some((bus, dev, func, base)) = find_device() else {
             serial::write_str("[NET] RTL8168 10EC:8168 not present (QEMU-safe)\n");
             return;
         };
         FOUND = true;
         MMIO = base;
+
+        serial::write_str("[NET] RTL8168 PCI=");
+        serial::write_hex(((bus as usize) << 8) | ((dev as usize) << 3) | func as usize);
+        serial::write_str(" MMIO=");
+        serial::write_hex(base);
+        serial::write_str("\n");
+
+        // Read-only bring-up: firmware must already have memory decoding enabled.
+        // Do not modify PCI command, reset the NIC, touch descriptor registers,
+        // or start TX/RX DMA at this stage.
+        let pci_cmd = pci_r32(bus, dev, func, 0x04) as u16;
+        serial::write_str("[NET] RTL8168 PCI_CMD=");
+        serial::write_hex(pci_cmd as usize);
+        serial::write_str("\n");
+        if (pci_cmd & 0x0002) == 0 {
+            serial::write_str("[NET] RTL8168 PCI_MEM_DECODE=OFF; refusing MMIO access\n");
+            return;
+        }
+
         if !map_mmio(base) {
             serial::write_str("[NET] RTL8168 MMIO map failed\n");
             return;
@@ -175,36 +195,28 @@ pub fn init() {
 
         let txcfg = r32(TCR);
         let xid = (txcfg >> 20) & 0xFCF;
-        serial::write_str("[NET] RTL8168 MMIO="); serial::write_hex(base);
-        serial::write_str(" TXCONFIG="); serial::write_hex(txcfg as usize);
-        serial::write_str(" XID="); serial::write_hex(xid as usize); serial::write_str("\n");
+        serial::write_str("[NET] RTL8168 TXCONFIG=");
+        serial::write_hex(txcfg as usize);
+        serial::write_str(" XID=");
+        serial::write_hex(xid as usize);
+        serial::write_str("\n");
         if xid != XID_EVL {
-            serial::write_str("[NET] XID is not RTL8168EVL; refusing generic data path\n");
+            serial::write_str("[NET] XID is not RTL8168EVL; read-only probe stops\n");
             return;
         }
 
-        let cmd = pci_r32(bus, dev, func, 0x04);
-        pci_w32(bus, dev, func, 0x04, cmd | 0x0000_0006);
-
-        if !reset() {
-            serial::write_str("[NET] RTL8168 reset timeout\n");
-            return;
-        }
+        // MAC readback is intentionally the first device-state value we accept.
         for i in 0..6 { MAC[i] = r8(i); }
         serial::write_str("[NET] RTL8168EVL MAC=");
-        for i in 0..6 { serial::write_hex(MAC[i] as usize); if i != 5 { serial::write_str(":"); } }
+        for i in 0..6 {
+            serial::write_hex(MAC[i] as usize);
+            if i != 5 { serial::write_str(":"); }
+        }
         serial::write_str("\n");
 
-        init_rings();
-        READY = true;
-        let ps = r8(PHYSTATUS);
-        LINK = (ps & 0x02) != 0;
-        serial::write_str("[NET] RTL8168EVL DATA_PATH=READY LINK=");
-        serial::write_str(if LINK { "UP" } else { "DOWN" });
-        serial::write_str(" PHYSTATUS="); serial::write_hex(ps as usize); serial::write_str("\n");
+        serial::write_str("[NET] RTL8168 READ_ONLY=PASS DMA=NOT_STARTED\n");
     }
 }
-
 pub fn found() -> bool { unsafe { FOUND } }
 pub fn ready() -> bool { unsafe { READY } }
 pub fn link_up() -> bool { unsafe { LINK } }
