@@ -207,6 +207,108 @@ fn ai_push_bytes(bytes: &[u8]) {
 }
 fn ai_push(text: &str) { ai_push_bytes(text.as_bytes()); }
 
+static mut AI_TERMINAL_TARGET: bool = false;
+
+fn ai_buf_dec(buf: &mut [u8; 96], pos: &mut usize, mut v: usize) {
+    let mut d = [0u8; 20];
+    let mut n = 0usize;
+    if v == 0 {
+        if *pos < buf.len() { buf[*pos] = b'0'; *pos += 1; }
+        return;
+    }
+    while v > 0 && n < d.len() {
+        d[n] = b'0' + (v % 10) as u8;
+        v /= 10;
+        n += 1;
+    }
+    while n > 0 {
+        n -= 1;
+        if *pos < buf.len() { buf[*pos] = d[n]; *pos += 1; }
+    }
+}
+
+fn ai_terminal_request(bytes: &[u8]) {
+    let mut req = [0u8; 96];
+    let mut n = 0usize;
+    let prefix = b"CTX:AETHER-KERNEL UI=TERM PID=";
+    let mut i = 0usize;
+    while i < prefix.len() && n < 90 { req[n] = prefix[i]; n += 1; i += 1; }
+
+    let pid = crate::process::current_pid();
+    ai_buf_dec(&mut req, &mut n, pid);
+    if n < 90 { req[n] = b' '; n += 1; }
+    if n + 6 < 90 {
+        let mut active = 0usize;
+        let mut p = 1usize;
+        while p <= crate::process::MAX_PROCESSES {
+            if crate::process::get(p).is_some() { active += 1; }
+            p += 1;
+        }
+        let tag = b"PROC=";
+        let mut j = 0usize;
+        while j < tag.len() && n < 90 { req[n] = tag[j]; n += 1; j += 1; }
+        ai_buf_dec(&mut req, &mut n, active);
+        if n < 90 { req[n] = b'/'; n += 1; }
+        ai_buf_dec(&mut req, &mut n, crate::process::MAX_PROCESSES);
+    }
+    if n + 12 < 90 {
+        let tag = b" RAM=";
+        let mut j = 0usize;
+        while j < tag.len() && n < 90 { req[n] = tag[j]; n += 1; j += 1; }
+        ai_buf_dec(&mut req, &mut n, mm::total_count() / 256);
+        if n < 90 { req[n] = b'M'; n += 1; }
+        if n < 90 { req[n] = b'B'; n += 1; }
+        if n < 90 { req[n] = b' '; n += 1; }
+        let tag2 = b"FREE=";
+        let mut k = 0usize;
+        while k < tag2.len() && n < 90 { req[n] = tag2[k]; n += 1; k += 1; }
+        ai_buf_dec(&mut req, &mut n, mm::free_count() / 256);
+        if n < 90 { req[n] = b'M'; n += 1; }
+        if n < 90 { req[n] = b'B'; n += 1; }
+    }
+    if n + 8 < 90 {
+        let tag = b" FB=";
+        let mut j = 0usize;
+        while j < tag.len() && n < 90 { req[n] = tag[j]; n += 1; j += 1; }
+        ai_buf_dec(&mut req, &mut n, graphics::width());
+        if n < 90 { req[n] = b'x'; n += 1; }
+        ai_buf_dec(&mut req, &mut n, graphics::height());
+    }
+    if n + 5 < 90 {
+        let tag = b" RO Q=";
+        let mut j = 0usize;
+        while j < tag.len() && n < 90 { req[n] = tag[j]; n += 1; j += 1; }
+    }
+    let room = 90usize.saturating_sub(n);
+    let qn = bytes.len().min(room);
+    i = 0;
+    while i < qn { req[n + i] = if bytes[i] >= 32 && bytes[i] < 127 { bytes[i] } else { b' ' }; i += 1; }
+    n += qn;
+
+    serial::write_str("AI_REQ:");
+    i = 0;
+    while i < n { serial::write_byte(req[i]); i += 1; }
+    serial::write_str("\n");
+    terminal_write("VIRT: observing kernel state (read-only)...\n");
+    unsafe {
+        AI_WAITING = true;
+        AI_BRIDGE_ACTIVE = true;
+        AI_TERMINAL_TARGET = true;
+    }
+}
+
+fn ai_terminal_command(bytes: &[u8]) -> bool {
+    if bytes.len() < 4 { return false; }
+    let mut i = 0usize;
+    while i < 4 {
+        let mut c = bytes[i];
+        if c >= b'a' && c <= b'z' { c -= b'a' - b'A'; }
+        if c != b"VIRT"[i] { return false; }
+        i += 1;
+    }
+    bytes.len() == 4 || bytes[4] == b' '
+}
+
 fn ai_transport_request(bytes: &[u8]) {
     let n = bytes.len().min(90);
     let mut line = [0u8; 96];
@@ -265,7 +367,18 @@ fn ai_transport_poll() {
                 AI_RX_LEN = 0;
                 if len >= 7 && &line[..7] == b"AI_RES:" {
                     let body = &line[7..len];
-                    ai_push_bytes(body);
+                    if AI_TERMINAL_TARGET {
+                        terminal_write("VIRT: ");
+                        if let Ok(text) = core::str::from_utf8(body) {
+                            terminal_write(text);
+                        } else {
+                            terminal_write("invalid UTF-8 response");
+                        }
+                        terminal_write("\n");
+                        AI_TERMINAL_TARGET = false;
+                    } else {
+                        ai_push_bytes(body);
+                    }
                     AI_WAITING = false;
                     AI_BRIDGE_ACTIVE = true;
                 } else if len >= 16 && &line[..16] == b"AI_STATUS:ACTIVE" {
@@ -3950,11 +4063,22 @@ fn handle_key(ch: u8) {
             terminal_write("]\n");
             let output_start = TERM_ROW;
             term_history_save();
-            crate::shell::run_command_from_gui(&INPUT, INPUT_LEN);
-            INPUT_LEN = 0;
-            INPUT_CURSOR = 0;
-            term_page_begin(output_start);
-            DIRTY_FULL = true;
+            if ai_terminal_command(&INPUT[..INPUT_LEN]) {
+                if INPUT_LEN == 4 {
+                    terminal_write("VIRT: usage: VIRT <question>\n");
+                } else {
+                    ai_terminal_request(&INPUT[5..INPUT_LEN]);
+                }
+                INPUT_LEN = 0;
+                INPUT_CURSOR = 0;
+                DIRTY_FULL = true;
+            } else {
+                crate::shell::run_command_from_gui(&INPUT, INPUT_LEN);
+                INPUT_LEN = 0;
+                INPUT_CURSOR = 0;
+                term_page_begin(output_start);
+                DIRTY_FULL = true;
+            }
         } else if ch == b' ' && INPUT_LEN == 0 && (TERM_PAGE_MODE || TERM_VIEW > 0) {
             term_page_next();
         } else if ch == 0x08 && INPUT_LEN == 0 && (TERM_PAGE_MODE || TERM_VIEW > 0) {
