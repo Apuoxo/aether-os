@@ -7,7 +7,7 @@
   "current_hypotheses": [
     {
       "id": "agent-state-layer",
-      "status": "provisional",
+      "status": "supported",
       "text": "Aether needs a repository-native state contract before autonomous planning and self-verification can be expanded."
     }
   ],
@@ -28,10 +28,10 @@
     "qemu_gdb_banner_check": "case_insensitive",
     "latest_ci_verification": "pending_tool_visibility",
     "hardware_evidence": "must remain distinct from QEMU/CI evidence",
-    "latest_evolution_run": "37219529374",
-    "latest_evolution_commit": "ae077e9be4b87c241e7898c5115130a49cfd8f07",
-    "latest_evolution_outcome": "failure",
-    "latest_evolution_qemu_exit": 255,
+    "latest_evolution_run": "37219645510",
+    "latest_evolution_commit": "236a6be58bf7b0806938cfaa21ea426f9aadceee",
+    "latest_evolution_outcome": "success",
+    "latest_evolution_qemu_exit": 124,
     "latest_evolution_evidence": "serial-log-analyzed"
   },
   "operating_rules": [
@@ -41,12 +41,20 @@
     "stop when required evidence or human authorization is missing",
     "do not create unbounded self-propagating execution"
   ],
-  "next_step": "Inspect the failed marker or exit condition before making another code change.",
+  "next_step": "Use the recorded QEMU evidence as the baseline and choose the next single controlled validation.",
   "last_experience": {
-    "outcome": "failure",
-    "conclusion": "QEMU validation did not satisfy all required startup markers; retain the failure as bounded experience.",
+    "outcome": "success",
+    "conclusion": "QEMU boot reached Aether Desktop without PANIC; evidence is valid for kernel/ISO/QEMU startup but does not establish AH532 hardware behavior or Ring3 execution.",
     "observations": [
-      "No Ring3 execution evidence observed; QEMU validation remains pre-Ring3."
+      "Aether Desktop initialization observed in QEMU serial output.",
+      "Native desktop start marker observed.",
+      "No Ring3 execution evidence observed; QEMU validation remains pre-Ring3.",
+      "QEMU has no Intel Gen6 display controller; this is virtual-hardware evidence, not AH532 evidence.",
+      "QEMU has no native HDA controller; audio hardware behavior is not validated here.",
+      "QEMU has no target Intel WLAN device; Wi-Fi hardware behavior is not validated here.",
+      "QEMU xHCI validation is unavailable in this run.",
+      "Embedded media file open path was reached.",
+      "Framebuffer test pattern reached the render stage."
     ]
   },
   "communication": {
@@ -84,21 +92,21 @@
         "correlation_id"
       ]
     },
-    "sequence": 82,
+    "sequence": 83,
     "last_event": {
-      "event_id": "comm-000082",
+      "event_id": "comm-000083",
       "type": "observation",
       "actor": "agent-aether",
       "channel": "qemu_serial",
-      "observed_at": "2026-10-04T17:11:48.308887Z",
+      "observed_at": "2026-10-04T17:15:18.906836Z",
       "payload": {
-        "observed_at": "2026-10-04T17:11:48.308887Z",
-        "run_id": "37219529374",
-        "commit": "ae077e9be4b87c241e7898c5115130a49cfd8f07",
-        "outcome": "failure",
-        "qemu_exit": 255
+        "observed_at": "2026-10-04T17:15:18.906836Z",
+        "run_id": "37219645510",
+        "commit": "236a6be58bf7b0806938cfaa21ea426f9aadceee",
+        "outcome": "success",
+        "qemu_exit": 124
       },
-      "correlation_id": "qemu-37219529374"
+      "correlation_id": "qemu-37219645510"
     },
     "integrations": {
       "clock_tick": "records wake events and advances communication.last_event",
