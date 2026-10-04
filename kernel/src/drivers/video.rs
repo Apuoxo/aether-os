@@ -679,8 +679,6 @@ const PLANE_ENABLE: u32 = 1 << 31;
 const PLANE_TILED: u32 = 1 << 10;
 const PLANE_FORMAT_MASK: u32 = 0xF << 26;
 const PLANE_FORMAT_XRGB8888: u32 = 0x6 << 26;
-static mut HW_W: u16 = 0;
-static mut HW_H: u16 = 0;
 unsafe fn forcewake_get() -> bool {
     if !GPU_READY { return false; }
     mmio_write32(FORCEWAKE_MT, 0x0001_0001);
@@ -736,9 +734,13 @@ pub fn modeset_to(w: u16, h: u16) -> bool {
         let mut y = 0usize;
         while y < h as usize { let row = (aper + y * stride) as *mut u32; let mut x = 0usize; while x < w as usize { core::ptr::write_volatile(row.add(x), 0x0010_2840); x += 1; } y += 1; }
         if !set_plane_surface(0, stride as u32, w, h) { return false; }
-        graphics::init(aper, w as usize, h as usize, stride, 32, false);
+        let pixel_format = graphics::pixel_format();
+        if !graphics::init_with_format(aper, w as usize, h as usize, stride, 32, false, pixel_format) {
+            serial::write_str("[VIDEO/KMS] framebuffer state update FAIL\n");
+            return false;
+        }
+        serial::write_str("[VIDEO/KMS] framebuffer state updated (canonical graphics::FB)\n");
         crate::drivers::ps2::clamp_to_screen();
-        HW_W = w; HW_H = h;
         serial::write_str("[VIDEO/KMS] MODESET "); serial::write_usize(w as usize); serial::write_str("x"); serial::write_usize(h as usize); serial::write_str(" PASS\n");
         true
     }
@@ -746,8 +748,8 @@ pub fn modeset_to(w: u16, h: u16) -> bool {
 pub fn modeset_panel() -> bool {
     match preferred_mode() { Some(m) => modeset_to(m.width, m.height), None => { serial::write_str("[VIDEO/KMS] no validated EDID mode; use modeset_to()\n"); false } }
 }
-pub fn hw_width() -> u16 { unsafe { HW_W } }
-pub fn hw_height() -> u16 { unsafe { HW_H } }
+pub fn hw_width() -> u16 { graphics::width().min(u16::MAX as usize) as u16 }
+pub fn hw_height() -> u16 { graphics::height().min(u16::MAX as usize) as u16 }
 pub fn mmio_base() -> usize { unsafe { GPU.mmio } }
 pub fn aperture() -> usize { unsafe { GPU.aperture } }
 pub fn gen() -> u8 { unsafe { if GPU.did == HD3000_DID { 6 } else { 0 } } }
