@@ -90,6 +90,7 @@ pub fn tick() {
             observe_processes();
             decide();
             evaluate_reasoning_gate();
+            emit_reasoning_request();
         }
     }
 }
@@ -222,6 +223,27 @@ pub fn evaluate_reasoning_gate() -> u8 {
     };
     unsafe { LAST_REASONING_GATE = gate; }
     gate
+}
+
+/// Emit one bounded reasoning request when the gate explicitly requests it.
+fn emit_reasoning_request() {
+    if !ready() { return; }
+    unsafe {
+        if LAST_REASONING_GATE != REASONING_GATE_REQUEST {
+            return;
+        }
+        serial::write_str("AI_REQ:SRC=RUNTIME EVENT=STATE_CHANGE PID=");
+        serial::write_usize(LAST_PROCESS_EVENT_PID);
+        serial::write_str(" OLD=");
+        serial::write_usize(LAST_PROCESS_EVENT_OLD_STATE as usize);
+        serial::write_str(" NEW=");
+        serial::write_usize(LAST_PROCESS_EVENT_NEW_STATE as usize);
+        serial::write_str(" DEC=");
+        serial::write_usize(LAST_DECISION as usize);
+        serial::write_str("\n");
+        REASONING_REQUESTS = REASONING_REQUESTS.wrapping_add(1);
+        LAST_REASONING_GATE = REASONING_GATE_NONE;
+    }
 }
 
 pub fn last_reasoning_gate() -> u8 { unsafe { LAST_REASONING_GATE } }
