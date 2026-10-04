@@ -127,6 +127,7 @@ pub fn tick() {
             decide();
             evaluate_reasoning_gate();
             emit_reasoning_request();
+            act_if_authorized();
         }
     }
 }
@@ -262,6 +263,15 @@ pub fn evaluate_reasoning_gate() -> u8 {
 }
 
 /// Emit one bounded reasoning request when the gate explicitly requests it.
+fn act_if_authorized() {
+    unsafe {
+        if LAST_ACTION_AUTHORIZATION != ACTION_AUTH_GRANTED {
+            return;
+        }
+    }
+    let _ = execute_authorized_action();
+}
+
 fn emit_reasoning_request() {
     if !ready() { return; }
     unsafe {
@@ -351,7 +361,7 @@ fn classify_reasoning_response(len: usize) -> u8 {
     if response_contains(b"recommend", len) || response_contains(b"recommendation", len) {
         return REASONING_CLASS_RECOMMENDATION;
     }
-    if response_contains(b"action", len) || response_contains(b"execute", len) {
+    if response_contains(b"ACTION: RUNTIME_MARK", len) {
         return REASONING_CLASS_ACTION;
     }
     REASONING_CLASS_TEXT
