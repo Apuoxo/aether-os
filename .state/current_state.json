@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "status": "active",
+  "updated": "2026-10-04",
+  "baseline_commit": "6803178c4603445bc126fdf99d01688bc65ca90e",
+  "purpose": "Bounded, evidence-first engineering state for Aether agent work.",
+  "current_hypotheses": [
+    {
+      "id": "agent-state-layer",
+      "status": "provisional",
+      "text": "Aether needs a repository-native state contract before autonomous planning and self-verification can be expanded."
+    }
+  ],
+  "current_tasks": [
+    {
+      "id": "autonomy-foundation",
+      "status": "in_progress",
+      "text": "Implement a bounded repository-native autonomy protocol without assuming unavailable platform capabilities."
+    }
+  ],
+  "verification": {
+    "last_known_qemu_gdb_fix_commit": "6803178c4603445bc126fdf99d01688bc65ca90e",
+    "qemu_gdb_banner_check": "case_insensitive",
+    "latest_ci_verification": "pending_tool_visibility",
+    "hardware_evidence": "must remain distinct from QEMU/CI evidence"
+  },
+  "operating_rules": [
+    "inspect -> decide -> change -> commit -> verify -> CI -> inspect evidence -> continue",
+    "one controlled logical change per commit",
+    "never treat documentation or model reasoning as runtime evidence",
+    "stop when required evidence or human authorization is missing",
+    "do not create unbounded self-propagating execution"
+  ],
+  "next_step": "Define and test the minimal capability/state contract before adding model SDKs, MCP clients, or autonomous scheduling."
+}
