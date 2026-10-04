@@ -4241,6 +4241,7 @@ pub fn run() -> ! {
 
     loop {
         ai_transport_poll();
+        crate::virt_runtime::tick();
         ps2::poll();
         let (pmx, pmy) = ps2::mouse_pos();
         let pbtn = ps2::mouse_buttons();
