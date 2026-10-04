@@ -41,6 +41,11 @@ static mut LAST_ACTION_AUTHORIZATION: u8 = 0;
 static mut LAST_ACTION_KIND: u8 = 0;
 static mut ACTION_VERIFY_STATE: u8 = 0;
 static mut ACTION_VERIFY_EXPECTED_COUNT: u64 = 0;
+static mut SYSTEM_STATE: [u8; SYSTEM_SUBSYSTEM_COUNT] = [SYSTEM_STATE_UNKNOWN; SYSTEM_SUBSYSTEM_COUNT];
+static mut PREVIOUS_SYSTEM_STATE: [u8; SYSTEM_SUBSYSTEM_COUNT] = [SYSTEM_STATE_UNKNOWN; SYSTEM_SUBSYSTEM_COUNT];
+static mut SYSTEM_STATE_CHANGES: u64 = 0;
+static mut SYSTEM_STATE_HEALTH: u8 = SYSTEM_HEALTH_UNKNOWN;
+static mut SYSTEM_STATE_INITIALIZED: bool = false;
 
 pub const PROCESS_EVENT_NONE: u8 = 0;
 pub const PROCESS_EVENT_APPEARED: u8 = 1;
@@ -78,6 +83,36 @@ pub const ACTION_VERIFY_NONE: u8 = 0;
 pub const ACTION_VERIFY_PENDING: u8 = 1;
 pub const ACTION_VERIFY_PASSED: u8 = 2;
 pub const ACTION_VERIFY_FAILED: u8 = 3;
+
+pub const SYSTEM_STATE_UNKNOWN: u8 = 0;
+pub const SYSTEM_STATE_READY: u8 = 1;
+pub const SYSTEM_STATE_DEGRADED: u8 = 2;
+pub const SYSTEM_STATE_FAILED: u8 = 3;
+
+pub const SYSTEM_HEALTH_UNKNOWN: u8 = 0;
+pub const SYSTEM_HEALTH_READY: u8 = 1;
+pub const SYSTEM_HEALTH_DEGRADED: u8 = 2;
+pub const SYSTEM_HEALTH_FAILED: u8 = 3;
+
+pub const SYSTEM_CPU: usize = 0;
+pub const SYSTEM_MEMORY: usize = 1;
+pub const SYSTEM_PROCESSES: usize = 2;
+pub const SYSTEM_GRAPHICS: usize = 3;
+pub const SYSTEM_DISPLAY: usize = 4;
+pub const SYSTEM_AUDIO: usize = 5;
+pub const SYSTEM_WIFI: usize = 6;
+pub const SYSTEM_NETWORK: usize = 7;
+pub const SYSTEM_STORAGE: usize = 8;
+pub const SYSTEM_FILESYSTEM: usize = 9;
+pub const SYSTEM_USB: usize = 10;
+pub const SYSTEM_INPUT: usize = 11;
+pub const SYSTEM_DESKTOP: usize = 12;
+pub const SYSTEM_AI: usize = 13;
+pub const SYSTEM_QEMU: usize = 14;
+pub const SYSTEM_BOOT: usize = 15;
+pub const SYSTEM_INTERRUPTS: usize = 16;
+pub const SYSTEM_RUNTIME: usize = 17;
+pub const SYSTEM_SUBSYSTEM_COUNT: usize = 18;
 
 pub const STATE_OFF: u8 = 0;
 pub const STATE_AWAKE: u8 = 1;
@@ -120,6 +155,11 @@ pub fn init() {
         LAST_ACTION_KIND = ACTION_KIND_NONE;
         ACTION_VERIFY_STATE = ACTION_VERIFY_NONE;
         ACTION_VERIFY_EXPECTED_COUNT = 0;
+        SYSTEM_STATE = [SYSTEM_STATE_UNKNOWN; SYSTEM_SUBSYSTEM_COUNT];
+        PREVIOUS_SYSTEM_STATE = [SYSTEM_STATE_UNKNOWN; SYSTEM_SUBSYSTEM_COUNT];
+        SYSTEM_STATE_CHANGES = 0;
+        SYSTEM_STATE_HEALTH = SYSTEM_HEALTH_UNKNOWN;
+        SYSTEM_STATE_INITIALIZED = false;
     }
     serial::write_str("[VIRT RUNTIME] ACTIVE STATE=AWAKE heartbeat=RTC-second\n");
 }
@@ -132,6 +172,7 @@ pub fn tick() {
             LAST_SECOND = second;
             HEARTBEATS = HEARTBEATS.wrapping_add(1);
             OBSERVATIONS = OBSERVATIONS.wrapping_add(1);
+            observe_system_state();
             observe_processes();
             decide();
             evaluate_reasoning_gate();
@@ -141,6 +182,124 @@ pub fn tick() {
         }
     }
 }
+
+/// Capture a one-second whole-OS snapshot from authoritative state sources.
+/// Unknown means the corresponding subsystem has not yet exposed a trustworthy
+/// runtime status; it is never guessed as healthy.
+fn observe_system_state() {
+    if !ready() { return; }
+    let total = crate::mm::total_count();
+    let free = crate::mm::free_count();
+    let process_count = crate::process::snapshot_states(
+        &mut [0usize; crate::process::MAX_PROCESSES],
+        &mut [0u8; crate::process::MAX_PROCESSES],
+    );
+    let graphics_ready = crate::graphics::ready();
+    let network = crate::ai_agent::last_network_probe();
+
+    unsafe {
+        PREVIOUS_SYSTEM_STATE = SYSTEM_STATE;
+        SYSTEM_STATE = [SYSTEM_STATE_UNKNOWN; SYSTEM_SUBSYSTEM_COUNT];
+
+        SYSTEM_STATE[SYSTEM_CPU] = SYSTEM_STATE_UNKNOWN;
+        SYSTEM_STATE[SYSTEM_MEMORY] = if total > 0 && free <= total {
+            SYSTEM_STATE_READY
+        } else {
+            SYSTEM_STATE_FAILED
+        };
+        SYSTEM_STATE[SYSTEM_PROCESSES] = if process_count <= crate::process::MAX_PROCESSES {
+            SYSTEM_STATE_READY
+        } else {
+            SYSTEM_STATE_FAILED
+        };
+        SYSTEM_STATE[SYSTEM_GRAPHICS] = if graphics_ready {
+            SYSTEM_STATE_READY
+        } else {
+            SYSTEM_STATE_FAILED
+        };
+        SYSTEM_STATE[SYSTEM_DISPLAY] = SYSTEM_STATE[SYSTEM_GRAPHICS];
+        SYSTEM_STATE[SYSTEM_AUDIO] = SYSTEM_STATE_UNKNOWN;
+        SYSTEM_STATE[SYSTEM_WIFI] = if network.0 != 0 && network.1 == 0 {
+            SYSTEM_STATE_DEGRADED
+        } else if network.0 != 0 && network.1 != 0 {
+            SYSTEM_STATE_READY
+        } else {
+            SYSTEM_STATE_UNKNOWN
+        };
+        SYSTEM_STATE[SYSTEM_NETWORK] = if network.1 != 0 {
+            SYSTEM_STATE_READY
+        } else if network.0 != 0 {
+            SYSTEM_STATE_DEGRADED
+        } else {
+            SYSTEM_STATE_UNKNOWN
+        };
+        SYSTEM_STATE[SYSTEM_STORAGE] = SYSTEM_STATE_UNKNOWN;
+        SYSTEM_STATE[SYSTEM_FILESYSTEM] = SYSTEM_STATE_UNKNOWN;
+        SYSTEM_STATE[SYSTEM_USB] = SYSTEM_STATE_UNKNOWN;
+        SYSTEM_STATE[SYSTEM_INPUT] = SYSTEM_STATE_UNKNOWN;
+        SYSTEM_STATE[SYSTEM_DESKTOP] = if graphics_ready {
+            SYSTEM_STATE_READY
+        } else {
+            SYSTEM_STATE_UNKNOWN
+        };
+        SYSTEM_STATE[SYSTEM_AI] = if REASONING_WAITING {
+            SYSTEM_STATE_DEGRADED
+        } else {
+            SYSTEM_STATE_READY
+        };
+        SYSTEM_STATE[SYSTEM_QEMU] = SYSTEM_STATE_UNKNOWN;
+        SYSTEM_STATE[SYSTEM_BOOT] = SYSTEM_STATE_READY;
+        SYSTEM_STATE[SYSTEM_INTERRUPTS] = SYSTEM_STATE_UNKNOWN;
+        SYSTEM_STATE[SYSTEM_RUNTIME] = if ACTIVE && STATE == STATE_AWAKE {
+            SYSTEM_STATE_READY
+        } else {
+            SYSTEM_STATE_FAILED
+        };
+
+        if SYSTEM_STATE_INITIALIZED {
+            let mut i = 0usize;
+            while i < SYSTEM_SUBSYSTEM_COUNT {
+                if SYSTEM_STATE[i] != PREVIOUS_SYSTEM_STATE[i] {
+                    SYSTEM_STATE_CHANGES = SYSTEM_STATE_CHANGES.wrapping_add(1);
+                }
+                i += 1;
+            }
+        } else {
+            SYSTEM_STATE_INITIALIZED = true;
+        }
+
+        let mut has_failed = false;
+        let mut has_degraded = false;
+        let mut has_unknown = false;
+        let mut i = 0usize;
+        while i < SYSTEM_SUBSYSTEM_COUNT {
+            match SYSTEM_STATE[i] {
+                SYSTEM_STATE_FAILED => has_failed = true,
+                SYSTEM_STATE_DEGRADED => has_degraded = true,
+                SYSTEM_STATE_UNKNOWN => has_unknown = true,
+                _ => {}
+            }
+            i += 1;
+        }
+        SYSTEM_STATE_HEALTH = if has_failed {
+            SYSTEM_HEALTH_FAILED
+        } else if has_degraded {
+            SYSTEM_HEALTH_DEGRADED
+        } else if has_unknown {
+            SYSTEM_HEALTH_UNKNOWN
+        } else {
+            SYSTEM_HEALTH_READY
+        };
+    }
+}
+
+pub fn system_state(subsystem: usize) -> u8 {
+    if subsystem >= SYSTEM_SUBSYSTEM_COUNT { return SYSTEM_STATE_UNKNOWN; }
+    unsafe { SYSTEM_STATE[subsystem] }
+}
+
+pub fn system_state_health() -> u8 { unsafe { SYSTEM_STATE_HEALTH } }
+pub fn system_state_changes() -> u64 { unsafe { SYSTEM_STATE_CHANGES } }
 
 pub fn observe_system() {
     if !ready() { return; }
