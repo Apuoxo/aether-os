@@ -1513,6 +1513,78 @@ fn cmd_ethdma() {
                         core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
 
                         core::ptr::write_volatile((mmio as usize+0x3E) as *mut u16, 0xFFFF);
+
+                        // Diagnostic branch: after the first OFFER has been
+                        // consumed and its RX descriptor re-armed, send the
+                        // same DHCPDISCOVER again before issuing DHCPREQUEST.
+                        // This isolates RX-ring lifecycle from DHCPREQUEST
+                        // semantics: a second OFFER proves the RX path
+                        // survived the first receive.
+                        let second_desc = tx_desc;
+                        let second_tx_buf = tx_bufs[0];
+                        unsafe {
+                            core::ptr::write_volatile(second_desc.add(0), 310 | 0x3000_0000);
+                            core::ptr::write_volatile(second_desc.add(1), 0);
+                            core::ptr::write_volatile(second_desc.add(2), second_tx_buf as u32);
+                            core::ptr::write_volatile(second_desc.add(3), (second_tx_buf >> 32) as u32);
+                            core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
+                            core::ptr::write_volatile(second_desc.add(0), 310 | 0xB000_0000);
+                            core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
+                            core::ptr::write_volatile((mmio as usize+0x38) as *mut u8, 0x40);
+                        }
+
+                        let mut second_tx_done=false;
+                        let mut second_tx_ticks=0usize;
+                        while second_tx_ticks<2_000_000usize {
+                            let st=unsafe{core::ptr::read_volatile(second_desc as *const u32)};
+                            if st & 0x8000_0000 == 0 { second_tx_done=true; break; }
+                            core::hint::spin_loop();
+                            second_tx_ticks+=1;
+                        }
+                        let second_tx_isr=unsafe{core::ptr::read_volatile((mmio as usize+0x3E) as *const u16)};
+                        write_str("SECOND_DISCOVER_TX=");
+                        write_str(if second_tx_done {"PASS"} else {"TIMEOUT"});
+                        write_str(" POLL=");
+                        write_usize(second_tx_ticks);
+                        write_str(" ISR=");
+                        write_hex(second_tx_isr as usize);
+                        write_str("\n");
+
+                        let mut second_offer=false;
+                        let mut second_idx=0usize;
+                        let mut second_len=0usize;
+                        let mut second_poll=0usize;
+                        while second_poll<2_000_000usize && !second_offer {
+                            let mut di=0usize;
+                            while di<8 {
+                                let st=unsafe{core::ptr::read_volatile(rx_desc.add(di*4) as *const u32)};
+                                if (st & 0x8000_0000)==0 {
+                                    second_idx=di;
+                                    second_len=(st & 0x3FFF) as usize;
+                                    second_offer=true;
+                                    break;
+                                }
+                                di+=1;
+                            }
+                            if !second_offer {
+                                core::hint::spin_loop();
+                                second_poll+=1;
+                            }
+                        }
+                        let second_rx_isr=unsafe{core::ptr::read_volatile((mmio as usize+0x3E) as *const u16)};
+                        write_str("SECOND_OFFER_RX=");
+                        write_str(if second_offer {"PASS"} else {"TIMEOUT"});
+                        write_str(" IDX=");
+                        write_hex(second_idx);
+                        write_str(" LEN=");
+                        write_hex(second_len);
+                        write_str(" ISR=");
+                        write_hex(second_rx_isr as usize);
+                        write_str("\n");
+                        write_str("SECOND_OFFER_RDU=");
+                        write_str(if (second_rx_isr & 0x0010) != 0 {"YES"} else {"NO"});
+                        write_str("\n");
+
                         let req_desc = tx_desc.add(4);
                         core::ptr::write_volatile(req_desc.add(0), 317 | 0x7000_0000);
                         core::ptr::write_volatile(req_desc.add(1), 0);
