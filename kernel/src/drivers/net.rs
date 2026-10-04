@@ -235,7 +235,8 @@ struct R8139Rx([u8; R8139_RX]);
 #[repr(align(16))]
 struct R8139Tx([u8; 2048]);
 static mut R8139_RXBUF: R8139Rx = R8139Rx([0; R8139_RX]);
-static mut R8139_TXBUF: R8139Tx = R8139Tx([0; 2048]);
+static mut R8139_TXBUFS: [R8139Tx; 4] = [R8139Tx([0;2048]), R8139Tx([0;2048]), R8139Tx([0;2048]), R8139Tx([0;2048])];
+static mut R8139_TXIDX: usize = 0;
 static mut R8139_MAC: [u8; 6] = [0; 6];
 static mut R8139_READY: bool = false;
 
@@ -389,7 +390,7 @@ pub fn qemu_ping() -> bool {
         out32(R8139_IO+R8139_RBSTART,&R8139_RXBUF.0 as *const u8 as usize as u32);
         out16(R8139_IO+R8139_IMR,0);
         out16(R8139_IO+R8139_ISR,0xFFFF);
-        out32(R8139_IO+R8139_RCR,0x0000000F);
+        out32(R8139_IO+R8139_RCR,0x0000078F);\n        for i in 0..4 { let p=&R8139_TXBUFS[i].0 as *const u8 as usize; out32(R8139_IO+R8139_TSAD0+(i as u16)*4,p as u32); }
         out32(R8139_IO+R8139_TCR,0x03000700);
         out8(R8139_IO+R8139_CR,R8139_CMD_RE|R8139_CMD_TE);
         out8(R8139_IO+R8139_CONFIG1,0);
