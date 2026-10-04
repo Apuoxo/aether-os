@@ -4204,7 +4204,7 @@ pub fn run() -> ! {
     terminal_write(if wd.file_found { "[WINAMP] FILE=FOUND\n" } else { "[WINAMP] FILE=NOT_FOUND\n" });
     terminal_write(if wd.mz_valid { "[WINAMP] MZ=VALID\n" } else { "[WINAMP] MZ=INVALID\n" });
     terminal_write("[WINAMP] HEADER_BYTES=");
-    term_write_usize(wd.header_bytes);
+    terminal_write_usize(wd.header_bytes);
     terminal_write("\n");
     terminal_write(if wd.pe_valid { "[WINAMP] PE=VALID\n" } else { "[WINAMP] PE=INVALID\n" });
     if wd.pe_valid {
@@ -4213,7 +4213,7 @@ pub fn run() -> ! {
         terminal_write("\n[WINAMP] MACHINE=0x");
         term_write_hex(wd.machine as usize);
         terminal_write("\n[WINAMP] SECTIONS=");
-        term_write_usize(wd.sections as usize);
+        terminal_write_usize(wd.sections as usize);
         terminal_write("\n[WINAMP] OPTIONAL_SIZE=0x");
         term_write_hex(wd.optional_size as usize);
         terminal_write("\n[WINAMP] OPTIONAL_MAGIC=0x");
