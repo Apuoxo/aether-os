@@ -912,16 +912,7 @@ fn run_line(line: &[u8], len: usize) {
     while e > s && (line[e - 1] == b' ' || line[e - 1] == b'\r') { e -= 1; }
     let clen = e.saturating_sub(s);
 
-
-    if eq(line, s, clen, b"CPU1") || eq(line, s, clen, b"cpu1") {
-        cmd_cpu1();
-    } else if eq(line, s, clen, b"CPU6") || eq(line, s, clen, b"cpu6") {
-        cmd_cpu6();
-    } else if eq(line, s, clen, b"CPU19") || eq(line, s, clen, b"cpu19") {
-        cmd_cpu19();
-    } else if eq(line, s, clen, b"CPU20") || eq(line, s, clen, b"cpu20") {
-        cmd_cpu20();
-    } else if eq(line, s, clen, b"HELP") || eq(line, s, clen, b"help") {
+    if eq(line, s, clen, b"HELP") || eq(line, s, clen, b"help") {
         cmd_help();
     } else if eq(line, s, clen, b"CLS") || eq(line, s, clen, b"cls") {
         crate::desktop::terminal_clear();
