@@ -1206,10 +1206,11 @@ fn cmd_ethdma() {
                 // free pages from its managed physical range.
                 let tx_ring = match crate::mm::alloc_pages(1) { Some(v) => v, None => { write_str("TX_RING_ALLOC=FAIL\n"); break 'outer; } };
                 let rx_ring = match crate::mm::alloc_pages(1) { Some(v) => v, None => { write_str("RX_RING_ALLOC=FAIL\n"); break 'outer; } };
-                let mut tx_bufs = [0usize; 1];
+                let mut tx_bufs = [0usize; 2];
                 let mut rx_bufs = [0usize; 8];
 
-                tx_bufs[0] = match crate::mm::alloc_pages(1) { Some(v) => v, None => { write_str("TX_BUF_ALLOC=FAIL\n"); break 'outer; } };
+                tx_bufs[0] = match crate::mm::alloc_pages(1) { Some(v) => v, None => { write_str("TX_BUF0_ALLOC=FAIL\n"); break 'outer; } };
+                tx_bufs[1] = match crate::mm::alloc_pages(1) { Some(v) => v, None => { write_str("TX_BUF1_ALLOC=FAIL\n"); break 'outer; } };
                 let mut ri = 0usize;
                 while ri < rx_bufs.len() {
                     rx_bufs[ri] = match crate::mm::alloc_pages(1) {
@@ -1235,6 +1236,9 @@ fn cmd_ethdma() {
                     if !crate::mm::paging::map_page(
                         crate::mm::paging::kernel_cr3(), tx_bufs[0], tx_bufs[0],
                         crate::mm::paging::PAGE_PRESENT | crate::mm::paging::PAGE_WRITE) { ok = false; }
+                    if !crate::mm::paging::map_page(
+                        crate::mm::paging::kernel_cr3(), tx_bufs[1], tx_bufs[1],
+                        crate::mm::paging::PAGE_PRESENT | crate::mm::paging::PAGE_WRITE) { ok = false; }
                     let mut i = 0usize;
                     while i < rx_bufs.len() {
                         if !crate::mm::paging::map_page(
@@ -1252,7 +1256,8 @@ fn cmd_ethdma() {
                 let mut dma_mem_ok = tx_ring < 0x1_0000_0000 && rx_ring < 0x1_0000_0000 &&
                     (tx_ring & 0xFF) == 0 && (rx_ring & 0xFF) == 0;
                 if dma_mem_ok {
-                    dma_mem_ok = tx_bufs[0] < 0x1_0000_0000 && (tx_bufs[0] & 0xFF) == 0;
+                    dma_mem_ok = tx_bufs[0] < 0x1_0000_0000 && tx_bufs[1] < 0x1_0000_0000 &&
+                        (tx_bufs[0] & 0xFF) == 0 && (tx_bufs[1] & 0xFF) == 0;
                     let mut i = 0usize;
                     while i < rx_bufs.len() {
                         if rx_bufs[i] >= 0x1_0000_0000 || (rx_bufs[i] & 0xFF) != 0 { dma_mem_ok = false; }
@@ -1261,13 +1266,14 @@ fn cmd_ethdma() {
                 }
                 write_str("DMA_MEMORY="); write_str(if dma_mem_ok { "PASS" } else { "FAIL" }); write_str("\n");
                 write_str("TX_RING_PHYS="); write_hex(tx_ring); write_str(" RX_RING_PHYS="); write_hex(rx_ring); write_str("\n");
-                write_str("TX_BUF_PHYS="); write_hex(tx_bufs[0]); write_str("\n");
+                write_str("TX_BUF0_PHYS="); write_hex(tx_bufs[0]); write_str(" TX_BUF1_PHYS="); write_hex(tx_bufs[1]); write_str("\n");
                 write_str("RX_BUF0_PHYS="); write_hex(rx_bufs[0]); write_str(" RX_BUF7_PHYS="); write_hex(rx_bufs[7]); write_str("\n");
                 if !dma_mem_ok { break 'outer; }
 
                 crate::mm::zero_pages(tx_ring, 1);
                 crate::mm::zero_pages(rx_ring, 1);
                 crate::mm::zero_pages(tx_bufs[0], 1);
+                crate::mm::zero_pages(tx_bufs[1], 1);
                 let mut i = 0usize;
                 while i < rx_bufs.len() { crate::mm::zero_pages(rx_bufs[i], 1); i += 1; }
 
@@ -1331,7 +1337,7 @@ fn cmd_ethdma() {
                 // Ethernet frame: 14-byte Ethernet header + 296-byte IPv4 packet.
                 let tx_desc = tx_ring as *mut u32;
                 unsafe {
-                    core::ptr::write_volatile(tx_desc.add(0), 310 | 0x7000_0000);
+                    core::ptr::write_volatile(tx_desc.add(0), 310 | 0x3000_0000);
                     core::ptr::write_volatile(tx_desc.add(1), 0);
                     core::ptr::write_volatile(tx_desc.add(2), tx_bufs[0] as u32);
                     core::ptr::write_volatile(tx_desc.add(3), (tx_bufs[0] >> 32) as u32);
@@ -1458,7 +1464,7 @@ fn cmd_ethdma() {
                     // offered address (option 50) and server (option 54).
                     // Packet sizes are calculated from the fixed BOOTP header:
                     // DHCP payload 275, UDP 283, IPv4 303, Ethernet 317 bytes.
-                    let tx = tx_bufs[0] as *mut u8;
+                    let tx = tx_bufs[1] as *mut u8;
                     unsafe {
                         let mut j=0usize;
                         while j<317 { *tx.add(j)=0; j+=1; }
@@ -1507,9 +1513,13 @@ fn cmd_ethdma() {
                         core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
 
                         core::ptr::write_volatile((mmio as usize+0x3E) as *mut u16, 0xFFFF);
-                        core::ptr::write_volatile(tx_desc.add(0), 317 | 0x7000_0000);
+                        let req_desc = tx_desc.add(4);
+                        core::ptr::write_volatile(req_desc.add(0), 317 | 0x7000_0000);
+                        core::ptr::write_volatile(req_desc.add(1), 0);
+                        core::ptr::write_volatile(req_desc.add(2), tx_bufs[1] as u32);
+                        core::ptr::write_volatile(req_desc.add(3), (tx_bufs[1] >> 32) as u32);
                         core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
-                        core::ptr::write_volatile(tx_desc.add(0), 317 | 0xB000_0000);
+                        core::ptr::write_volatile(req_desc.add(0), 317 | 0xF000_0000);
                         core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
                         core::ptr::write_volatile((mmio as usize+0x38) as *mut u8, 0x40);
                         // RTL8168 can lose a TxPoll request when a new packet follows
@@ -1521,7 +1531,7 @@ fn cmd_ethdma() {
 
                     let mut req_tx_done=false; let mut q=0usize;
                     while q<2_000_000usize {
-                        let st=unsafe{core::ptr::read_volatile(tx_desc as *const u32)};
+                        let st=unsafe{core::ptr::read_volatile(tx_desc.add(4) as *const u32)};
                         if st & 0x8000_0000 == 0 { req_tx_done=true; break; }
                         core::hint::spin_loop(); q+=1;
                     }
