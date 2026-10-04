@@ -554,7 +554,9 @@ pub fn decide() -> u8 {
 /// transport request.
 pub fn evaluate_reasoning_gate() -> u8 {
     let gate = unsafe {
-        if LAST_DECISION == DECISION_REVIEW_STATE_CHANGE && !REASONING_WAITING {
+        if !REASONING_WAITING
+            && (LAST_DECISION == DECISION_REVIEW_STATE_CHANGE
+                || SYSTEM_STATE_HEALTH != SYSTEM_HEALTH_READY) {
             REASONING_GATE_REQUEST
         } else {
             REASONING_GATE_SKIP
