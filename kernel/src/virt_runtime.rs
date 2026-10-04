@@ -1,8 +1,8 @@
 //! Virt Runtime — persistent Aether-side presence loop.
 //!
-//! This is deliberately not a language model. It keeps Virt active inside
-//! Aether independently of the chat window and provides the first stable
-//! heartbeat boundary for later observation, memory and reasoning backends.
+//! This runtime is the local execution boundary for the assistant inside
+//! Aether. It stays active independently of the chat window and exposes a
+//! safe observe -> decide boundary before any system-changing action exists.
 
 use crate::serial;
 
@@ -28,11 +28,17 @@ static mut LAST_PROCESS_EVENT_OLD_STATE: u8 = 0;
 static mut LAST_PROCESS_EVENT_NEW_STATE: u8 = 0;
 static mut LAST_PROCESS_STATES: [u8; crate::process::MAX_PROCESSES] = [0; crate::process::MAX_PROCESSES];
 static mut PREVIOUS_PROCESS_STATES: [u8; crate::process::MAX_PROCESSES] = [0; crate::process::MAX_PROCESSES];
+static mut LAST_DECISION: u8 = 0;
 
 pub const PROCESS_EVENT_NONE: u8 = 0;
 pub const PROCESS_EVENT_APPEARED: u8 = 1;
 pub const PROCESS_EVENT_DISAPPEARED: u8 = 2;
 pub const PROCESS_EVENT_STATE_CHANGED: u8 = 3;
+
+pub const DECISION_NONE: u8 = 0;
+pub const DECISION_MONITOR: u8 = 1;
+pub const DECISION_INSPECT_PROCESS: u8 = 2;
+pub const DECISION_REVIEW_STATE_CHANGE: u8 = 3;
 
 pub const STATE_OFF: u8 = 0;
 pub const STATE_AWAKE: u8 = 1;
@@ -62,6 +68,7 @@ pub fn init() {
         LAST_PROCESS_EVENT_NEW_STATE = 0;
         LAST_PROCESS_STATES = [0; crate::process::MAX_PROCESSES];
         PREVIOUS_PROCESS_STATES = [0; crate::process::MAX_PROCESSES];
+        LAST_DECISION = DECISION_NONE;
     }
     serial::write_str("[VIRT RUNTIME] ACTIVE STATE=AWAKE heartbeat=RTC-second\n");
 }
@@ -75,6 +82,7 @@ pub fn tick() {
             HEARTBEATS = HEARTBEATS.wrapping_add(1);
             OBSERVATIONS = OBSERVATIONS.wrapping_add(1);
             observe_processes();
+            decide();
         }
     }
 }
@@ -177,13 +185,28 @@ pub fn observe_processes() {
     }
 }
 
+/// Select a safe next observation target from the latest event.
+///
+/// This is deliberately a decision-only layer. It does not mutate a process,
+/// schedule anything, access I/O, or execute a reasoning/model backend.
+pub fn decide() -> u8 {
+    let decision = unsafe {
+        match LAST_PROCESS_EVENT_KIND {
+            PROCESS_EVENT_APPEARED | PROCESS_EVENT_DISAPPEARED => DECISION_INSPECT_PROCESS,
+            PROCESS_EVENT_STATE_CHANGED => DECISION_REVIEW_STATE_CHANGE,
+            _ => DECISION_MONITOR,
+        }
+    };
+    unsafe { LAST_DECISION = decision; }
+    decision
+}
+
+pub fn last_decision() -> u8 { unsafe { LAST_DECISION } }
 pub fn last_process_count() -> usize { unsafe { LAST_PROCESS_COUNT } }
 pub fn last_process_pid(index: usize) -> usize {
     if index >= crate::process::MAX_PROCESSES { return 0; }
     unsafe { LAST_PROCESS_IDS[index] }
 }
-
-/// Resolve a PID directly in the current Virt process-state map.
 pub fn process_state(pid: usize) -> u8 {
     unsafe {
         let mut i = 0usize;
@@ -194,8 +217,6 @@ pub fn process_state(pid: usize) -> u8 {
         0
     }
 }
-
-/// Resolve a PID in the previous observation map.
 pub fn previous_process_state(pid: usize) -> u8 {
     unsafe {
         let mut i = 0usize;
@@ -206,7 +227,6 @@ pub fn previous_process_state(pid: usize) -> u8 {
         0
     }
 }
-
 pub fn last_process_event_kind() -> u8 { unsafe { LAST_PROCESS_EVENT_KIND } }
 pub fn last_process_event_pid() -> usize { unsafe { LAST_PROCESS_EVENT_PID } }
 pub fn last_process_event_old_state() -> u8 { unsafe { LAST_PROCESS_EVENT_OLD_STATE } }
