@@ -872,6 +872,54 @@ fn pci_cfg_read32(bus: u8, dev: u8, func: u8, off: u8) -> u32 {
     }
 }
 
+fn ethdiag_capabilities(bus: u8, dev: u8, func: u8, status: u16) {
+    if (status & 0x10) == 0 {
+        write_str("CAP_LIST=NO\n");
+        return;
+    }
+    let mut ptr = ((pci_cfg_read32(bus, dev, func, 0x34) & 0xFF) as u8) & 0xFC;
+    let mut steps = 0usize;
+    let mut pcie = false;
+    let mut msi = false;
+    let mut msix = false;
+    while ptr >= 0x40 && ptr < 0xFC && steps < 48 {
+        let cap = pci_cfg_read32(bus, dev, func, ptr);
+        let id = (cap & 0xFF) as u8;
+        if id == 0 { break; }
+        if id == 0x10 { pcie = true; }
+        if id == 0x05 { msi = true; }
+        if id == 0x11 { msix = true; }
+        let next = ((cap >> 8) & 0xFF) as u8;
+        if next == ptr { break; }
+        ptr = next & 0xFC;
+        steps += 1;
+    }
+    write_str("CAP_LIST=YES PCIE="); write_str(if pcie { "YES" } else { "NO" });
+    write_str(" MSI="); write_str(if msi { "YES" } else { "NO" });
+    write_str(" MSIX="); write_str(if msix { "YES" } else { "NO" });
+    write_str(" COUNT="); write_usize(steps); write_str("\n");
+    if pcie {
+        let mut p = ((pci_cfg_read32(bus, dev, func, 0x34) & 0xFF) as u8) & 0xFC;
+        let mut i = 0usize;
+        while p >= 0x40 && p < 0xFC && i < 48 {
+            let cap = pci_cfg_read32(bus, dev, func, p);
+            if (cap & 0xFF) as u8 == 0x10 {
+                let pcie_cap = pci_cfg_read32(bus, dev, func, p);
+                let link = pci_cfg_read32(bus, dev, func, p.wrapping_add(0x0C));
+                write_str("PCIE_CAP="); write_hex(p as usize);
+                write_str(" TYPE="); write_hex(((pcie_cap >> 20) & 0xF) as usize);
+                write_str(" LINKCAP="); write_hex(link as usize);
+                write_str("\n");
+                break;
+            }
+            let next = ((cap >> 8) & 0xFF) as u8;
+            if next == p { break; }
+            p = next & 0xFC;
+            i += 1;
+        }
+    }
+}
+
 fn cmd_ethdiag() {
     write_str("======== ETHERNET PCI DIAGNOSTIC ========\n");
     write_str("MODE=READ_ONLY PCI_CONFIG\n");
@@ -892,7 +940,21 @@ fn cmd_ethdiag() {
         write_str("CMD="); write_hex((cmdstat&0xFFFF) as usize); write_str(" STATUS="); write_hex((cmdstat>>16) as usize); write_str(" IRQ="); write_hex(((hdr>>8)&0xFF) as usize); write_str("\n");
         write_str("SUBSYS=VENDOR "); write_hex((subsys&0xFFFF) as usize); write_str(" DEVICE "); write_hex((subsys>>16) as usize); write_str("\n");
         let mut off=0x10u8; let mut n=0usize;
-        while n<6 { write_str("BAR"); write_usize(n); write_str("="); write_hex(pci_cfg_read32(bus,dev,func,off) as usize); if n==2 || n==5 { write_str("\n"); } else { write_str(" "); } off+=4; n+=1; }
+        while n<6 {
+            let bar = pci_cfg_read32(bus,dev,func,off);
+            write_str("BAR"); write_usize(n); write_str("="); write_hex(bar as usize);
+            if bar & 1 != 0 {
+                write_str(" IO");
+            } else if bar & 4 != 0 {
+                write_str(" MEM64");
+            } else {
+                write_str(" MEM32");
+            }
+            write_str(if bar & 8 != 0 { " PREFETCH" } else { " NONPREFETCH" });
+            write_str("\n");
+            off+=4; n+=1;
+        }
+        ethdiag_capabilities(bus, dev, func, (cmdstat >> 16) as u16);
     }}}
     write_str("FOUND="); write_usize(found); write_str("\n");
     write_str("ACTION=NONE RESET=NO BAR_WRITE=NO MMIO=NO DMA=NO\n");
@@ -902,7 +964,7 @@ fn cmd_ethdiag() {
 fn cmd_help() {
     write_str("Aether Terminal - native command interface\n");
     write_str("Core: HELP  CLS  VER  LOG  TANSI  SEARCH <text>\n");
-    write_str("Hardware: KMS5  VINFO  V800  V1366  AUD  AUD2  AUD3  MOUS  USB  WF  ETHDIAG  NET\n");
+    write_str("Hardware: KMS5  VINFO  V800  V1366  AUD  AUD2  AUD3  MOUS  USB  WF  ETHDIAG\n");
     write_str("Tip: Up/Down recalls command history; arrow keys scroll long output.\n");
 }
 
