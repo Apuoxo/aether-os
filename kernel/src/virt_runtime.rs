@@ -35,6 +35,7 @@ static mut LAST_REASONING_GATE: u8 = 0;
 static mut REASONING_WAITING: bool = false;
 static mut LAST_REASONING_RESPONSE_LEN: usize = 0;
 static mut LAST_REASONING_RESPONSE: [u8; 128] = [0; 128];
+static mut LAST_REASONING_CLASSIFICATION: u8 = 0;
 
 pub const PROCESS_EVENT_NONE: u8 = 0;
 pub const PROCESS_EVENT_APPEARED: u8 = 1;
@@ -49,6 +50,13 @@ pub const DECISION_REVIEW_STATE_CHANGE: u8 = 3;
 pub const REASONING_GATE_NONE: u8 = 0;
 pub const REASONING_GATE_SKIP: u8 = 1;
 pub const REASONING_GATE_REQUEST: u8 = 2;
+
+pub const REASONING_CLASS_NONE: u8 = 0;
+pub const REASONING_CLASS_ERROR: u8 = 1;
+pub const REASONING_CLASS_OBSERVATION: u8 = 2;
+pub const REASONING_CLASS_RECOMMENDATION: u8 = 3;
+pub const REASONING_CLASS_ACTION: u8 = 4;
+pub const REASONING_CLASS_TEXT: u8 = 5;
 
 pub const STATE_OFF: u8 = 0;
 pub const STATE_AWAKE: u8 = 1;
@@ -85,6 +93,7 @@ pub fn init() {
         REASONING_WAITING = false;
         LAST_REASONING_RESPONSE_LEN = 0;
         LAST_REASONING_RESPONSE = [0; 128];
+        LAST_REASONING_CLASSIFICATION = REASONING_CLASS_NONE;
     }
     serial::write_str("[VIRT RUNTIME] ACTIVE STATE=AWAKE heartbeat=RTC-second\n");
 }
@@ -275,6 +284,7 @@ pub fn receive_reasoning_response(request_id: u64, bytes: &[u8]) {
         let mut i = 0usize;
         while i < n { LAST_REASONING_RESPONSE[i] = bytes[i]; i += 1; }
         LAST_REASONING_RESPONSE_LEN = n;
+        LAST_REASONING_CLASSIFICATION = classify_reasoning_response(n);
         REASONING_WAITING = false;
         serial::write_str("[VIRT RUNTIME] REASONING_RESPONSE_LEN=");
         serial::write_usize(n);
@@ -282,7 +292,50 @@ pub fn receive_reasoning_response(request_id: u64, bytes: &[u8]) {
     }
 }
 
+fn response_contains(needle: &[u8], len: usize) -> bool {
+    if needle.is_empty() || len < needle.len() { return false; }
+    unsafe {
+        let mut i = 0usize;
+        while i + needle.len() <= len {
+            let mut j = 0usize;
+            let mut matched = true;
+            while j < needle.len() {
+                let mut a = LAST_REASONING_RESPONSE[i + j];
+                let mut b = needle[j];
+                if a >= b'A' && a <= b'Z' { a = a + 32; }
+                if b >= b'A' && b <= b'Z' { b = b + 32; }
+                if a != b { matched = false; break; }
+                j += 1;
+            }
+            if matched { return true; }
+            i += 1;
+        }
+    }
+    false
+}
+
+/// Classify the accepted model response without interpreting or executing it.
+/// This is intentionally deterministic and bounded; it is not yet semantic understanding.
+fn classify_reasoning_response(len: usize) -> u8 {
+    if len == 0 { return REASONING_CLASS_TEXT; }
+    if response_contains(b"model_error", len) || response_contains(b"error:", len) {
+        return REASONING_CLASS_ERROR;
+    }
+    if response_contains(b"observe", len) || response_contains(b"observation", len) {
+        return REASONING_CLASS_OBSERVATION;
+    }
+    if response_contains(b"recommend", len) || response_contains(b"recommendation", len) {
+        return REASONING_CLASS_RECOMMENDATION;
+    }
+    if response_contains(b"action", len) || response_contains(b"execute", len) {
+        return REASONING_CLASS_ACTION;
+    }
+    REASONING_CLASS_TEXT
+}
+
 pub fn last_reasoning_response_len() -> usize { unsafe { LAST_REASONING_RESPONSE_LEN } }
+
+pub fn last_reasoning_classification() -> u8 { unsafe { LAST_REASONING_CLASSIFICATION } }
 
 pub fn last_reasoning_gate() -> u8 { unsafe { LAST_REASONING_GATE } }
 
