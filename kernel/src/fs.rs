@@ -608,26 +608,31 @@ pub fn list(out: &mut [[u8; 24]; 16], out_len: &mut [usize; 16]) -> usize {
 /// Init storage: ATA → mount or format → persistence workflow
 pub fn init_storage() -> bool {
     serial::write_str("\n======== STORAGE / AetherFS ========\n");
-    // Keep ATA probe for diagnostics, but use RAM disk as FS backend for AH532 test
+    // Prefer a real ATA disk when present so AetherFS can survive reboot.
+    // Fall back to the existing volatile RAM disk on hardware without storage.
     let _ = ata::init();
-    ata::enable_ramdisk();
-    if !ata::self_test() {
-        serial::write_str("[STORAGE] RAM disk self-test FAIL\n");
-        return false;
+    if ata::hw_present() {
+        serial::write_str("[STORAGE] ATA hardware present; persistent backend\\n");
+        if !mount() {
+            serial::write_str("[STORAGE] no valid filesystem; formatting ATA disk\\n");
+            if !format() || !mount() {
+                serial::write_str("[STORAGE] ATA format/mount FAIL\\n");
+                return false;
+            }
+        }
+    } else {
+        ata::enable_ramdisk();
+        if !ata::self_test() {
+            serial::write_str("[STORAGE] RAM disk self-test FAIL\\n");
+            return false;
+        }
+        serial::write_str("[RAMDISK OK]\\n");
+        if !format() || !mount() {
+            serial::write_str("[STORAGE] RAMDISK format/mount FAIL\\n");
+            return false;
+        }
     }
-    serial::write_str("[RAMDISK OK]\n");
-
-    // Always format fresh on volatile RAM disk
-    if !format() {
-        serial::write_str("[STORAGE] format FAIL\n");
-        return false;
-    }
-    if !mount() {
-        serial::write_str("[STORAGE] mount FAIL\n");
-        return false;
-    }
-    serial::write_str("[AetherFS mounted]\n");
-
+    serial::write_str("[AetherFS mounted]\\n");
     if !create("/test.txt") {
         serial::write_str("[STORAGE] create test.txt FAIL\n");
         return false;
