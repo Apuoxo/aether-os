@@ -1399,6 +1399,31 @@ fn cmd_ethdma() {
                 }
                 write_str("RX_DONE="); write_str(if rx_done {"PASS"} else {"TIMEOUT"});
                 write_str(" RX_IDX="); write_hex(rx_idx); write_str(" RX_LEN="); write_hex(rx_len); write_str("\n");
+                if rx_done {
+                    let rb=rx_bufs[rx_idx] as *const u8;
+                    write_str("RX_DST=");
+                    unsafe { for j in 0..6 { write_hex(core::ptr::read_volatile(rb.add(j)) as usize); if j != 5 { write_str(":"); } } }
+                    write_str(" RX_SRC=");
+                    unsafe { for j in 0..6 { write_hex(core::ptr::read_volatile(rb.add(6+j)) as usize); if j != 5 { write_str(":"); } } }
+                    if rx_len >= 14 {
+                        let et = unsafe {
+                            ((core::ptr::read_volatile(rb.add(12)) as u16) << 8) |
+                            core::ptr::read_volatile(rb.add(13)) as u16
+                        };
+                        write_str(" RX_ETHERTYPE="); write_hex(et as usize);
+                    }
+                    write_str("\nRX_RAW=");
+                    let raw_n = core::cmp::min(rx_len, 64);
+                    unsafe {
+                        let mut j=0usize;
+                        while j < raw_n {
+                            write_hex(core::ptr::read_volatile(rb.add(j)) as usize);
+                            if j + 1 != raw_n { write_str(" "); }
+                            j += 1;
+                        }
+                    }
+                    write_str("\n");
+                }
                 let mut dhcp_offer=false; let mut offered_ip=[0u8;4]; let mut server_ip=[0u8;4];
                 if rx_done && rx_len>=240 {
                     let rb=rx_bufs[rx_idx] as *const u8;
