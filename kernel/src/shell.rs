@@ -1054,7 +1054,8 @@ fn cmd_ethchip() {
         let phy_id1 = ethchip_mdio_read(mmio as usize, 0);
         let phy_id2 = ethchip_mdio_read(mmio as usize, 1);
         let phy_bmcr = ethchip_mdio_read(mmio as usize, 2);
-        let phy_bmsr = ethchip_mdio_read(mmio as usize, 3);
+        let phy_bmsr_1 = ethchip_mdio_read(mmio as usize, 3);
+        let phy_bmsr_2 = ethchip_mdio_read(mmio as usize, 3);
         let phy_anar = ethchip_mdio_read(mmio as usize, 4);
         let phy_anlpar = ethchip_mdio_read(mmio as usize, 5);
 
@@ -1068,8 +1069,15 @@ fn cmd_ethchip() {
         write_str("MDIO_BMCR="); match phy_bmcr {
             Some(v) => write_hex(v as usize), None => write_str("TIMEOUT"),
         }
-        write_str(" BMSR="); match phy_bmsr {
+        write_str(" BMSR1="); match phy_bmsr_1 {
             Some(v) => write_hex(v as usize), None => write_str("TIMEOUT"),
+        }
+        write_str(" BMSR2="); match phy_bmsr_2 {
+            Some(v) => write_hex(v as usize), None => write_str("TIMEOUT"),
+        }
+        if let (Some(v), Some(w)) = (phy_bmsr_1, phy_bmsr_2) {
+            write_str(" LINK="); write_str(if (v & 0x0004) != 0 && (w & 0x0004) != 0 { "UP" } else { "DOWN_OR_LATCHED" });
+            write_str(" ANEG="); write_str(if (w & 0x0020) != 0 { "COMPLETE" } else { "INCOMPLETE" });
         }
         write_str("\n");
         write_str("MDIO_ANAR="); match phy_anar {
