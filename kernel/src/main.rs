@@ -356,6 +356,10 @@ pub extern "C" fn kernel_main(mbi: usize) -> ! {
     }
 
     drivers::ps2::init();
+    // Network validation is intentionally before graphics/KMS so QEMU Ethernet
+    // cannot be masked by a later display-stage stall.
+    drivers::net::init();
+    let _ = drivers::net::qemu_ping();
     vga_mark(9, b'Y');
     unsafe {
         core::arch::asm!("mov al, 0xFF; out 0x21, al; out 0xA1, al", options(nostack, preserves_flags));
@@ -449,8 +453,6 @@ pub extern "C" fn kernel_main(mbi: usize) -> ! {
         desktop::terminal_write(if detected_ram_mib > managed_ram_mib { "YES\\n" } else { "NO\\n" });
         drivers::audio::init();
         media_player::init();
-        drivers::net::init();
-        let _ = drivers::net::qemu_ping();
         drivers::wifi::init();
         drivers::pci_usb_diag::dump_usb_controllers();
         drivers::xhci::probe();
