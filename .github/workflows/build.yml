@@ -36,12 +36,13 @@ jobs:
         continue-on-error: true
         run: |
           set +e
-          timeout 20s qemu-system-x86_64 -cdrom kernel/build/aether.iso -serial file:/tmp/aether-qemu.log -display none -m 128M -no-reboot
+          timeout 20s qemu-system-x86_64 -cdrom kernel/build/aether.iso -serial file:/tmp/aether-qemu.log -display none -m 128M -no-reboot -netdev user,id=n0,ipv4=on,ipv6=off -device rtl8139,netdev=n0
           rc=$?
           cat /tmp/aether-qemu.log
           echo "QEMU_EXIT=$rc"
           ! grep -q "PANIC" /tmp/aether-qemu.log
           grep -q "Aether OS Build" /tmp/aether-qemu.log
+          grep -q "\[NET-QEMU\] PING=PASS" /tmp/aether-qemu.log
 
       - name: Publish QEMU diagnostic
         if: always()
