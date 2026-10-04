@@ -920,6 +920,95 @@ fn ethdiag_capabilities(bus: u8, dev: u8, func: u8, status: u16) {
     }
 }
 
+
+fn ethchip_read32(mmio: usize, off: usize) -> u32 {
+    unsafe { core::ptr::read_volatile((mmio + off) as *const u32) }
+}
+
+fn ethchip_map_page(phys: usize) -> bool {
+    unsafe {
+        let cr3 = crate::mm::paging::kernel_cr3();
+        if !crate::mm::paging::map_page(
+            cr3,
+            phys & !0xFFF,
+            phys & !0xFFF,
+            crate::mm::paging::PAGE_PRESENT | crate::mm::paging::PAGE_PCD,
+        ) {
+            return false;
+        }
+        crate::mm::paging::load_cr3(cr3);
+        true
+    }
+}
+
+fn cmd_ethchip() {
+    write_str("======== ETHERNET CHIP IDENTIFICATION ========\n");
+    write_str("MODE=READ_ONLY MMIO PROBE\n");
+    let mut found = false;
+    for bus in 0u8..=31 { for dev in 0u8..32 { for func in 0u8..8 {
+        let id = pci_cfg_read32(bus, dev, func, 0x00);
+        if id == 0 || id == 0xFFFF_FFFF { continue; }
+        let classreg = pci_cfg_read32(bus, dev, func, 0x08);
+        if ((classreg >> 24) & 0xFF) != 0x02 || ((classreg >> 16) & 0xFF) != 0x00 { continue; }
+        if (id & 0xFFFF) != 0x10EC || ((id >> 16) & 0xFFFF) != 0x8168 { continue; }
+
+        found = true;
+        let bar_lo = pci_cfg_read32(bus, dev, func, 0x18);
+        let bar_hi = pci_cfg_read32(bus, dev, func, 0x1C);
+        let mmio = ((bar_hi as u64) << 32) | ((bar_lo & 0xFFFF_FFF0) as u64);
+
+        write_str("BDF="); write_usize(bus as usize); write_str(":");
+        write_usize(dev as usize); write_str("."); write_usize(func as usize); write_str("\n");
+        write_str("PCI=10EC:8168 REV="); write_hex((classreg & 0xFF) as usize); write_str("\n");
+        write_str("BAR2_MMIO="); write_hex(mmio as usize); write_str("\n");
+
+        if mmio == 0 || (mmio & 0xFFF) != 0 {
+            write_str("RESULT=NO_VALID_MMIO_BAR2\n");
+            continue;
+        }
+        if !ethchip_map_page(mmio as usize) {
+            write_str("RESULT=MMIO_MAP_FAIL\n");
+            continue;
+        }
+
+        let txcfg = ethchip_read32(mmio as usize, 0x40);
+        let xid = (txcfg >> 20) & 0xFCF;
+        let txcfg_v2 = if xid == 0x7C8 { ethchip_read32(mmio as usize, 0x60B0) } else { 0 };
+        let chipcmd = unsafe { core::ptr::read_volatile((mmio as usize + 0x37) as *const u8) };
+        let phystat = unsafe { core::ptr::read_volatile((mmio as usize + 0x6C) as *const u8) };
+
+        write_str("TXCONFIG="); write_hex(txcfg as usize); write_str("\n");
+        write_str("XID="); write_hex(xid as usize); write_str("\n");
+        if xid == 0x7C8 {
+            write_str("TX_CONFIG_V2="); write_hex(txcfg_v2 as usize); write_str("\n");
+        }
+        write_str("CHIPCMD="); write_hex(chipcmd as usize);
+        write_str(" PHYSTATUS="); write_hex(phystat as usize); write_str("\n");
+
+        if xid == 0x380 {
+            write_str("VARIANT=RTL8168B/8111B\n");
+        } else if xid == 0x3C0 || xid == 0x3C2 || xid == 0x3C3 {
+            write_str("VARIANT=RTL8168C/8111C\n");
+        } else if xid == 0x3C8 || xid == 0x3C9 {
+            write_str("VARIANT=RTL8168CP/8111CP\n");
+        } else if xid == 0x280 || xid == 0x281 {
+            write_str("VARIANT=RTL8168D/8111D\n");
+        } else if xid == 0x28A || xid == 0x28B {
+            write_str("VARIANT=RTL8168DP/8111DP\n");
+        } else if xid == 0x7C8 {
+            write_str("VARIANT=EXTENDED_XID\n");
+            write_str("EXTENDED_VARIANT=REQUIRES_TX_CONFIG_V2_MAPPING\n");
+        } else {
+            write_str("VARIANT=UNKNOWN_XID\n");
+        }
+
+        write_str("ACTION=NONE RESET=NO DMA=NO TX=NO RX=NO\n");
+        break;
+    } if found { break; }}}
+    if !found { write_str("RESULT=RTL8168_NOT_FOUND\n"); }
+    write_str("======== ETHCHIP END ========\n");
+}
+
 fn cmd_ethdiag() {
     write_str("======== ETHERNET PCI DIAGNOSTIC ========\n");
     write_str("MODE=READ_ONLY PCI_CONFIG\n");
@@ -964,7 +1053,7 @@ fn cmd_ethdiag() {
 fn cmd_help() {
     write_str("Aether Terminal - native command interface\n");
     write_str("Core: HELP  CLS  VER  LOG  TANSI  SEARCH <text>\n");
-    write_str("Hardware: KMS5  VINFO  V800  V1366  AUD  AUD2  AUD3  MOUS  USB  WF  ETHDIAG\n");
+    write_str("Hardware: KMS5  VINFO  V800  V1366  AUD  AUD2  AUD3  MOUS  USB  WF  ETHDIAG  ETHCHIP\n");
     write_str("Tip: Up/Down recalls command history; arrow keys scroll long output.\n");
 }
 
@@ -987,7 +1076,9 @@ fn run_line(line: &[u8], len: usize) {
     while e > s && (line[e - 1] == b' ' || line[e - 1] == b'\r') { e -= 1; }
     let clen = e.saturating_sub(s);
 
-    if eq(line, s, clen, b"ETHDIAG") || eq(line, s, clen, b"ethdiag") {
+    if eq(line, s, clen, b"ETHCHIP") || eq(line, s, clen, b"ethchip") {
+        cmd_ethchip();
+    } else if eq(line, s, clen, b"ETHDIAG") || eq(line, s, clen, b"ethdiag") {
         cmd_ethdiag();
     } else if eq(line, s, clen, b"HELP") || eq(line, s, clen, b"help") {
         cmd_help();
