@@ -37,7 +37,6 @@ pub const PROCESS_EVENT_STATE_CHANGED: u8 = 3;
 pub const STATE_OFF: u8 = 0;
 pub const STATE_AWAKE: u8 = 1;
 
-/// Activate the persistent Virt runtime once during kernel boot.
 pub fn init() {
     let (_, _, _, _, _, second) = crate::time::rtc_read();
     unsafe {
@@ -67,15 +66,8 @@ pub fn init() {
     serial::write_str("[VIRT RUNTIME] ACTIVE STATE=AWAKE heartbeat=RTC-second\n");
 }
 
-/// Advance the runtime without invoking any reasoning backend.
-///
-/// The desktop loop calls this continuously. A heartbeat is recorded only
-/// when the RTC second changes, so the model is not invoked and no serial
-/// spam is produced every frame.
 pub fn tick() {
-    if !ready() {
-        return;
-    }
+    if !ready() { return; }
     let (_, _, _, _, _, second) = crate::time::rtc_read();
     unsafe {
         if second != LAST_SECOND {
@@ -87,14 +79,8 @@ pub fn tick() {
     }
 }
 
-/// Capture the first real kernel-state observation owned by Virt Runtime.
-///
-/// This deliberately samples only state that is already initialized and does
-/// not trigger scheduling, I/O, model inference or any other side effect.
 pub fn observe_system() {
-    if !ready() {
-        return;
-    }
+    if !ready() { return; }
     let total = crate::mm::total_count();
     let free = crate::mm::free_count();
     let pid = crate::process::current_pid();
@@ -112,10 +98,7 @@ pub fn observe_system() {
     serial::write_str("\n");
 }
 
-/// Snapshot every process currently known to the native process table.
-///
-/// The snapshot is metadata-only: it copies PIDs and does not change process
-/// state, scheduling, address spaces or capabilities.
+/// Build the current process state map and compare it with the previous map.
 pub fn observe_processes() {
     if !ready() { return; }
     let mut ids = [0usize; crate::process::MAX_PROCESSES];
@@ -136,7 +119,6 @@ pub fn observe_processes() {
             PROCESS_BASELINE_READY = true;
             return;
         }
-
         let mut i = 0usize;
         while i < count {
             let pid = ids[i];
@@ -151,13 +133,6 @@ pub fn observe_processes() {
                         LAST_PROCESS_EVENT_KIND = PROCESS_EVENT_STATE_CHANGED;
                         LAST_PROCESS_EVENT_OLD_STATE = PREVIOUS_PROCESS_STATES[j];
                         LAST_PROCESS_EVENT_NEW_STATE = states[i];
-                        serial::write_str("[VIRT RUNTIME] PROCESS STATE PID=");
-                        serial::write_usize(pid);
-                        serial::write_str(" OLD=");
-                        serial::write_usize(PREVIOUS_PROCESS_STATES[j] as usize);
-                        serial::write_str(" NEW=");
-                        serial::write_usize(states[i] as usize);
-                        serial::write_str("\n");
                     }
                     break;
                 }
@@ -169,14 +144,9 @@ pub fn observe_processes() {
                 LAST_PROCESS_EVENT_KIND = PROCESS_EVENT_APPEARED;
                 LAST_PROCESS_EVENT_OLD_STATE = 0;
                 LAST_PROCESS_EVENT_NEW_STATE = states[i];
-                serial::write_str("[VIRT RUNTIME] PROCESS APPEARED PID=");
-                serial::write_usize(pid);
-                serial::write_str("\n");
-                break;
             }
             i += 1;
         }
-
         if LAST_PROCESS_EVENT_KIND == PROCESS_EVENT_NONE {
             let mut p = 0usize;
             while p < PREVIOUS_PROCESS_COUNT {
@@ -184,10 +154,7 @@ pub fn observe_processes() {
                 let mut found = false;
                 let mut j = 0usize;
                 while j < count {
-                    if ids[j] == pid {
-                        found = true;
-                        break;
-                    }
+                    if ids[j] == pid { found = true; break; }
                     j += 1;
                 }
                 if !found {
@@ -196,15 +163,11 @@ pub fn observe_processes() {
                     LAST_PROCESS_EVENT_KIND = PROCESS_EVENT_DISAPPEARED;
                     LAST_PROCESS_EVENT_OLD_STATE = PREVIOUS_PROCESS_STATES[p];
                     LAST_PROCESS_EVENT_NEW_STATE = 0;
-                    serial::write_str("[VIRT RUNTIME] PROCESS DISAPPEARED PID=");
-                    serial::write_usize(pid);
-                    serial::write_str("\n");
                     break;
                 }
                 p += 1;
             }
         }
-
         PREVIOUS_PROCESS_IDS = ids;
         PREVIOUS_PROCESS_STATES = states;
         PREVIOUS_PROCESS_COUNT = count;
@@ -214,98 +177,54 @@ pub fn observe_processes() {
     }
 }
 
-pub fn last_process_count() -> usize {
-    unsafe { LAST_PROCESS_COUNT }
-}
-
+pub fn last_process_count() -> usize { unsafe { LAST_PROCESS_COUNT } }
 pub fn last_process_pid(index: usize) -> usize {
-    if index >= crate::process::MAX_PROCESSES {
-        return 0;
-    }
+    if index >= crate::process::MAX_PROCESSES { return 0; }
     unsafe { LAST_PROCESS_IDS[index] }
 }
 
-pub fn last_process_event_kind() -> u8 {
-    unsafe { LAST_PROCESS_EVENT_KIND }
+/// Resolve a PID directly in the current Virt process-state map.
+pub fn process_state(pid: usize) -> u8 {
+    unsafe {
+        let mut i = 0usize;
+        while i < LAST_PROCESS_COUNT {
+            if LAST_PROCESS_IDS[i] == pid { return LAST_PROCESS_STATES[i]; }
+            i += 1;
+        }
+        0
+    }
 }
 
-pub fn last_process_event_pid() -> usize {
-    unsafe { LAST_PROCESS_EVENT_PID }
+/// Resolve a PID in the previous observation map.
+pub fn previous_process_state(pid: usize) -> u8 {
+    unsafe {
+        let mut i = 0usize;
+        while i < PREVIOUS_PROCESS_COUNT {
+            if PREVIOUS_PROCESS_IDS[i] == pid { return PREVIOUS_PROCESS_STATES[i]; }
+            i += 1;
+        }
+        0
+    }
 }
 
+pub fn last_process_event_kind() -> u8 { unsafe { LAST_PROCESS_EVENT_KIND } }
+pub fn last_process_event_pid() -> usize { unsafe { LAST_PROCESS_EVENT_PID } }
 pub fn last_process_event_old_state() -> u8 { unsafe { LAST_PROCESS_EVENT_OLD_STATE } }
 pub fn last_process_event_new_state() -> u8 { unsafe { LAST_PROCESS_EVENT_NEW_STATE } }
 pub fn last_process_state(index: usize) -> u8 {
     if index >= crate::process::MAX_PROCESSES { return 0; }
     unsafe { LAST_PROCESS_STATES[index] }
 }
-
-pub fn last_ram_total_pages() -> usize {
-    unsafe { LAST_RAM_TOTAL }
-}
-
-pub fn last_ram_free_pages() -> usize {
-    unsafe { LAST_RAM_FREE }
-}
-
-pub fn last_pid() -> usize {
-    unsafe { LAST_PID }
-}
-
-pub fn ready() -> bool {
-    unsafe { ACTIVE }
-}
-
-pub fn heartbeat_count() -> u64 {
-    unsafe { HEARTBEATS }
-}
-
-/// Record an event delivered to the Virt runtime.
-///
-/// Event handling is intentionally separate from reasoning: receiving an
-/// event does not imply that a model must be invoked.
-pub fn record_event() {
-    if ready() {
-        unsafe {
-            EVENTS = EVENTS.wrapping_add(1);
-        }
-    }
-}
-
-/// Record a completed runtime action.
-pub fn record_action() {
-    if ready() {
-        unsafe {
-            ACTIONS = ACTIONS.wrapping_add(1);
-        }
-    }
-}
-
-/// Record a request that was explicitly handed to a reasoning backend.
-pub fn record_reasoning_request() {
-    if ready() {
-        unsafe {
-            REASONING_REQUESTS = REASONING_REQUESTS.wrapping_add(1);
-        }
-    }
-}
-
-pub fn state() -> u8 {
-    unsafe { STATE }
-}
-
-pub fn observation_count() -> u64 {
-    unsafe { OBSERVATIONS }
-}
-
-pub fn event_count() -> u64 {
-    unsafe { EVENTS }
-}
-
-pub fn action_count() -> u64 {
-    unsafe { ACTIONS }
-}
-
-pub fn reasoning_request_count() -> u64 {
-    unsafe { REASONING_REQUESTS }
-}
+pub fn last_ram_total_pages() -> usize { unsafe { LAST_RAM_TOTAL } }
+pub fn last_ram_free_pages() -> usize { unsafe { LAST_RAM_FREE } }
+pub fn last_pid() -> usize { unsafe { LAST_PID } }
+pub fn ready() -> bool { unsafe { ACTIVE } }
+pub fn heartbeat_count() -> u64 { unsafe { HEARTBEATS } }
+pub fn record_event() { if ready() { unsafe { EVENTS = EVENTS.wrapping_add(1); } } }
+pub fn record_action() { if ready() { unsafe { ACTIONS = ACTIONS.wrapping_add(1); } } }
+pub fn record_reasoning_request() { if ready() { unsafe { REASONING_REQUESTS = REASONING_REQUESTS.wrapping_add(1); } } }
+pub fn state() -> u8 { unsafe { STATE } }
+pub fn observation_count() -> u64 { unsafe { OBSERVATIONS } }
+pub fn event_count() -> u64 { unsafe { EVENTS } }
+pub fn action_count() -> u64 { unsafe { ACTIONS } }
+pub fn reasoning_request_count() -> u64 { unsafe { REASONING_REQUESTS } }
