@@ -38,6 +38,7 @@ static mut LAST_REASONING_RESPONSE: [u8; 128] = [0; 128];
 static mut LAST_REASONING_CLASSIFICATION: u8 = 0;
 static mut LAST_ACTION_GATE: u8 = 0;
 static mut LAST_ACTION_AUTHORIZATION: u8 = 0;
+static mut LAST_ACTION_KIND: u8 = 0;
 
 pub const PROCESS_EVENT_NONE: u8 = 0;
 pub const PROCESS_EVENT_APPEARED: u8 = 1;
@@ -65,6 +66,11 @@ pub const ACTION_GATE_PROPOSED: u8 = 1;
 
 pub const ACTION_AUTH_NONE: u8 = 0;
 pub const ACTION_AUTH_GRANTED: u8 = 1;
+
+// First executable capability: a bounded internal runtime marker only.
+// It performs no device I/O, process mutation, filesystem write, or model call.
+pub const ACTION_KIND_NONE: u8 = 0;
+pub const ACTION_KIND_RUNTIME_MARK: u8 = 1;
 
 pub const STATE_OFF: u8 = 0;
 pub const STATE_AWAKE: u8 = 1;
@@ -104,6 +110,7 @@ pub fn init() {
         LAST_REASONING_CLASSIFICATION = REASONING_CLASS_NONE;
         LAST_ACTION_GATE = ACTION_GATE_NONE;
         LAST_ACTION_AUTHORIZATION = ACTION_AUTH_NONE;
+        LAST_ACTION_KIND = ACTION_KIND_NONE;
     }
     serial::write_str("[VIRT RUNTIME] ACTIVE STATE=AWAKE heartbeat=RTC-second\n");
 }
@@ -296,8 +303,10 @@ pub fn receive_reasoning_response(request_id: u64, bytes: &[u8]) {
         LAST_REASONING_RESPONSE_LEN = n;
         LAST_REASONING_CLASSIFICATION = classify_reasoning_response(n);
         LAST_ACTION_GATE = if LAST_REASONING_CLASSIFICATION == REASONING_CLASS_ACTION {
+            LAST_ACTION_KIND = ACTION_KIND_RUNTIME_MARK;
             ACTION_GATE_PROPOSED
         } else {
+            LAST_ACTION_KIND = ACTION_KIND_NONE;
             ACTION_GATE_NONE
         };
         REASONING_WAITING = false;
@@ -367,6 +376,28 @@ pub fn authorize_action() -> u8 {
 }
 
 pub fn last_action_authorization() -> u8 { unsafe { LAST_ACTION_AUTHORIZATION } }
+
+pub fn last_action_kind() -> u8 { unsafe { LAST_ACTION_KIND } }
+
+/// Execute exactly one explicitly authorized, bounded internal action.
+/// No external I/O or arbitrary code execution is reachable from this path.
+pub fn execute_authorized_action() -> u8 {
+    unsafe {
+        if LAST_ACTION_AUTHORIZATION != ACTION_AUTH_GRANTED {
+            return ACTION_AUTH_NONE;
+        }
+        if LAST_ACTION_KIND != ACTION_KIND_RUNTIME_MARK {
+            LAST_ACTION_AUTHORIZATION = ACTION_AUTH_NONE;
+            LAST_ACTION_KIND = ACTION_KIND_NONE;
+            return ACTION_AUTH_NONE;
+        }
+        ACTIONS = ACTIONS.wrapping_add(1);
+        serial::write_str("[VIRT RUNTIME] ACTION_EXECUTED kind=RUNTIME_MARK\\n");
+        LAST_ACTION_AUTHORIZATION = ACTION_AUTH_NONE;
+        LAST_ACTION_KIND = ACTION_KIND_NONE;
+        ACTION_AUTH_GRANTED
+    }
+}
 
 pub fn last_reasoning_gate() -> u8 { unsafe { LAST_REASONING_GATE } }
 
