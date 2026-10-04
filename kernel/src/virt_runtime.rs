@@ -58,6 +58,7 @@ static mut LAST_SYSTEM_CHANGE_NEW_STATE: u8 = SYSTEM_STATE_UNKNOWN;
 static mut LAST_SYSTEM_CHANGE_SEQUENCE: u32 = 0;
 static mut LAST_UNDERSTANDING: u8 = UNDERSTANDING_NONE;
 static mut EXPERIENCE_RESTORED: bool = false;
+static mut ACTION_EXPERIENCE_RESTORED: bool = false;
 
 /// Fixed three-hour whole-OS operational history.
 /// One snapshot is recorded per runtime heartbeat (one RTC second).
@@ -203,6 +204,7 @@ pub fn init() {
         LAST_SYSTEM_CHANGE_SEQUENCE = 0;
         LAST_UNDERSTANDING = UNDERSTANDING_NONE;
         EXPERIENCE_RESTORED = false;
+        ACTION_EXPERIENCE_RESTORED = false;
         SYSTEM_HISTORY_STATES =
             [[SYSTEM_STATE_UNKNOWN; SYSTEM_SUBSYSTEM_COUNT]; SYSTEM_HISTORY_SECONDS];
         SYSTEM_HISTORY_HEALTH = [SYSTEM_HEALTH_UNKNOWN; SYSTEM_HISTORY_SECONDS];
@@ -639,6 +641,8 @@ fn emit_reasoning_request() {
         serial::write_usize(LAST_DECISION as usize);
         serial::write_str(" EXPERIENCE=");
         serial::write_str(if EXPERIENCE_RESTORED { "RESTORED" } else { "NONE" });
+        serial::write_str(" ACTION_HISTORY=");
+        serial::write_str(if ACTION_EXPERIENCE_RESTORED { "RESTORED" } else { "NONE" });
         serial::write_str("\n");
     }
 }
@@ -743,6 +747,21 @@ fn classify_reasoning_response(len: usize) -> u8 {
     REASONING_CLASS_TEXT
 }
 
+fn restore_persisted_action() {
+    let mut record = [0u8; 40];
+    let n = match crate::fs::read_large("/virt.act", &mut record) { Some(n) => n, None => return };
+    if n < 29 || &record[..4] != b"VXA1" { return; }
+    unsafe {
+        ACTION_VERIFY_STATE = record[4];
+        let mut a = [0u8; 8]; a.copy_from_slice(&record[5..13]); ACTIONS = u64::from_le_bytes(a);
+        a.copy_from_slice(&record[13..21]); ACTION_EFFECT_MARK = u64::from_le_bytes(a);
+        let mut q = [0u8; 4]; q.copy_from_slice(&record[21..25]); ACTION_EXECUTION_SEQUENCE = u32::from_le_bytes(q);
+        q.copy_from_slice(&record[25..29]); ACTION_OBSERVATION_SEQUENCE = u32::from_le_bytes(q);
+        ACTION_EXPERIENCE_RESTORED = true;
+        serial::write_str("[VIRT EXPERIENCE] ACTION_RESTORED /virt.act\\n");
+    }
+}
+
 pub fn restore_persisted_experience() {
     let mut record = [0u8; 192];
     let n = match crate::fs::read_large("/virt.exp", &mut record) { Some(n) => n, None => return };
@@ -761,6 +780,7 @@ pub fn restore_persisted_experience() {
         serial::write_usize(response_len);
         serial::write_str("\\n");
     }
+    restore_persisted_action();
 }
 
 pub fn last_reasoning_response_len() -> usize { unsafe { LAST_REASONING_RESPONSE_LEN } }
@@ -819,6 +839,22 @@ fn verify_last_action() {
             && ACTION_OBSERVATION_SEQUENCE > ACTION_EXECUTION_SEQUENCE
             && ACTION_VERIFY_EXPECTED_EFFECT_MARK != 0 {
             ACTION_VERIFY_STATE = ACTION_VERIFY_PASSED;
+            let mut record = [0u8; 40];
+            record[0] = b'V'; record[1] = b'X'; record[2] = b'A'; record[3] = b'1';
+            record[4] = ACTION_VERIFY_STATE;
+            let a = ACTIONS.to_le_bytes();
+            let e = ACTION_EFFECT_MARK.to_le_bytes();
+            let x = ACTION_EXECUTION_SEQUENCE.to_le_bytes();
+            let o = ACTION_OBSERVATION_SEQUENCE.to_le_bytes();
+            record[5..13].copy_from_slice(&a);
+            record[13..21].copy_from_slice(&e);
+            record[21..25].copy_from_slice(&x);
+            record[25..29].copy_from_slice(&o);
+            if crate::fs::write_large("/virt.act", &record[..29]) {
+                serial::write_str("[VIRT EXPERIENCE] ACTION_PERSISTED /virt.act\\n");
+            } else {
+                serial::write_str("[VIRT EXPERIENCE] ACTION_PERSIST_FAIL /virt.act\\n");
+            }
             serial::write_str("[VIRT RUNTIME] ACTION_VERIFY=PASSED kind=RUNTIME_MARK\\n");
         }
     }
