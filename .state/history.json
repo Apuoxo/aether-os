@@ -1,4 +1,34 @@
 {
   "schema": 1,
-  "entries": []
+  "entries": [
+    {
+      "run_id": "37185474653",
+      "commit": "a1a761ef1a3e4d6d043c198eb2d482c760080ecb",
+      "observed_at": "2026-10-04T07:21:39.780294Z",
+      "outcome": "success",
+      "qemu_exit": 124,
+      "checks": {
+        "qemu_exit_accepted": true,
+        "panic_absent": true,
+        "build_banner": true,
+        "desktop_marker": true,
+        "desktop_start": true,
+        "ring3_evidence": true
+      },
+      "observations": [
+        "Aether Desktop initialization observed in QEMU serial output.",
+        "Native desktop start marker observed.",
+        "QEMU has no Intel Gen6 display controller; this is virtual-hardware evidence, not AH532 evidence.",
+        "QEMU has no native HDA controller; audio hardware behavior is not validated here.",
+        "QEMU has no target Intel WLAN device; Wi-Fi hardware behavior is not validated here.",
+        "QEMU xHCI validation is unavailable in this run.",
+        "Embedded media file open path was reached.",
+        "Framebuffer test pattern reached the render stage."
+      ],
+      "conclusion": "QEMU boot reached Aether Desktop without PANIC; evidence is valid for kernel/ISO/QEMU startup but does not establish AH532 hardware behavior or Ring3 execution.",
+      "next_step": "Use the recorded QEMU evidence as the baseline and choose the next single controlled validation."
+    }
+  ],
+  "last_updated": "2026-10-04T07:21:39.780294Z",
+  "last_run_id": "37185474653"
 }
