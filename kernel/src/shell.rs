@@ -1126,6 +1126,241 @@ fn cmd_ethchip() {
     write_str("======== ETHCHIP END ========\n");
 }
 
+fn cmd_ethdma() {
+    write_str("======== RTL8168 DMA BRING-UP ========\n");
+    write_str("MODE=REAL_HW DMA POLLING\n");
+    let mut found = false;
+
+    'outer: for bus in 0u8..=31 {
+        for dev in 0u8..32 {
+            for func in 0u8..8 {
+                let id = pci_cfg_read32(bus, dev, func, 0x00);
+                if id == 0 || id == 0xFFFF_FFFF { continue; }
+                let classreg = pci_cfg_read32(bus, dev, func, 0x08);
+                if ((classreg >> 24) & 0xFF) != 0x02 || ((classreg >> 16) & 0xFF) != 0x00 { continue; }
+                if (id & 0xFFFF) != 0x10EC || ((id >> 16) & 0xFFFF) != 0x8168 { continue; }
+
+                found = true;
+                let bar_lo = pci_cfg_read32(bus, dev, func, 0x18);
+                let bar_hi = pci_cfg_read32(bus, dev, func, 0x1C);
+                let mmio = ((bar_hi as u64) << 32) | ((bar_lo & 0xFFFF_FFF0) as u64);
+                write_str("BDF="); write_usize(bus as usize); write_str(":");
+                write_usize(dev as usize); write_str("."); write_usize(func as usize); write_str("\n");
+                write_str("BAR2_MMIO="); write_hex(mmio as usize); write_str("\n");
+                if mmio == 0 || (mmio & 0xFFF) != 0 || !ethchip_map_page(mmio as usize) {
+                    write_str("RESULT=MMIO_FAIL\n");
+                    break 'outer;
+                }
+
+                let mut pci_cmd = pci_cfg_read32(bus, dev, func, 0x04);
+                write_str("PCI_COMMAND_OLD="); write_hex((pci_cmd & 0xFFFF) as usize); write_str("\n");
+                if (pci_cmd & 0x0002) == 0 {
+                    write_str("MEMORY=OFF RESULT=ABORT_NO_MMIO_DECODE\n");
+                    break 'outer;
+                }
+                if (pci_cmd & 0x0004) == 0 {
+                    let new_cmd = pci_cmd | 0x0004;
+                    pci_cfg_write32(bus, dev, func, 0x04, new_cmd);
+                    pci_cmd = pci_cfg_read32(bus, dev, func, 0x04);
+                    write_str("BUS_MASTER=ENABLED_RMW\n");
+                }
+                write_str("PCI_COMMAND_NOW="); write_hex((pci_cmd & 0xFFFF) as usize);
+                write_str(" MEMORY="); write_str(if (pci_cmd & 0x0002) != 0 { "ON" } else { "OFF" });
+                write_str(" BUS_MASTER="); write_str(if (pci_cmd & 0x0004) != 0 { "ON" } else { "OFF" }); write_str("\n");
+                if (pci_cmd & 0x0006) != 0x0006 {
+                    write_str("RESULT=PCI_DMA_PERMISSION_FAIL\n");
+                    break 'outer;
+                }
+
+                // RTL8168EVL/8111EVL family check.
+                let txcfg = ethchip_read32(mmio as usize, 0x40);
+                let xid = (txcfg >> 20) & 0xFCF;
+                write_str("TXCONFIG="); write_hex(txcfg as usize); write_str(" XID="); write_hex(xid as usize); write_str("\n");
+                if (xid & 0x7C8) != 0x2C8 {
+                    write_str("RESULT=XID_UNSUPPORTED\n");
+                    break 'outer;
+                }
+
+                // Stop/reset the NIC before giving it new descriptor ownership.
+                unsafe { core::ptr::write_volatile((mmio as usize + 0x37) as *mut u8, 0x10); }
+                let mut reset_ok = false;
+                for _ in 0..200_000usize {
+                    let v = unsafe { core::ptr::read_volatile((mmio as usize + 0x37) as *const u8) };
+                    if v & 0x10 == 0 { reset_ok = true; break; }
+                    core::hint::spin_loop();
+                }
+                write_str("RESET="); write_str(if reset_ok { "PASS" } else { "TIMEOUT" }); write_str("\n");
+                if !reset_ok { break 'outer; }
+
+                // One 4 KiB page per ring and per packet buffer. alloc_pages(1)
+                // returns a page-aligned physical address; PMM allocates only
+                // free pages from its managed physical range.
+                let tx_ring = match crate::mm::alloc_pages(1) { Some(v) => v, None => { write_str("TX_RING_ALLOC=FAIL\n"); break 'outer; } };
+                let rx_ring = match crate::mm::alloc_pages(1) { Some(v) => v, None => { write_str("RX_RING_ALLOC=FAIL\n"); break 'outer; } };
+                let mut tx_bufs = [0usize; 1];
+                let mut rx_bufs = [0usize; 8];
+
+                tx_bufs[0] = match crate::mm::alloc_pages(1) { Some(v) => v, None => { write_str("TX_BUF_ALLOC=FAIL\n"); break 'outer; } };
+                let mut ri = 0usize;
+                while ri < rx_bufs.len() {
+                    rx_bufs[ri] = match crate::mm::alloc_pages(1) {
+                        Some(v) => v,
+                        None => { write_str("RX_BUF_ALLOC=FAIL\n"); break 'outer; }
+                    };
+                    ri += 1;
+                }
+
+                // Make the PMM physical pages reachable through the kernel's
+                // identity map before clearing/programming them.
+                unsafe {
+                    if !crate::mm::paging::map_page(
+                        crate::mm::paging::kernel_cr3(), tx_ring, tx_ring,
+                        crate::mm::paging::PAGE_PRESENT | crate::mm::paging::PAGE_WRITE) ||
+                    !crate::mm::paging::map_page(
+                        crate::mm::paging::kernel_cr3(), rx_ring, rx_ring,
+                        crate::mm::paging::PAGE_PRESENT | crate::mm::paging::PAGE_WRITE) {
+                        write_str("DMA_PAGE_MAP=FAIL\n");
+                        break 'outer;
+                    }
+                    let mut ok = true;
+                    if !crate::mm::paging::map_page(
+                        crate::mm::paging::kernel_cr3(), tx_bufs[0], tx_bufs[0],
+                        crate::mm::paging::PAGE_PRESENT | crate::mm::paging::PAGE_WRITE) { ok = false; }
+                    let mut i = 0usize;
+                    while i < rx_bufs.len() {
+                        if !crate::mm::paging::map_page(
+                            crate::mm::paging::kernel_cr3(), rx_bufs[i], rx_bufs[i],
+                            crate::mm::paging::PAGE_PRESENT | crate::mm::paging::PAGE_WRITE) { ok = false; }
+                        i += 1;
+                    }
+                    if !ok {
+                        write_str("DMA_PAGE_MAP=FAIL\n");
+                        break 'outer;
+                    }
+                    crate::mm::paging::load_cr3(crate::mm::paging::kernel_cr3());
+                }
+
+                let mut dma_mem_ok = tx_ring < 0x1_0000_0000 && rx_ring < 0x1_0000_0000 &&
+                    (tx_ring & 0xFF) == 0 && (rx_ring & 0xFF) == 0;
+                if dma_mem_ok {
+                    dma_mem_ok = tx_bufs[0] < 0x1_0000_0000 && (tx_bufs[0] & 0xFF) == 0;
+                    let mut i = 0usize;
+                    while i < rx_bufs.len() {
+                        if rx_bufs[i] >= 0x1_0000_0000 || (rx_bufs[i] & 0xFF) != 0 { dma_mem_ok = false; }
+                        i += 1;
+                    }
+                }
+                write_str("DMA_MEMORY="); write_str(if dma_mem_ok { "PASS" } else { "FAIL" }); write_str("\n");
+                write_str("TX_RING_PHYS="); write_hex(tx_ring); write_str(" RX_RING_PHYS="); write_hex(rx_ring); write_str("\n");
+                write_str("TX_BUF_PHYS="); write_hex(tx_bufs[0]); write_str("\n");
+                write_str("RX_BUF0_PHYS="); write_hex(rx_bufs[0]); write_str(" RX_BUF7_PHYS="); write_hex(rx_bufs[7]); write_str("\n");
+                if !dma_mem_ok { break 'outer; }
+
+                crate::mm::zero_pages(tx_ring, 1);
+                crate::mm::zero_pages(rx_ring, 1);
+                crate::mm::zero_pages(tx_bufs[0], 1);
+                let mut i = 0usize;
+                while i < rx_bufs.len() { crate::mm::zero_pages(rx_bufs[i], 1); i += 1; }
+
+                // Build RX descriptors: OWN remains with NIC; last descriptor
+                // carries RingEnd. Descriptor is 16 bytes: opts1/opts2/addr_lo/addr_hi.
+                let rx_desc = rx_ring as *mut u32;
+                i = 0;
+                while i < rx_bufs.len() {
+                    unsafe {
+                        let d = rx_desc.add(i * 4);
+                        core::ptr::write_volatile(d.add(0), 0x8000_0000 | 2048 |
+                            if i + 1 == rx_bufs.len() { 0x4000_0000 } else { 0 });
+                        core::ptr::write_volatile(d.add(1), 0);
+                        core::ptr::write_volatile(d.add(2), rx_bufs[i] as u32);
+                        core::ptr::write_volatile(d.add(3), (rx_bufs[i] >> 32) as u32);
+                    }
+                    i += 1;
+                }
+
+                // One broadcast ARP request (probe form: sender IP 0.0.0.0,
+                // target IP 0.0.0.0) proves the TX DMA path without guessing
+                // the physical LAN gateway address.
+                let tx = tx_bufs[0] as *mut u8;
+                unsafe {
+                    let mut j = 0usize;
+                    while j < 60 { *tx.add(j) = 0; j += 1; }
+                    let mut j = 0usize;
+                    while j < 6 { *tx.add(j) = 0xFF; *tx.add(6 + j) = unsafe { core::ptr::read_volatile((mmio as usize + j) as *const u8) }; j += 1; }
+                    *tx.add(12) = 0x08; *tx.add(13) = 0x06;
+                    *tx.add(14) = 0x00; *tx.add(15) = 0x01;
+                    *tx.add(16) = 0x08; *tx.add(17) = 0x00;
+                    *tx.add(18) = 0x06; *tx.add(19) = 0x04;
+                    *tx.add(20) = 0x00; *tx.add(21) = 0x01;
+                    let mut j = 0usize;
+                    while j < 6 { *tx.add(22 + j) = unsafe { core::ptr::read_volatile((mmio as usize + j) as *const u8) }; j += 1; }
+                    // SPA 0.0.0.0, THA zeros, TPA 0.0.0.0.
+                }
+
+                // TX descriptor 0: length 60, first+last fragment, then OWN.
+                let tx_desc = tx_ring as *mut u32;
+                unsafe {
+                    core::ptr::write_volatile(tx_desc.add(0), 60 | 0x3000_0000);
+                    core::ptr::write_volatile(tx_desc.add(1), 0);
+                    core::ptr::write_volatile(tx_desc.add(2), tx_bufs[0] as u32);
+                    core::ptr::write_volatile(tx_desc.add(3), (tx_bufs[0] >> 32) as u32);
+                    core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
+                    core::ptr::write_volatile(tx_desc.add(0), 60 | 0xB000_0000);
+                }
+
+                // Program 64-bit ring bases and conservative receive filtering:
+                // own MAC + broadcast only, no multicast/promiscuous acceptance.
+                unsafe {
+                    let tx_cfg = (core::ptr::read_volatile((mmio as usize + 0x40) as *const u32) & !0x0000_0700) | 0x0000_0700;
+                    core::ptr::write_volatile((mmio as usize + 0x40) as *mut u32, tx_cfg);
+                    core::ptr::write_volatile((mmio as usize + 0xE4) as *mut u32, rx_ring as u32);
+                    core::ptr::write_volatile((mmio as usize + 0xE8) as *mut u32, (rx_ring >> 32) as u32);
+                    core::ptr::write_volatile((mmio as usize + 0x20) as *mut u32, tx_ring as u32);
+                    core::ptr::write_volatile((mmio as usize + 0x24) as *mut u32, (tx_ring >> 32) as u32);
+                    core::ptr::write_volatile((mmio as usize + 0xDA) as *mut u16, 2048);
+                    let rcr_old = core::ptr::read_volatile((mmio as usize + 0x44) as *const u32);
+                    let rcr = (rcr_old & !0x3F) | 0x0000_070A;
+                    core::ptr::write_volatile((mmio as usize + 0x44) as *mut u32, rcr);
+                    core::ptr::write_volatile((mmio as usize + 0x3C) as *mut u16, 0);
+                    core::ptr::write_volatile((mmio as usize + 0x3E) as *mut u16, 0xFFFF);
+                    core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
+                    core::ptr::write_volatile((mmio as usize + 0x37) as *mut u8, 0x0C);
+                    core::ptr::write_volatile((mmio as usize + 0x38) as *mut u8, 0x40);
+                }
+
+                write_str("DMA=ENABLED RX=ON TX=ON\n");
+                write_str("RDSAR="); write_hex(unsafe { core::ptr::read_volatile((mmio as usize + 0xE4) as *const u32) as usize });
+                write_str(" TNPDS="); write_hex(unsafe { core::ptr::read_volatile((mmio as usize + 0x20) as *const u32) as usize });
+                write_str("\n");
+
+                let mut tx_done = false;
+                let mut ticks = 0usize;
+                while ticks < 2_000_000usize {
+                    let st = unsafe { core::ptr::read_volatile(tx_desc as *const u32) };
+                    if st & 0x8000_0000 == 0 { tx_done = true; break; }
+                    core::hint::spin_loop();
+                    ticks += 1;
+                }
+                let tx_status = unsafe { core::ptr::read_volatile(tx_desc as *const u32) };
+                let isr = unsafe { core::ptr::read_volatile((mmio as usize + 0x3E) as *const u16) };
+                write_str("TX_DONE="); write_str(if tx_done { "PASS" } else { "TIMEOUT" });
+                write_str(" TX_DESC="); write_hex(tx_status as usize);
+                write_str(" ISR="); write_hex(isr as usize); write_str("\n");
+
+                write_str("RX_DESC0="); write_hex(unsafe { core::ptr::read_volatile(rx_desc as *const u32) as usize });
+                write_str(" RX_DESC1="); write_hex(unsafe { core::ptr::read_volatile(rx_desc.add(4) as *const u32) as usize });
+                write_str(" CHIPCMD="); write_hex(unsafe { core::ptr::read_volatile((mmio as usize + 0x37) as *const u8) as usize });
+                write_str(" PHYSTATUS="); write_hex(unsafe { core::ptr::read_volatile((mmio as usize + 0x6C) as *const u8) as usize });
+                write_str("\n");
+                write_str("ARP_TX=ISSUED POLL=2M RESET=YES DMA=YES IRQ=OFF\n");
+                write_str("======== ETHDMA END ========\n");
+                break 'outer;
+            }
+        }
+    }
+    if !found { write_str("RESULT=RTL8168_NOT_FOUND\n"); write_str("======== ETHDMA END ========\n"); }
+}
+
 fn cmd_ethlink() {
     write_str("======== ETHERNET LINK CONTROL ========\n");
     write_str("MODE=RTL8168 MDIO ONLY\n");
