@@ -119,7 +119,8 @@ static mut WINS: [Window; MAX_WIN] = [
         minimized: false, maximized: false, rx: 90, ry: 70, rw: 720, rh: 420 },
 ];
 
-static mut FOCUS: usize = 0; // terminal
+static mut FOCUS: usize = 0;
+static mut VIRT_CRITICAL_ALERTED: bool = false; // terminal
 static mut MX: i32 = 400;
 static mut MY: i32 = 300;
 static mut MB: u8 = 0;
@@ -4279,6 +4280,22 @@ pub fn run() -> ! {
     loop {
         ai_transport_poll();
         crate::virt_runtime::tick();
+        if crate::virt_runtime::system_state_health() == crate::virt_runtime::SYSTEM_HEALTH_FAILED {
+            unsafe {
+                if !VIRT_CRITICAL_ALERTED {
+                    VIRT_CRITICAL_ALERTED = true;
+                    WINS[0].visible = true;
+                    WINS[0].minimized = false;
+                    bring_to_front(0);
+                    terminal_write("!!! VIRT CRITICAL WARNING !!!\\n");
+                    terminal_write("System health is FAILED. Immediate recovery required.\\n");
+                    terminal_write("Virt has opened the terminal for operator attention.\\n");
+                    DIRTY_FULL = true;
+                }
+            }
+        } else {
+            unsafe { VIRT_CRITICAL_ALERTED = false; }
+        }
         ps2::poll();
         let (pmx, pmy) = ps2::mouse_pos();
         let pbtn = ps2::mouse_buttons();
