@@ -1,8 +1,8 @@
 {
   "schema": 1,
-  "run_id": "37240859518",
-  "commit": "7b6100c3f1b083c731b8bbec64f8f004d9348d2f",
-  "observed_at": "2026-10-04T22:40:42.727367Z",
+  "run_id": "37241023859",
+  "commit": "f9234781f30e4c0efde0e2ede30cf1ba6c10aa99",
+  "observed_at": "2026-10-04T22:43:14.528639Z",
   "outcome": "failure",
   "qemu_exit": 255,
   "checks": {
