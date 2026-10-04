@@ -1094,7 +1094,9 @@ fn run_line(line: &[u8], len: usize) {
     while e > s && (line[e - 1] == b' ' || line[e - 1] == b'\r') { e -= 1; }
     let clen = e.saturating_sub(s);
 
-    if eq(line, s, clen, b"NET") || eq(line, s, clen, b"net") {\n        cmd_net();\n    } else if eq(line, s, clen, b"ETHCHIP") || eq(line, s, clen, b"ethchip") {
+    if eq(line, s, clen, b"NET") || eq(line, s, clen, b"net") {
+        cmd_net();
+    } else if eq(line, s, clen, b"ETHCHIP") || eq(line, s, clen, b"ethchip") {
         cmd_ethchip();
     } else if eq(line, s, clen, b"ETHDIAG") || eq(line, s, clen, b"ethdiag") {
         cmd_ethdiag();
