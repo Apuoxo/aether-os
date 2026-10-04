@@ -1287,48 +1287,56 @@ fn cmd_ethdma() {
                     i += 1;
                 }
 
-                // RX isolation test: use the PHY's documented BMCR loopback bit so
-                // receive DMA can be validated without a working Ethernet cable or DHCP server.
-                // The test frame is addressed to our own MAC and uses a private EtherType.
+                // DHCPDISCOVER: no IP is required yet. Broadcast from 0.0.0.0;
+                // DHCP identifies the client by transaction ID and hardware address.
                 let tx = tx_bufs[0] as *mut u8;
-                let bmcr_before = ethchip_mdio_read(mmio as usize, 0);
-                let mut test_mac = [0u8; 6];
+                let dhcp_xid: u32 = 0xA37E_8168;
                 unsafe {
                     let mut j = 0usize;
-                    while j < 6 {
-                        test_mac[j] = core::ptr::read_volatile((mmio as usize + j) as *const u8);
-                        j += 1;
-                    }
+                    while j < 310 { *tx.add(j) = 0; j += 1; }
                     j = 0;
-                    while j < 300 { *tx.add(j) = 0; j += 1; }
-                    j = 0;
-                    while j < 6 {
-                        *tx.add(j) = test_mac[j];
-                        *tx.add(6 + j) = test_mac[j];
-                        j += 1;
-                    }
-                    *tx.add(12) = 0x88; *tx.add(13) = 0xB5;
-                    let marker = *b"AETHER-RX-LOOPBACK";
-                    j = 0;
-                    while j < marker.len() {
-                        *tx.add(14 + j) = marker[j];
-                        j += 1;
-                    }
-                    while j < 46 {
-                        *tx.add(14 + j) = j as u8;
-                        j += 1;
-                    }
+                    while j < 6 { *tx.add(j) = 0xFF; *tx.add(6 + j) = core::ptr::read_volatile((mmio as usize + j) as *const u8); j += 1; }
+                    *tx.add(12)=0x08; *tx.add(13)=0x00;
+                    *tx.add(14)=0x45; *tx.add(15)=0;
+                    *tx.add(16)=0x01; *tx.add(17)=0x28; // IPv4 total length 296
+                    *tx.add(18)=0x81; *tx.add(19)=0x68; *tx.add(20)=0x40; *tx.add(21)=0;
+                    *tx.add(22)=64; *tx.add(23)=17; *tx.add(24)=0; *tx.add(25)=0;
+                    for j in 26..30 { *tx.add(j)=0; }
+                    for j in 30..34 { *tx.add(j)=0xFF; }
+                    *tx.add(34)=0; *tx.add(35)=68; *tx.add(36)=0; *tx.add(37)=67;
+                    *tx.add(38)=0x01; *tx.add(39)=0x14; *tx.add(40)=0; *tx.add(41)=0;
+                    *tx.add(42)=0; *tx.add(43)=0;
+                    let b=42usize;
+                    *tx.add(b)=1; *tx.add(b+1)=1; *tx.add(b+2)=6; *tx.add(b+3)=0;
+                    *tx.add(b+4)=(dhcp_xid>>24) as u8; *tx.add(b+5)=(dhcp_xid>>16) as u8;
+                    *tx.add(b+6)=(dhcp_xid>>8) as u8; *tx.add(b+7)=dhcp_xid as u8;
+                    *tx.add(b+8)=0; *tx.add(b+9)=0; *tx.add(b+10)=0x80; *tx.add(b+11)=0;
+                    for j in 12..28 { *tx.add(b+j)=0; }
+                    for j in 0..6 { *tx.add(b+28+j)=core::ptr::read_volatile((mmio as usize+j) as *const u8); }
+                    for j in 34..236 { *tx.add(b+j)=0; }
+                    *tx.add(b+236)=99; *tx.add(b+237)=130; *tx.add(b+238)=83; *tx.add(b+239)=99;
+                    let mut p=b+240;
+                    *tx.add(p)=53; *tx.add(p+1)=1; *tx.add(p+2)=1; p+=3;
+                    *tx.add(p)=55; *tx.add(p+1)=4; *tx.add(p+2)=1; *tx.add(p+3)=3; *tx.add(p+4)=6; *tx.add(p+5)=15; p+=6;
+                    *tx.add(p)=61; *tx.add(p+1)=7; *tx.add(p+2)=1;
+                    for j in 0..6 { *tx.add(p+3+j)=core::ptr::read_volatile((mmio as usize+j) as *const u8); } p+=9;
+                    *tx.add(p)=57; *tx.add(p+1)=2; *tx.add(p+2)=0x02; *tx.add(p+3)=0x40; p+=4;
+                    *tx.add(p)=255;
+                    let mut sum=0u32; let mut k=14usize;
+                    while k<34 { sum += u16::from_be_bytes([*tx.add(k),*tx.add(k+1)]) as u32; k+=2; }
+                    while (sum>>16)!=0 { sum=(sum&0xFFFF)+(sum>>16); }
+                    let cs=!(sum as u16); *tx.add(24)=(cs>>8) as u8; *tx.add(25)=cs as u8;
                 }
 
-                // TX descriptor 0: minimum Ethernet frame, first+last fragment, then OWN.
+                // Ethernet frame: 14-byte Ethernet header + 296-byte IPv4 packet.
                 let tx_desc = tx_ring as *mut u32;
                 unsafe {
-                    core::ptr::write_volatile(tx_desc.add(0), 60 | 0x3000_0000);
+                    core::ptr::write_volatile(tx_desc.add(0), 310 | 0x3000_0000);
                     core::ptr::write_volatile(tx_desc.add(1), 0);
                     core::ptr::write_volatile(tx_desc.add(2), tx_bufs[0] as u32);
                     core::ptr::write_volatile(tx_desc.add(3), (tx_bufs[0] >> 32) as u32);
                     core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
-                    core::ptr::write_volatile(tx_desc.add(0), 60 | 0xB000_0000);
+                    core::ptr::write_volatile(tx_desc.add(0), 310 | 0xB000_0000);
                 }
 
                 // Program 64-bit ring bases and conservative receive filtering:
@@ -1391,23 +1399,33 @@ fn cmd_ethdma() {
                 }
                 write_str("RX_DONE="); write_str(if rx_done {"PASS"} else {"TIMEOUT"});
                 write_str(" RX_IDX="); write_hex(rx_idx); write_str(" RX_LEN="); write_hex(rx_len); write_str("\n");
-                unsafe {
-                    // Stop PHY loopback before leaving the command; restore the exact BMCR.
-                    let _ = ethchip_mdio_write(mmio as usize, 0, bmcr_before);
-                }
-                let rb=rx_bufs[rx_idx] as *const u8;
-                let mut rx_ethertype=0usize;
-                let mut marker_ok=false;
-                if rx_done && rx_len>=60 {
+                let mut dhcp_offer=false; let mut offered_ip=[0u8;4]; let mut server_ip=[0u8;4];
+                if rx_done && rx_len>=240 {
+                    let rb=rx_bufs[rx_idx] as *const u8;
                     unsafe {
-                        rx_ethertype=(((*rb.add(12) as u16)<<8)|*rb.add(13) as u16) as usize;
-                        marker_ok=*rb.add(14)==b'A' && *rb.add(15)==b'E' && *rb.add(16)==b'T' && *rb.add(17)==b'H';
+                        let ethertype=((*rb.add(12) as u16)<<8)|*rb.add(13) as u16;
+                        let proto=*rb.add(23);
+                        let xid=((*rb.add(46) as u32)<<24)|((*rb.add(47) as u32)<<16)|((*rb.add(48) as u32)<<8)|*rb.add(49) as u32;
+                        if ethertype==0x0800 && proto==17 && xid==dhcp_xid {
+                            offered_ip=[*rb.add(58),*rb.add(59),*rb.add(60),*rb.add(61)];
+                            let mut p=282usize; let end=rx_len;
+                            while p+1<end {
+                                let code=*rb.add(p);
+                                if code==255 { break; }
+                                if code==0 { p+=1; continue; }
+                                let ln=*rb.add(p+1) as usize;
+                                if p+2+ln>end { break; }
+                                if code==53 && ln==1 && *rb.add(p+2)==2 { dhcp_offer=true; }
+                                if code==54 && ln==4 { server_ip=[*rb.add(p+2),*rb.add(p+3),*rb.add(p+4),*rb.add(p+5)]; }
+                                p+=2+ln;
+                            }
+                        }
                     }
                 }
-                write_str("RX_LOOPBACK_FRAME="); write_str(if rx_done {"PASS"} else {"TIMEOUT"});
-                write_str(" ETHERTYPE="); write_hex(rx_ethertype);
-                write_str(" MARKER="); write_str(if marker_ok {"PASS"} else {"FAIL"}); write_str("\n");
-                write_str("RX_TEST=PHY_LOOPBACK POLL=2M RESET=YES DMA=YES IRQ=OFF\n");
+                write_str("DHCP_OFFER="); write_str(if dhcp_offer {"PASS"} else {"NO"});
+                write_str(" OFFER_IP="); write_hex(((offered_ip[0] as usize)<<24)|((offered_ip[1] as usize)<<16)|((offered_ip[2] as usize)<<8)|offered_ip[3] as usize);
+                write_str(" SERVER="); write_hex(((server_ip[0] as usize)<<24)|((server_ip[1] as usize)<<16)|((server_ip[2] as usize)<<8)|server_ip[3] as usize); write_str("\n");
+                write_str("DHCP=DISCOVER POLL=2M RESET=YES DMA=YES IRQ=OFF\n");
                 write_str("======== ETHDMA END ========\n");
                 break 'outer;
             }
