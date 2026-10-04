@@ -136,12 +136,14 @@ jobs:
           git commit -m "agent: record analyzed QEMU experience [aether-state]"
           git push
 
-      - name: Publish QEMU and analysis evidence
+      - name: Publish QEMU, ISO, and analysis evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: aether-evolution-qemu-evidence
+          name: aether-evolution-build
           path: |
+            kernel/build/aether.iso
             /tmp/aether-model-bridge.log
             /tmp/aether-evolution-qemu.exit
             .state/latest_qemu_report.json
+          if-no-files-found: error
