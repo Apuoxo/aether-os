@@ -872,6 +872,15 @@ fn pci_cfg_read32(bus: u8, dev: u8, func: u8, off: u8) -> u32 {
     }
 }
 
+fn pci_cfg_write32(bus: u8, dev: u8, func: u8, off: u8, value: u32) {
+    let addr = 0x8000_0000u32 | ((bus as u32) << 16) | ((dev as u32) << 11) |
+        ((func as u32) << 8) | ((off as u32) & 0xFC);
+    unsafe {
+        core::arch::asm!("out dx, eax", in("dx") 0xCF8u16, in("eax") addr, options(nostack, preserves_flags));
+        core::arch::asm!("out dx, eax", in("dx") 0xCFCu16, in("eax") value, options(nostack, preserves_flags));
+    }
+}
+
 fn ethdiag_capabilities(bus: u8, dev: u8, func: u8, status: u16) {
     if (status & 0x10) == 0 {
         write_str("CAP_LIST=NO\n");
