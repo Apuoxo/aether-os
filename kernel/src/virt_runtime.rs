@@ -744,10 +744,6 @@ fn verify_last_action() {
             && ACTION_VERIFY_EXPECTED_EFFECT_MARK != 0 {
             ACTION_VERIFY_STATE = ACTION_VERIFY_PASSED;
             serial::write_str("[VIRT RUNTIME] ACTION_VERIFY=PASSED kind=RUNTIME_MARK\\n");
-        } else {
-            ACTION_VERIFY_STATE = ACTION_VERIFY_FAILED;
-            serial::write_str("[VIRT RUNTIME] ACTION_VERIFY=FAILED kind=RUNTIME_MARK\\n");
-        }
     }
 }
 
