@@ -669,9 +669,14 @@ pub fn receive_reasoning_response(request_id: u64, bytes: &[u8]) {
         // observe -> reason -> authorize -> act -> observe -> verify.
         if LAST_ACTION_GATE == ACTION_GATE_PROPOSED
             && LAST_ACTION_KIND == ACTION_KIND_RUNTIME_MARK {
-            LAST_ACTION_AUTHORIZATION = ACTION_AUTH_GRANTED;
-            LAST_ACTION_GATE = ACTION_GATE_NONE;
-            serial::write_str("[VIRT RUNTIME] ACTION_AUTHORIZED kind=RUNTIME_MARK\\n");
+            if crate::capability::VIRT_ROOT_CAP.permits(crate::capability::CAP_EXEC) {
+                LAST_ACTION_AUTHORIZATION = ACTION_AUTH_GRANTED;
+                LAST_ACTION_GATE = ACTION_GATE_NONE;
+                serial::write_str("[VIRT RUNTIME] ACTION_AUTHORIZED kind=RUNTIME_MARK CAP=EXEC\\n");
+            } else {
+                LAST_ACTION_AUTHORIZATION = ACTION_AUTH_NONE;
+                serial::write_str("[VIRT RUNTIME] ACTION_AUTH_DENIED kind=RUNTIME_MARK CAP=EXEC\\n");
+            }
         }
         REASONING_WAITING = false;
         let mut record = [0u8; 192];
