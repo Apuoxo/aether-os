@@ -450,6 +450,7 @@ pub extern "C" fn kernel_main(mbi: usize) -> ! {
         drivers::audio::init();
         media_player::init();
         drivers::net::init();
+        let _ = drivers::net::qemu_ping();
         drivers::wifi::init();
         drivers::pci_usb_diag::dump_usb_controllers();
         drivers::xhci::probe();
