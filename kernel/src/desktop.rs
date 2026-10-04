@@ -399,9 +399,9 @@ fn ai_transport_poll() {
                     let mut response_kind = 0u8;
                     let mut response_id = 0u64;
                     let mut body_start = 0usize;
-                    if body.len() >= 6 && &body[..5] == b"REQ=" {
-                        let source = body[5];
-                        let mut p = 6usize;
+                    if body.len() >= 6 && &body[..4] == b"REQ=" {
+                        let source = body[4];
+                        let mut p = 5usize;
                         while p < body.len() && body[p] >= b'0' && body[p] <= b'9' {
                             response_id = response_id.saturating_mul(10).saturating_add((body[p] - b'0') as u64);
                             p += 1;
