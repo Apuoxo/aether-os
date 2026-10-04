@@ -90,7 +90,8 @@ jobs:
           BRIDGE_PID=$!
           timeout 70s qemu-system-x86_64 \
             -cdrom kernel/build/aether.iso \
-            -serial tcp:127.0.0.1:45454,server=on,wait=off,nodelay=on \
+            -chardev socket,id=virtserial,host=127.0.0.1,port=45454,server=on,wait=off,nodelay=on \
+            -device isa-serial,chardev=virtserial \
             -display none \
             -m 128M \
             -no-reboot
