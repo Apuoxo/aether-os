@@ -1119,7 +1119,7 @@ fn term_putc(ch:u8) {
     }
 }
 
-fn term_write_usize(mut v: usize) {
+pub fn terminal_write_usize(mut v: usize) {
     if v == 0 {
         term_putc(b'0');
         return;
