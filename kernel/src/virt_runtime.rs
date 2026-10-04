@@ -224,13 +224,13 @@ pub fn init() {
 
 pub fn tick() {
     if !ready() { return; }
+    poll_model_bridge();
     let (_, _, _, _, _, second) = crate::time::rtc_read();
     unsafe {
         if second != LAST_SECOND {
             LAST_SECOND = second;
             HEARTBEATS = HEARTBEATS.wrapping_add(1);
             OBSERVATIONS = OBSERVATIONS.wrapping_add(1);
-            poll_model_bridge();
             observe_system_state();
             observe_processes();
             decide();
