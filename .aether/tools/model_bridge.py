@@ -114,10 +114,13 @@ def main() -> int:
                     except Exception as exc:
                         wire = "AI_RES:" + request_tag + ":MODEL_ERROR " + str(exc).replace("\r", " ").replace("\n", " ")[:70] + "\n"
                         log(wire.rstrip("\n"))
-                    # Let the guest return to its RX polling loop before the
-                    # bounded response enters the UART FIFO.
+                    # Pace bytes so a polled 16550-compatible UART cannot
+                    # overrun its small RX FIFO before the guest drains it.
                     time.sleep(0.05)
-                    sock.sendall(wire.encode("utf-8", "replace"))
+                    encoded = wire.encode("utf-8", "replace")
+                    for byte in encoded:
+                        sock.sendall(bytes((byte,)))
+                        time.sleep(0.002)
                     log(wire.rstrip("\n"))
                     if args.inject:
                         deadline = time.monotonic() + 15.0
