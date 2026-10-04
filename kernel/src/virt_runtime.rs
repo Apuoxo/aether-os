@@ -591,6 +591,10 @@ fn emit_reasoning_request() {
         let request_id = NEXT_REASONING_REQUEST_ID;
         NEXT_REASONING_REQUEST_ID = NEXT_REASONING_REQUEST_ID.wrapping_add(1);
         REASONING_REQUEST_ID = request_id;
+        REASONING_REQUESTS = REASONING_REQUESTS.wrapping_add(1);
+        REASONING_WAITING = true;
+        LAST_REASONING_RESPONSE_LEN = 0;
+        LAST_REASONING_GATE = REASONING_GATE_NONE;
         serial::write_str("AI_REQ:REQ=R");
         serial::write_usize(request_id as usize);
         serial::write_str(" SRC=RUNTIME EVENT=STATE_CHANGE PID=");
@@ -632,10 +636,6 @@ fn emit_reasoning_request() {
         serial::write_str(" DEC=");
         serial::write_usize(LAST_DECISION as usize);
         serial::write_str("\n");
-        REASONING_REQUESTS = REASONING_REQUESTS.wrapping_add(1);
-        REASONING_WAITING = true;
-        LAST_REASONING_RESPONSE_LEN = 0;
-        LAST_REASONING_GATE = REASONING_GATE_NONE;
     }
 }
 
