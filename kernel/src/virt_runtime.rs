@@ -43,6 +43,10 @@ static mut ACTION_VERIFY_STATE: u8 = 0;
 static mut ACTION_VERIFY_EXPECTED_COUNT: u64 = 0;
 static mut ACTION_EFFECT_MARK: u64 = 0;
 static mut ACTION_VERIFY_EXPECTED_EFFECT_MARK: u64 = 0;
+static mut ACTION_OBSERVED_EFFECT_MARK: u64 = 0;
+static mut ACTION_OBSERVED_COUNT: u64 = 0;
+static mut ACTION_EXECUTION_SEQUENCE: u32 = 0;
+static mut ACTION_OBSERVATION_SEQUENCE: u32 = 0;
 static mut SYSTEM_STATE: [u8; SYSTEM_SUBSYSTEM_COUNT] = [SYSTEM_STATE_UNKNOWN; SYSTEM_SUBSYSTEM_COUNT];
 static mut PREVIOUS_SYSTEM_STATE: [u8; SYSTEM_SUBSYSTEM_COUNT] = [SYSTEM_STATE_UNKNOWN; SYSTEM_SUBSYSTEM_COUNT];
 static mut SYSTEM_STATE_CHANGES: u64 = 0;
@@ -183,6 +187,10 @@ pub fn init() {
         ACTION_VERIFY_EXPECTED_COUNT = 0;
         ACTION_EFFECT_MARK = 0;
         ACTION_VERIFY_EXPECTED_EFFECT_MARK = 0;
+        ACTION_OBSERVED_EFFECT_MARK = 0;
+        ACTION_OBSERVED_COUNT = 0;
+        ACTION_EXECUTION_SEQUENCE = 0;
+        ACTION_OBSERVATION_SEQUENCE = 0;
         SYSTEM_STATE = [SYSTEM_STATE_UNKNOWN; SYSTEM_SUBSYSTEM_COUNT];
         PREVIOUS_SYSTEM_STATE = [SYSTEM_STATE_UNKNOWN; SYSTEM_SUBSYSTEM_COUNT];
         SYSTEM_STATE_CHANGES = 0;
@@ -218,6 +226,7 @@ pub fn tick() {
             evaluate_reasoning_gate();
             emit_reasoning_request();
             act_if_authorized();
+            observe_action_effect();
             verify_last_action();
         }
     }
@@ -706,11 +715,32 @@ pub fn last_system_change_new_state() -> u8 { unsafe { LAST_SYSTEM_CHANGE_NEW_ST
 pub fn last_system_change_sequence() -> u32 { unsafe { LAST_SYSTEM_CHANGE_SEQUENCE } }
 pub fn last_understanding() -> u8 { unsafe { LAST_UNDERSTANDING } }
 
+fn observe_action_effect() {
+    unsafe {
+        if ACTION_VERIFY_STATE != ACTION_VERIFY_PENDING { return; }
+        let sequence = system_history_latest_sequence();
+        if sequence == 0 || sequence <= ACTION_EXECUTION_SEQUENCE {
+            return;
+        }
+        ACTION_OBSERVED_COUNT = ACTIONS;
+        ACTION_OBSERVED_EFFECT_MARK = ACTION_EFFECT_MARK;
+        ACTION_OBSERVATION_SEQUENCE = sequence;
+        serial::write_str("[VIRT RUNTIME] ACTION_OBSERVED count=");
+        serial::write_usize(ACTION_OBSERVED_COUNT as usize);
+        serial::write_str(" effect=");
+        serial::write_usize(ACTION_OBSERVED_EFFECT_MARK as usize);
+        serial::write_str(" seq=");
+        serial::write_usize(ACTION_OBSERVATION_SEQUENCE as usize);
+        serial::write_str("\n");
+    }
+}
+
 fn verify_last_action() {
     unsafe {
         if ACTION_VERIFY_STATE != ACTION_VERIFY_PENDING { return; }
-        if ACTIONS == ACTION_VERIFY_EXPECTED_COUNT
-            && ACTION_EFFECT_MARK == ACTION_VERIFY_EXPECTED_EFFECT_MARK
+        if ACTION_OBSERVED_COUNT == ACTION_VERIFY_EXPECTED_COUNT
+            && ACTION_OBSERVED_EFFECT_MARK == ACTION_VERIFY_EXPECTED_EFFECT_MARK
+            && ACTION_OBSERVATION_SEQUENCE > ACTION_EXECUTION_SEQUENCE
             && ACTION_VERIFY_EXPECTED_EFFECT_MARK != 0 {
             ACTION_VERIFY_STATE = ACTION_VERIFY_PASSED;
             serial::write_str("[VIRT RUNTIME] ACTION_VERIFY=PASSED kind=RUNTIME_MARK\\n");
@@ -739,6 +769,10 @@ pub fn execute_authorized_action() -> u8 {
         ACTION_VERIFY_EXPECTED_COUNT = ACTIONS;
         ACTION_EFFECT_MARK = ACTION_EFFECT_MARK.wrapping_add(1);
         ACTION_VERIFY_EXPECTED_EFFECT_MARK = ACTION_EFFECT_MARK;
+        ACTION_OBSERVED_EFFECT_MARK = 0;
+        ACTION_OBSERVED_COUNT = 0;
+        ACTION_OBSERVATION_SEQUENCE = 0;
+        ACTION_EXECUTION_SEQUENCE = SYSTEM_HISTORY_NEXT_SEQUENCE;
         ACTION_VERIFY_STATE = ACTION_VERIFY_PENDING;
         serial::write_str("[VIRT RUNTIME] ACTION_EXECUTED kind=RUNTIME_MARK\\n");
         LAST_ACTION_AUTHORIZATION = ACTION_AUTH_NONE;
