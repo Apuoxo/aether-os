@@ -1585,6 +1585,44 @@ fn cmd_ethdma() {
                     write_str(" LEASE="); write_hex(lease_time as usize);
                     write_str(" SERVER="); write_hex(((ack_server[0] as usize)<<24)|((ack_server[1] as usize)<<16)|((ack_server[2] as usize)<<8)|ack_server[3] as usize); write_str("\n");
                     write_str("DHCP_NAK="); write_str(if dhcp_nak {"YES"} else {"NO"}); write_str("\n");
+                    if dhcp_ack && router != [0,0,0,0] && subnet != [0,0,0,0] {
+                        write_str("IP_CONFIG=PASS\n");
+                        let local_ip=lease_ip; let gateway_ip=router; let mut gateway_mac=[0u8;6];
+                        let tx=tx_bufs[0] as *mut u8; let mut arp_tx=false;
+                        unsafe {
+                            let mut j=0; while j<42 {*tx.add(j)=0;j+=1;}
+                            for j in 0..6 {*tx.add(j)=0xFF;*tx.add(6+j)=core::ptr::read_volatile((mmio as usize+j) as *const u8);}
+                            *tx.add(12)=8;*tx.add(13)=6;*tx.add(14)=0;*tx.add(15)=1;*tx.add(16)=8;*tx.add(17)=0;*tx.add(18)=6;*tx.add(19)=4;*tx.add(20)=0;*tx.add(21)=1;
+                            for j in 0..6 {*tx.add(22+j)=core::ptr::read_volatile((mmio as usize+j) as *const u8);} for j in 0..4 {*tx.add(28+j)=local_ip[j];}
+                            for j in 0..6 {*tx.add(32+j)=0;} for j in 0..4 {*tx.add(38+j)=gateway_ip[j];}
+                            let rd=rx_desc.add(ack_idx*4);core::ptr::write_volatile(rd,0x80000000|2048|if ack_idx+1==8{0x40000000}else{0});
+                            core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);core::ptr::write_volatile((mmio as usize+0x3E) as *mut u16,0xFFFF);
+                            core::ptr::write_volatile(tx_desc,42|0x30000000);core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);core::ptr::write_volatile(tx_desc,42|0xB0000000);
+                            core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);core::ptr::write_volatile((mmio as usize+0x38) as *mut u8,0x40);
+                        }
+                        let mut q=0;while q<2000000{let st=unsafe{core::ptr::read_volatile(tx_desc)};if st&0x80000000==0{arp_tx=true;break;}core::hint::spin_loop();q+=1;}
+                        let mut got=false;let mut ai=0;let mut al=0;let mut w=0;while w<2000000&&!got{let mut di=0;while di<8{let st=unsafe{core::ptr::read_volatile(rx_desc.add(di*4))};if st&0x80000000==0{ai=di;al=(st&0x3FFF) as usize;got=true;break;}di+=1;}if !got{core::hint::spin_loop();w+=1;}}
+                        if got&&al>=42{let rb=rx_bufs[ai] as *const u8;unsafe{let et=((*rb.add(12) as u16)<<8)|*rb.add(13) as u16;if et==0x0806&&*rb.add(20)==0&&*rb.add(21)==2&&*rb.add(28)==gateway_ip[0]&&*rb.add(29)==gateway_ip[1]&&*rb.add(30)==gateway_ip[2]&&*rb.add(31)==gateway_ip[3]&&*rb.add(38)==local_ip[0]&&*rb.add(39)==local_ip[1]&&*rb.add(40)==local_ip[2]&&*rb.add(41)==local_ip[3]{for j in 0..6{gateway_mac[j]=*rb.add(32+j);}}}}
+                        write_str("ARP_GATEWAY=");write_str(if arp_tx&&got&&gateway_mac!=[0,0,0,0,0,0]{"PASS"}else{"FAIL"});write_str(" MAC=");for j in 0..6{write_hex(gateway_mac[j] as usize);if j!=5{write_str(":");}}write_str("\n");
+                        let mut icmp_tx=false;let mut icmp_reply=false;
+                        if arp_tx&&gateway_mac!=[0,0,0,0,0,0]{
+                            let public_ip=[8u8,8,8,8];
+                            unsafe{
+                                let mut j=0;while j<74{*tx.add(j)=0;j+=1;}for j in 0..6{*tx.add(j)=gateway_mac[j];*tx.add(6+j)=core::ptr::read_volatile((mmio as usize+j) as *const u8);}
+                                *tx.add(12)=8;*tx.add(13)=0;*tx.add(14)=0x45;*tx.add(15)=0;*tx.add(16)=0;*tx.add(17)=60;*tx.add(18)=0x12;*tx.add(19)=0x34;*tx.add(20)=0x40;*tx.add(21)=0;*tx.add(22)=64;*tx.add(23)=1;*tx.add(24)=0;*tx.add(25)=0;
+                                for j in 0..4{*tx.add(26+j)=local_ip[j];*tx.add(30+j)=public_ip[j];}
+                                let mut sum=0u32;let mut k=14;while k<34{sum+=u16::from_be_bytes([*tx.add(k),*tx.add(k+1)]) as u32;k+=2;}while sum>>16!=0{sum=(sum&0xFFFF)+(sum>>16);}let cs=!(sum as u16);*tx.add(24)=(cs>>8) as u8;*tx.add(25)=cs as u8;
+                                *tx.add(34)=8;*tx.add(35)=0;*tx.add(36)=0;*tx.add(37)=0;*tx.add(38)=0xA3;*tx.add(39)=0x7E;*tx.add(40)=0;*tx.add(41)=1;
+                                let mut isum=0u32;k=34;while k<74{isum+=u16::from_be_bytes([*tx.add(k),*tx.add(k+1)]) as u32;k+=2;}while isum>>16!=0{isum=(isum&0xFFFF)+(isum>>16);}let ics=!(isum as u16);*tx.add(36)=(ics>>8) as u8;*tx.add(37)=ics as u8;
+                                let rd=rx_desc.add(ai*4);core::ptr::write_volatile(rd,0x80000000|2048|if ai+1==8{0x40000000}else{0});core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);core::ptr::write_volatile((mmio as usize+0x3E) as *mut u16,0xFFFF);
+                                core::ptr::write_volatile(tx_desc,74|0x30000000);core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);core::ptr::write_volatile(tx_desc,74|0xB0000000);core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);core::ptr::write_volatile((mmio as usize+0x38) as *mut u8,0x40);
+                            }
+                            let mut t=0;while t<2000000{let st=unsafe{core::ptr::read_volatile(tx_desc)};if st&0x80000000==0{icmp_tx=true;break;}core::hint::spin_loop();t+=1;}
+                            let mut got2=false;let mut ii=0;let mut il=0;let mut w2=0;while w2<2000000&&!got2{let mut di=0;while di<8{let st=unsafe{core::ptr::read_volatile(rx_desc.add(di*4))};if st&0x80000000==0{ii=di;il=(st&0x3FFF) as usize;got2=true;break;}di+=1;}if !got2{core::hint::spin_loop();w2+=1;}}
+                            if got2&&il>=42{let rb=rx_bufs[ii] as *const u8;unsafe{let et=((*rb.add(12) as u16)<<8)|*rb.add(13) as u16;let proto=*rb.add(23);let dst=[*rb.add(30),*rb.add(31),*rb.add(32),*rb.add(33)];let src=[*rb.add(26),*rb.add(27),*rb.add(28),*rb.add(29)];let typ=*rb.add(34);let code=*rb.add(35);let id=((*rb.add(38) as u16)<<8)|*rb.add(39) as u16;let seq=((*rb.add(40) as u16)<<8)|*rb.add(41) as u16;if et==8&&proto==1&&dst==local_ip&&src==public_ip&&typ==0&&code==0&&id==0xA37E&&seq==1{icmp_reply=true;}}}
+                        }
+                        write_str("ICMP_TX=");write_str(if icmp_tx{"PASS"}else{"FAIL"});write_str(" ICMP_REPLY=");write_str(if icmp_reply{"PASS"}else{"TIMEOUT"});write_str(" PING=");write_str(if icmp_reply{"PASS"}else{"FAIL"});write_str(" TARGET=8.8.8.8\n");
+                    } else { write_str("IP_CONFIG=FAIL\n"); }
                 }
                 write_str("DHCP=DISCOVER POLL=2M RESET=YES DMA=YES IRQ=OFF\n");
                 write_str("======== ETHDMA END ========\n");
