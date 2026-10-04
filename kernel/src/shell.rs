@@ -1425,13 +1425,15 @@ fn cmd_ethdma() {
                     write_str("\n");
                 }
                 let mut dhcp_offer=false; let mut offered_ip=[0u8;4]; let mut server_ip=[0u8;4];
-                if rx_done && rx_len>=240 {
+                if rx_done && rx_len>=282 {
                     let rb=rx_bufs[rx_idx] as *const u8;
                     unsafe {
                         let ethertype=((*rb.add(12) as u16)<<8)|*rb.add(13) as u16;
                         let proto=*rb.add(23);
                         let xid=((*rb.add(46) as u32)<<24)|((*rb.add(47) as u32)<<16)|((*rb.add(48) as u32)<<8)|*rb.add(49) as u32;
-                        if ethertype==0x0800 && proto==17 && xid==dhcp_xid {
+                        let udp_src=(((*rb.add(34) as u16)<<8)|*rb.add(35) as u16);
+                        let udp_dst=(((*rb.add(36) as u16)<<8)|*rb.add(37) as u16);
+                        if ethertype==0x0800 && proto==17 && udp_src==67 && udp_dst==68 && xid==dhcp_xid {
                             offered_ip=[*rb.add(58),*rb.add(59),*rb.add(60),*rb.add(61)];
                             let mut p=282usize; let end=rx_len;
                             while p+1<end {
@@ -1450,6 +1452,140 @@ fn cmd_ethdma() {
                 write_str("DHCP_OFFER="); write_str(if dhcp_offer {"PASS"} else {"NO"});
                 write_str(" OFFER_IP="); write_hex(((offered_ip[0] as usize)<<24)|((offered_ip[1] as usize)<<16)|((offered_ip[2] as usize)<<8)|offered_ip[3] as usize);
                 write_str(" SERVER="); write_hex(((server_ip[0] as usize)<<24)|((server_ip[1] as usize)<<16)|((server_ip[2] as usize)<<8)|server_ip[3] as usize); write_str("\n");
+
+                if dhcp_offer && server_ip != [0,0,0,0] && offered_ip != [0,0,0,0] {
+                    // RFC 2132 DHCPREQUEST: accept this offer by selecting the
+                    // offered address (option 50) and server (option 54).
+                    // Packet sizes are calculated from the fixed BOOTP header:
+                    // DHCP payload 275, UDP 283, IPv4 303, Ethernet 317 bytes.
+                    let tx = tx_bufs[0] as *mut u8;
+                    unsafe {
+                        let mut j=0usize;
+                        while j<317 { *tx.add(j)=0; j+=1; }
+                        for j in 0..6 { *tx.add(j)=0xFF; *tx.add(6+j)=core::ptr::read_volatile((mmio as usize+j) as *const u8); }
+                        *tx.add(12)=0x08; *tx.add(13)=0x00;
+                        *tx.add(14)=0x45; *tx.add(15)=0;
+                        *tx.add(16)=0x01; *tx.add(17)=0x2F; // IPv4 total length 303
+                        *tx.add(18)=0x81; *tx.add(19)=0x68; *tx.add(20)=0x40; *tx.add(21)=0;
+                        *tx.add(22)=64; *tx.add(23)=17; *tx.add(24)=0; *tx.add(25)=0;
+                        for j in 26..30 { *tx.add(j)=0; }
+                        for j in 30..34 { *tx.add(j)=0xFF; }
+                        *tx.add(34)=0; *tx.add(35)=68; *tx.add(36)=1; *tx.add(37)=27; // UDP 283
+                        *tx.add(38)=0; *tx.add(39)=0; *tx.add(40)=0; *tx.add(41)=0;
+                        let b=42usize;
+                        *tx.add(b)=1; *tx.add(b+1)=1; *tx.add(b+2)=6; *tx.add(b+3)=0;
+                        *tx.add(b+4)=(dhcp_xid>>24) as u8; *tx.add(b+5)=(dhcp_xid>>16) as u8;
+                        *tx.add(b+6)=(dhcp_xid>>8) as u8; *tx.add(b+7)=dhcp_xid as u8;
+                        *tx.add(b+8)=0; *tx.add(b+9)=0; *tx.add(b+10)=0x80; *tx.add(b+11)=0;
+                        for j in 12..28 { *tx.add(b+j)=0; }
+                        for j in 0..6 { *tx.add(b+28+j)=core::ptr::read_volatile((mmio as usize+j) as *const u8); }
+                        for j in 34..236 { *tx.add(b+j)=0; }
+                        *tx.add(b+236)=99; *tx.add(b+237)=130; *tx.add(b+238)=83; *tx.add(b+239)=99;
+                        let mut p=b+240;
+                        *tx.add(p)=53; *tx.add(p+1)=1; *tx.add(p+2)=3; p+=3;
+                        *tx.add(p)=50; *tx.add(p+1)=4;
+                        for j in 0..4 { *tx.add(p+2+j)=offered_ip[j]; } p+=6;
+                        *tx.add(p)=54; *tx.add(p+1)=4;
+                        for j in 0..4 { *tx.add(p+2+j)=server_ip[j]; } p+=6;
+                        *tx.add(p)=61; *tx.add(p+1)=7; *tx.add(p+2)=1;
+                        for j in 0..6 { *tx.add(p+3+j)=core::ptr::read_volatile((mmio as usize+j) as *const u8); } p+=9;
+                        *tx.add(p)=55; *tx.add(p+1)=4; *tx.add(p+2)=1; *tx.add(p+3)=3; *tx.add(p+4)=6; *tx.add(p+5)=15; p+=6;
+                        *tx.add(p)=57; *tx.add(p+1)=2; *tx.add(p+2)=0x02; *tx.add(p+3)=0x40; p+=4;
+                        *tx.add(p)=255;
+
+                        let mut sum=0u32; let mut k=14usize;
+                        while k<34 { sum += u16::from_be_bytes([*tx.add(k),*tx.add(k+1)]) as u32; k+=2; }
+                        while (sum>>16)!=0 { sum=(sum&0xFFFF)+(sum>>16); }
+                        let cs=!(sum as u16); *tx.add(24)=(cs>>8) as u8; *tx.add(25)=cs as u8;
+
+                        // Re-arm the consumed RX descriptor; the NIC may use
+                        // another still-owned descriptor first, so scan all 8.
+                        let rd=rx_desc.add(rx_idx*4);
+                        core::ptr::write_volatile(rd.add(0), 0x8000_0000 | 2048 |
+                            if rx_idx+1==rx_bufs.len() { 0x4000_0000 } else { 0 });
+                        core::ptr::write_volatile(rd.add(1), 0);
+                        core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
+
+                        core::ptr::write_volatile((mmio as usize+0x3E) as *mut u16, 0xFFFF);
+                        core::ptr::write_volatile(tx_desc.add(0), 317 | 0x3000_0000);
+                        core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
+                        core::ptr::write_volatile(tx_desc.add(0), 317 | 0xB000_0000);
+                        core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
+                        core::ptr::write_volatile((mmio as usize+0x38) as *mut u8, 0x40);
+                    }
+
+                    let mut req_tx_done=false; let mut q=0usize;
+                    while q<2_000_000usize {
+                        let st=unsafe{core::ptr::read_volatile(tx_desc as *const u32)};
+                        if st & 0x8000_0000 == 0 { req_tx_done=true; break; }
+                        core::hint::spin_loop(); q+=1;
+                    }
+                    write_str("DHCPREQUEST_TX="); write_str(if req_tx_done {"PASS"} else {"TIMEOUT"});
+                    write_str(" POLL="); write_usize(q); write_str("\n");
+
+                    let mut ack_done=false; let mut ack_idx=0usize; let mut ack_len=0usize;
+                    let mut rp2=0usize;
+                    while rp2<2_000_000usize {
+                        let mut di=0usize;
+                        while di<8 {
+                            let st=unsafe{core::ptr::read_volatile(rx_desc.add(di*4) as *const u32)};
+                            if (st & 0x8000_0000)==0 {
+                                ack_done=true; ack_idx=di; ack_len=(st & 0x3FFF) as usize; break;
+                            }
+                            di+=1;
+                        }
+                        if ack_done { break; }
+                        core::hint::spin_loop(); rp2+=1;
+                    }
+
+                    let mut dhcp_ack=false; let mut dhcp_nak=false;
+                    let mut lease_ip=[0u8;4]; let mut subnet=[0u8;4]; let mut router=[0u8;4];
+                    let mut dns=[0u8;4]; let mut lease_time=0u32; let mut ack_server=[0u8;4];
+                    if ack_done && ack_len>=282 {
+                        let rb=rx_bufs[ack_idx] as *const u8;
+                        unsafe {
+                            let ethertype=((*rb.add(12) as u16)<<8)|*rb.add(13) as u16;
+                            let proto=*rb.add(23);
+                            let udp_src=(((*rb.add(34) as u16)<<8)|*rb.add(35) as u16);
+                            let udp_dst=(((*rb.add(36) as u16)<<8)|*rb.add(37) as u16);
+                            let xid=((*rb.add(46) as u32)<<24)|((*rb.add(47) as u32)<<16)|((*rb.add(48) as u32)<<8)|*rb.add(49) as u32;
+                            if ethertype==0x0800 && proto==17 && udp_src==67 && udp_dst==68 && xid==dhcp_xid {
+                                lease_ip=[*rb.add(58),*rb.add(59),*rb.add(60),*rb.add(61)];
+                                let mut p=282usize; let end=ack_len;
+                                while p+1<end {
+                                    let code=*rb.add(p);
+                                    if code==255 { break; }
+                                    if code==0 { p+=1; continue; }
+                                    let ln=*rb.add(p+1) as usize;
+                                    if p+2+ln>end { break; }
+                                    if code==53 && ln==1 {
+                                        if *rb.add(p+2)==5 { dhcp_ack=true; }
+                                        if *rb.add(p+2)==6 { dhcp_nak=true; }
+                                    }
+                                    if code==1 && ln==4 { subnet=[*rb.add(p+2),*rb.add(p+3),*rb.add(p+4),*rb.add(p+5)]; }
+                                    if code==3 && ln>=4 { router=[*rb.add(p+2),*rb.add(p+3),*rb.add(p+4),*rb.add(p+5)]; }
+                                    if code==6 && ln>=4 { dns=[*rb.add(p+2),*rb.add(p+3),*rb.add(p+4),*rb.add(p+5)]; }
+                                    if code==51 && ln==4 {
+                                        lease_time=((*rb.add(p+2) as u32)<<24)|((*rb.add(p+3) as u32)<<16)|((*rb.add(p+4) as u32)<<8)|*rb.add(p+5) as u32;
+                                    }
+                                    if code==54 && ln==4 { ack_server=[*rb.add(p+2),*rb.add(p+3),*rb.add(p+4),*rb.add(p+5)]; }
+                                    p+=2+ln;
+                                }
+                            }
+                        }
+                    }
+
+                    write_str("DHCP_ACK="); write_str(if dhcp_ack {"PASS"} else {"NO"});
+                    write_str(" RX="); write_str(if ack_done {"PASS"} else {"TIMEOUT"});
+                    write_str(" IDX="); write_hex(ack_idx); write_str(" LEN="); write_hex(ack_len); write_str("\n");
+                    write_str("LEASE_IP="); write_hex(((lease_ip[0] as usize)<<24)|((lease_ip[1] as usize)<<16)|((lease_ip[2] as usize)<<8)|lease_ip[3] as usize);
+                    write_str(" MASK="); write_hex(((subnet[0] as usize)<<24)|((subnet[1] as usize)<<16)|((subnet[2] as usize)<<8)|subnet[3] as usize);
+                    write_str(" ROUTER="); write_hex(((router[0] as usize)<<24)|((router[1] as usize)<<16)|((router[2] as usize)<<8)|router[3] as usize);
+                    write_str(" DNS="); write_hex(((dns[0] as usize)<<24)|((dns[1] as usize)<<16)|((dns[2] as usize)<<8)|dns[3] as usize);
+                    write_str(" LEASE="); write_hex(lease_time as usize);
+                    write_str(" SERVER="); write_hex(((ack_server[0] as usize)<<24)|((ack_server[1] as usize)<<16)|((ack_server[2] as usize)<<8)|ack_server[3] as usize); write_str("\n");
+                    write_str("DHCP_NAK="); write_str(if dhcp_nak {"YES"} else {"NO"}); write_str("\n");
+                }
                 write_str("DHCP=DISCOVER POLL=2M RESET=YES DMA=YES IRQ=OFF\n");
                 write_str("======== ETHDMA END ========\n");
                 break 'outer;
