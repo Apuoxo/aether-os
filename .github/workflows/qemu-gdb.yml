@@ -1,0 +1,105 @@
+name: Aether QEMU GDB lab
+
+on:
+  workflow_dispatch:
+
+jobs:
+  gdb-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install QEMU/GDB analysis tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm grub-pc-bin grub-common xorriso mtools jq unzip curl p7zip-full qemu-system-x86 ffmpeg librsvg2-bin gdb-multiarch binutils expect tmux
+
+      - name: Fetch packaged Calculator ELF from Aether Apps
+        run: |
+          set -e
+          mkdir -p kernel/build
+          curl -fsSL -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer ${{ github.token }}" \
+            'https://api.github.com/repos/Apuoxo/aether-apps/contents/apps/calculator/dist/calculator.elf?ref=main' \
+            | jq -r '.content' | tr -d '\n' | base64 -d > kernel/build/calculator.elf
+          test -s kernel/build/calculator.elf
+
+      - name: Build Aether
+        working-directory: kernel
+        run: |
+          make clean
+          make kernel
+          make iso
+
+      - name: Inspect kernel symbols
+        run: |
+          set -e
+          file kernel/build/aether.bin
+          nm -n kernel/build/aether.bin | grep -E ' (kernel_main|_start)$' | tee /tmp/aether-symbols.txt
+          readelf -h kernel/build/aether.bin | tee /tmp/aether-elf-header.txt
+
+      - name: Start QEMU paused for GDB
+        run: |
+          rm -f /tmp/qemu-gdb.log
+          qemu-system-x86_64 \
+            -cdrom kernel/build/aether.iso \
+            -serial file:/tmp/qemu-gdb.log \
+            -display none \
+            -m 128M \
+            -no-reboot \
+            -S -gdb tcp::1234 \
+            >/tmp/qemu-stderr.log 2>&1 &
+          echo $! >/tmp/qemu.pid
+
+      - name: Connect with gdb-multiarch and hit kernel_main
+        run: |
+          set -e
+          for i in $(seq 1 50); do
+            if (echo >/dev/tcp/127.0.0.1/1234) >/dev/null 2>&1; then break; fi
+            sleep 0.2
+          done
+
+          timeout 20s gdb-multiarch \
+            -q \
+            -ex 'set pagination off' \
+            -ex 'set confirm off' \
+            -ex 'file kernel/build/aether.bin' \
+            -ex 'target remote :1234' \
+            -ex 'break kernel_main' \
+            -ex 'continue' \
+            -ex 'printf "\\n[GDB] kernel_main breakpoint reached\\n"' \
+            -ex 'info registers rip rsp cr3' \
+            -ex 'x/8i $rip' \
+            -ex 'detach' \
+            -ex 'quit' \
+            | tee /tmp/gdb-session.log
+
+      - name: Let guest boot and collect serial diagnostics
+        run: |
+          set +e
+          timeout 20s qemu-system-x86_64 \
+            -cdrom kernel/build/aether.iso \
+            -serial file:/tmp/qemu-boot.log \
+            -display none \
+            -m 128M \
+            -no-reboot \
+            >/tmp/qemu-boot-stderr.log 2>&1
+          rc=$?
+          cat /tmp/qemu-boot.log
+          echo "QEMU_EXIT=$rc"
+          ! grep -q "PANIC" /tmp/qemu-boot.log
+          grep -q "Aether OS Build" /tmp/qemu-boot.log
+
+      - name: Publish debug evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aether-qemu-gdb-evidence
+          path: |
+            /tmp/aether-symbols.txt
+            /tmp/aether-elf-header.txt
+            /tmp/gdb-session.log
+            /tmp/qemu-gdb.log
+            /tmp/qemu-stderr.log
+            /tmp/qemu-boot.log
+            /tmp/qemu-boot-stderr.log
