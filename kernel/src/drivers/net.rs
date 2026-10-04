@@ -396,7 +396,7 @@ pub fn qemu_ping() -> bool {
         out32(R8139_IO+R8139_RBSTART,&R8139_RXBUF.0 as *const u8 as usize as u32);
         out16(R8139_IO+R8139_IMR,0);
         out16(R8139_IO+R8139_ISR,0xFFFF);
-        out32(R8139_IO+R8139_RCR,0x0000078F);\n        for i in 0..4 { let p=&R8139_TXBUFS[i].0 as *const u8 as usize; out32(R8139_IO+R8139_TSAD0+(i as u16)*4,p as u32); }
+        out32(R8139_IO+R8139_RCR,0x0000078F);        for i in 0..4 { let p=&R8139_TXBUFS[i].0 as *const u8 as usize; out32(R8139_IO+R8139_TSAD0+(i as u16)*4,p as u32); }
         out32(R8139_IO+R8139_TCR,0x03000700);
         out8(R8139_IO+R8139_CR,R8139_CMD_RE|R8139_CMD_TE);
         out8(R8139_IO+R8139_CONFIG1,0);
