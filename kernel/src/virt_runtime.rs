@@ -746,7 +746,6 @@ fn verify_last_action() {
             serial::write_str("[VIRT RUNTIME] ACTION_VERIFY=PASSED kind=RUNTIME_MARK\\n");
         }
     }
-    }
 }
 
 pub fn action_verify_state() -> u8 { unsafe { ACTION_VERIFY_STATE } }
