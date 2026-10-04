@@ -89,7 +89,7 @@ jobs:
           grep -qi "Aether OS Build" /tmp/aether-evolution-qemu.log
 
       - name: Analyze QEMU experience
-        if: always() && hashFiles('/tmp/aether-evolution-qemu.log') != ''
+        if: always()
         run: |
           set -euo pipefail
           rc="$(cut -d= -f2 /tmp/aether-evolution-qemu.exit)"
