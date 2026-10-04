@@ -694,8 +694,10 @@ fn process_model_bridge_line(len: usize) {
         }
         let start = i + 1;
         receive_reasoning_response(request_id, &MODEL_BRIDGE_RX[start..len]);
-        serial::write_str("[VIRT BRIDGE] RESPONSE_ACCEPTED REQ=R");
+        serial::write_str("AI_ACK:REQ=R");
         serial::write_usize(request_id as usize);
+        serial::write_str(" CLASS=");
+        serial::write_usize(last_reasoning_classification() as usize);
         serial::write_str("\n");
     }
 }

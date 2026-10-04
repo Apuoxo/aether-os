@@ -99,6 +99,10 @@ def main() -> int:
                 line = raw.decode("utf-8", "replace").rstrip("\r")
                 if line:
                     log(line)
+                if line.startswith("AI_ACK:"):
+                    log("AI_BRIDGE: response acknowledged")
+                    if args.inject:
+                        return 0
                 if line.startswith("AI_REQ:"):
                     request = line[7:].strip()
                     parts = request.split(" ", 1)
@@ -113,8 +117,7 @@ def main() -> int:
                     sock.sendall(wire.encode("utf-8", "replace"))
                     log(wire.rstrip("\n"))
                     if args.inject:
-                        log("AI_BRIDGE: request served")
-                        return 0
+                        deadline = time.monotonic() + 15.0
     finally:
         sock.close()
 

@@ -128,6 +128,7 @@ jobs:
           grep -q '^AI_REQ:' /tmp/aether-model-bridge.log
           grep -q '^AI_RES:' /tmp/aether-model-bridge.log
           ! grep -q '^AI_RES:REQ=.*:MODEL_ERROR' /tmp/aether-model-bridge.log
+          grep -q '^AI_ACK:' /tmp/aether-model-bridge.log
           echo "BIDIRECTIONAL_AI_BRIDGE=PASS"
 
       - name: Persist analyzed experience
