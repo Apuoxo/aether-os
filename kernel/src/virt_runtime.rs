@@ -18,7 +18,16 @@ static mut LAST_RAM_TOTAL: usize = 0;
 static mut LAST_RAM_FREE: usize = 0;
 static mut LAST_PID: usize = 0;
 static mut LAST_PROCESS_IDS: [usize; crate::process::MAX_PROCESSES] = [0; crate::process::MAX_PROCESSES];
+static mut PREVIOUS_PROCESS_IDS: [usize; crate::process::MAX_PROCESSES] = [0; crate::process::MAX_PROCESSES];
 static mut LAST_PROCESS_COUNT: usize = 0;
+static mut PREVIOUS_PROCESS_COUNT: usize = 0;
+static mut PROCESS_BASELINE_READY: bool = false;
+static mut LAST_PROCESS_EVENT_PID: usize = 0;
+static mut LAST_PROCESS_EVENT_KIND: u8 = 0;
+
+pub const PROCESS_EVENT_NONE: u8 = 0;
+pub const PROCESS_EVENT_APPEARED: u8 = 1;
+pub const PROCESS_EVENT_DISAPPEARED: u8 = 2;
 
 pub const STATE_OFF: u8 = 0;
 pub const STATE_AWAKE: u8 = 1;
@@ -39,7 +48,12 @@ pub fn init() {
         LAST_RAM_FREE = 0;
         LAST_PID = 0;
         LAST_PROCESS_IDS = [0; crate::process::MAX_PROCESSES];
+        PREVIOUS_PROCESS_IDS = [0; crate::process::MAX_PROCESSES];
         LAST_PROCESS_COUNT = 0;
+        PREVIOUS_PROCESS_COUNT = 0;
+        PROCESS_BASELINE_READY = false;
+        LAST_PROCESS_EVENT_PID = 0;
+        LAST_PROCESS_EVENT_KIND = PROCESS_EVENT_NONE;
     }
     serial::write_str("[VIRT RUNTIME] ACTIVE STATE=AWAKE heartbeat=RTC-second\n");
 }
@@ -100,6 +114,70 @@ pub fn observe_processes() {
     let mut ids = [0usize; crate::process::MAX_PROCESSES];
     let count = crate::process::snapshot_pids(&mut ids);
     unsafe {
+        LAST_PROCESS_EVENT_PID = 0;
+        LAST_PROCESS_EVENT_KIND = PROCESS_EVENT_NONE;
+
+        if !PROCESS_BASELINE_READY {
+            PREVIOUS_PROCESS_IDS = ids;
+            PREVIOUS_PROCESS_COUNT = count;
+            LAST_PROCESS_IDS = ids;
+            LAST_PROCESS_COUNT = count;
+            PROCESS_BASELINE_READY = true;
+            return;
+        }
+
+        let mut i = 0usize;
+        while i < count {
+            let pid = ids[i];
+            let mut found = false;
+            let mut j = 0usize;
+            while j < PREVIOUS_PROCESS_COUNT {
+                if PREVIOUS_PROCESS_IDS[j] == pid {
+                    found = true;
+                    break;
+                }
+                j += 1;
+            }
+            if !found {
+                EVENTS = EVENTS.wrapping_add(1);
+                LAST_PROCESS_EVENT_PID = pid;
+                LAST_PROCESS_EVENT_KIND = PROCESS_EVENT_APPEARED;
+                serial::write_str("[VIRT RUNTIME] PROCESS APPEARED PID=");
+                serial::write_usize(pid);
+                serial::write_str("\n");
+                break;
+            }
+            i += 1;
+        }
+
+        if LAST_PROCESS_EVENT_KIND == PROCESS_EVENT_NONE {
+            let mut p = 0usize;
+            while p < PREVIOUS_PROCESS_COUNT {
+                let pid = PREVIOUS_PROCESS_IDS[p];
+                let mut found = false;
+                let mut j = 0usize;
+                while j < count {
+                    if ids[j] == pid {
+                        found = true;
+                        break;
+                    }
+                    j += 1;
+                }
+                if !found {
+                    EVENTS = EVENTS.wrapping_add(1);
+                    LAST_PROCESS_EVENT_PID = pid;
+                    LAST_PROCESS_EVENT_KIND = PROCESS_EVENT_DISAPPEARED;
+                    serial::write_str("[VIRT RUNTIME] PROCESS DISAPPEARED PID=");
+                    serial::write_usize(pid);
+                    serial::write_str("\n");
+                    break;
+                }
+                p += 1;
+            }
+        }
+
+        PREVIOUS_PROCESS_IDS = ids;
+        PREVIOUS_PROCESS_COUNT = count;
         LAST_PROCESS_IDS = ids;
         LAST_PROCESS_COUNT = count;
     }
@@ -114,6 +192,14 @@ pub fn last_process_pid(index: usize) -> usize {
         return 0;
     }
     unsafe { LAST_PROCESS_IDS[index] }
+}
+
+pub fn last_process_event_kind() -> u8 {
+    unsafe { LAST_PROCESS_EVENT_KIND }
+}
+
+pub fn last_process_event_pid() -> usize {
+    unsafe { LAST_PROCESS_EVENT_PID }
 }
 
 pub fn last_ram_total_pages() -> usize {
