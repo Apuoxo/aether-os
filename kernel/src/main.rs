@@ -372,6 +372,7 @@ pub extern "C" fn kernel_main(mbi: usize) -> ! {
     storage_hw_diag::run();
     let _ahci = drivers::ahci::init();
     storage::init();
+    virt_runtime::restore_persisted_experience();
     // Install the first external Windows target without changing the boot path.
     // The desktop remains the next foreground stage exactly as before.
     if pe::install_hello() {
