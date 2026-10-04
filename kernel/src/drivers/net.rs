@@ -209,3 +209,192 @@ pub fn found() -> bool { unsafe { FOUND } }
 pub fn ready() -> bool { unsafe { READY } }
 pub fn link_up() -> bool { unsafe { LINK } }
 pub fn mac(out: &mut [u8; 6]) { unsafe { *out = MAC; } }
+
+
+/* QEMU validation path: the stock QEMU RTL8139 is used only as a transport
+ * backend. The physical AH532 path above remains RTL8168EVL-only. */
+const RTL8139: u16 = 0x8139;
+const R8139_CR: u16 = 0x37;
+const R8139_CAPR: u16 = 0x38;
+const R8139_IMR: u16 = 0x3C;
+const R8139_ISR: u16 = 0x3E;
+const R8139_TCR: u16 = 0x40;
+const R8139_RCR: u16 = 0x44;
+const R8139_RBSTART: u16 = 0x30;
+const R8139_CONFIG1: u16 = 0x52;
+const R8139_TSAD0: u16 = 0x20;
+const R8139_TSD0: u16 = 0x10;
+const R8139_CMD_RESET: u8 = 0x10;
+const R8139_CMD_RE: u8 = 0x08;
+const R8139_CMD_TE: u8 = 0x04;
+const R8139_TSD_TOK: u32 = 1 << 15;
+const R8139_RX: usize = 8192 + 16 + 1500;
+static mut R8139_IO: u16 = 0;
+#[repr(align(16))]
+struct R8139Rx([u8; R8139_RX]);
+#[repr(align(16))]
+struct R8139Tx([u8; 2048]);
+static mut R8139_RXBUF: R8139Rx = R8139Rx([0; R8139_RX]);
+static mut R8139_TXBUF: R8139Tx = R8139Tx([0; 2048]);
+static mut R8139_MAC: [u8; 6] = [0; 6];
+static mut R8139_READY: bool = false;
+
+#[inline] unsafe fn in8(p: u16) -> u8 {
+    let v: u8;
+    core::arch::asm!("in al, dx", in("dx") p, out("al") v, options(nostack, preserves_flags));
+    v
+}
+#[inline] unsafe fn in16(p: u16) -> u16 {
+    let v: u16;
+    core::arch::asm!("in ax, dx", in("dx") p, out("ax") v, options(nostack, preserves_flags));
+    v
+}
+#[inline] unsafe fn in32(p: u16) -> u32 {
+    let v: u32;
+    core::arch::asm!("in eax, dx", in("dx") p, out("eax") v, options(nostack, preserves_flags));
+    v
+}
+#[inline] unsafe fn out8(p: u16, v: u8) {
+    core::arch::asm!("out dx, al", in("dx") p, in("al") v, options(nostack, preserves_flags));
+}
+#[inline] unsafe fn out16(p: u16, v: u16) {
+    core::arch::asm!("out dx, ax", in("dx") p, in("ax") v, options(nostack, preserves_flags));
+}
+#[inline] unsafe fn out32(p: u16, v: u32) {
+    core::arch::asm!("out dx, eax", in("dx") p, in("eax") v, options(nostack, preserves_flags));
+}
+
+unsafe fn find_rtl8139() -> Option<(u8,u8,u8,u16)> {
+    for bus in 0..=31u8 {
+        for dev in 0..32u8 {
+            for func in 0..8u8 {
+                let id = pci_r32(bus, dev, func, 0);
+                if (id & 0xFFFF) as u16 != VID || (id >> 16) as u16 != RTL8139 { continue; }
+                let bar = pci_r32(bus, dev, func, 0x10);
+                if (bar & 1) != 0 && (bar & !3) != 0 {
+                    return Some((bus,dev,func,(bar & !3) as u16));
+                }
+            }
+        }
+    }
+    None
+}
+
+unsafe fn r8139_reset() -> bool {
+    out8(R8139_IO + R8139_CR, R8139_CMD_RESET);
+    for _ in 0..200_000 {
+        if in8(R8139_IO + R8139_CR) & R8139_CMD_RESET == 0 { return true; }
+        core::hint::spin_loop();
+    }
+    false
+}
+
+unsafe fn r8139_tx(frame: &[u8]) -> bool {
+    if frame.len() > 2048 { return false; }
+    core::ptr::copy_nonoverlapping(frame.as_ptr(), R8139_TXBUF.0.as_mut_ptr(), frame.len());
+    let p = &R8139_TXBUF.0 as *const u8 as usize;
+    out32(R8139_IO + R8139_TSAD0, p as u32);
+    out32(R8139_IO + R8139_TSD0, frame.len() as u32);
+    for _ in 0..500_000 {
+        let s = in32(R8139_IO + R8139_TSD0);
+        if (s & R8139_TSD_TOK) != 0 { return true; }
+        core::hint::spin_loop();
+    }
+    false
+}
+
+unsafe fn csum(data: &[u8]) -> u16 {
+    let mut sum = 0u32;
+    let mut i = 0usize;
+    while i + 1 < data.len() {
+        sum += u16::from_be_bytes([data[i],data[i+1]]) as u32;
+        i += 2;
+    }
+    if i < data.len() { sum += (data[i] as u32) << 8; }
+    while (sum >> 16) != 0 { sum = (sum & 0xFFFF) + (sum >> 16); }
+    !(sum as u16)
+}
+
+unsafe fn r8139_poll_frame(out: &mut [u8], timeout: usize) -> usize {
+    let mut off = (in16(R8139_IO + R8139_CAPR) as usize + 16) % 8192;
+    for _ in 0..timeout {
+        let base = R8139_RXBUF.0.as_ptr().add(off);
+        let status = u16::from_le_bytes([*base, *base.add(1)]);
+        let len = u16::from_le_bytes([*base.add(2), *base.add(3)]) as usize;
+        if (status & 1) != 0 && len >= 4 && len <= 2048 {
+            let n = core::cmp::min(len - 4, out.len());
+            core::ptr::copy_nonoverlapping(base.add(4), out.as_mut_ptr(), n);
+            let next = (off + len + 4 + 3) & !3;
+            out16(R8139_IO + R8139_CAPR, (next as u16).wrapping_sub(16));
+            return n;
+        }
+        core::hint::spin_loop();
+    }
+    0
+}
+
+unsafe fn r8139_frame_test() -> bool {
+    let mut arp = [0u8; 64];
+    for i in 0..6 { arp[i] = 0xFF; }
+    for i in 0..6 { arp[6+i] = R8139_MAC[i]; }
+    arp[12]=0x08; arp[13]=0x06;
+    arp[14]=0; arp[15]=1; arp[16]=0x08; arp[17]=0; arp[18]=6; arp[19]=4;
+    arp[20]=0; arp[21]=1;
+    for i in 0..6 { arp[22+i]=R8139_MAC[i]; }
+    arp[28]=10; arp[29]=0; arp[30]=2; arp[31]=15;
+    for i in 0..6 { arp[32+i]=0; }
+    arp[38]=10; arp[39]=0; arp[40]=2; arp[41]=2;
+    if !r8139_tx(&arp[..42]) { return false; }
+
+    let mut rx = [0u8; 2048];
+    let n = r8139_poll_frame(&mut rx, 1_500_000);
+    if n < 42 || rx[12] != 0x08 || rx[13] != 0x06 || rx[20] != 0 || rx[21] != 2 {
+        return false;
+    }
+    let mut gw = [0u8;6];
+    for i in 0..6 { gw[i] = rx[22+i]; }
+    if rx[28..32] != [10,0,2,2] { return false; }
+
+    let mut ip = [0u8; 98];
+    for i in 0..6 { ip[i]=gw[i]; ip[6+i]=R8139_MAC[i]; }
+    ip[12]=0x08; ip[13]=0x00;
+    ip[14]=0x45; ip[15]=0; ip[16]=0; ip[17]=84;
+    ip[18]=0x12; ip[19]=0x34; ip[20]=0x40; ip[21]=0;
+    ip[22]=64; ip[23]=1; ip[24]=0; ip[25]=0;
+    ip[26]=10; ip[27]=0; ip[28]=2; ip[29]=15;
+    ip[30]=10; ip[31]=0; ip[32]=2; ip[33]=2;
+    let ipcs = csum(&ip[14..34]); ip[24]=(ipcs>>8) as u8; ip[25]=ipcs as u8;
+    ip[34]=8; ip[35]=0; ip[36]=0; ip[37]=0; ip[38]=0x12; ip[39]=0x34; ip[40]=0; ip[41]=1;
+    for i in 42..98 { ip[i]=i as u8; }
+    let ics = csum(&ip[34..98]); ip[36]=(ics>>8) as u8; ip[37]=ics as u8;
+    if !r8139_tx(&ip[..98]) { return false; }
+
+    let n2 = r8139_poll_frame(&mut rx, 1_500_000);
+    n2 >= 42 && rx[12] == 0x08 && rx[13] == 0x00 && rx[14] == 0x45 &&
+        rx[23] == 1 && rx[34] == 0 && rx[35] == 0 && rx[38] == 0x12 && rx[39] == 0x34
+}
+
+pub fn qemu_ping() -> bool {
+    unsafe {
+        let Some((bus,dev,func,io)) = find_rtl8139() else { return false; };
+        R8139_IO=io;
+        let cmd=pci_r32(bus,dev,func,0x04);
+        pci_w32(bus,dev,func,0x04,cmd|0x0005);
+        if !r8139_reset() { return false; }
+        for i in 0..6 { R8139_MAC[i]=in8(R8139_IO+i as u16); }
+        out32(R8139_IO+R8139_RBSTART,&R8139_RXBUF.0 as *const u8 as usize as u32);
+        out16(R8139_IO+R8139_IMR,0);
+        out16(R8139_IO+R8139_ISR,0xFFFF);
+        out32(R8139_IO+R8139_RCR,0x0000000F);
+        out32(R8139_IO+R8139_TCR,0x03000700);
+        out8(R8139_IO+R8139_CR,R8139_CMD_RE|R8139_CMD_TE);
+        out8(R8139_IO+R8139_CONFIG1,0);
+        R8139_READY=true;
+        serial::write_str("[NET-QEMU] RTL8139 READY MAC=");
+        for i in 0..6 { serial::write_hex(R8139_MAC[i] as usize); if i!=5 {serial::write_str(":");} }
+        serial::write_str("\n[NET-QEMU] ARP+ICMP test -> 10.0.2.2\n");
+        let ok=r8139_frame_test();
+        serial::write_str(if ok {"[NET-QEMU] PING=PASS\n"} else {"[NET-QEMU] PING=FAIL\n"});
+        ok
+    }
+}
