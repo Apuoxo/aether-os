@@ -36,6 +36,7 @@ static mut REASONING_WAITING: bool = false;
 static mut LAST_REASONING_RESPONSE_LEN: usize = 0;
 static mut LAST_REASONING_RESPONSE: [u8; 128] = [0; 128];
 static mut LAST_REASONING_CLASSIFICATION: u8 = 0;
+static mut LAST_ACTION_GATE: u8 = 0;
 
 pub const PROCESS_EVENT_NONE: u8 = 0;
 pub const PROCESS_EVENT_APPEARED: u8 = 1;
@@ -57,6 +58,9 @@ pub const REASONING_CLASS_OBSERVATION: u8 = 2;
 pub const REASONING_CLASS_RECOMMENDATION: u8 = 3;
 pub const REASONING_CLASS_ACTION: u8 = 4;
 pub const REASONING_CLASS_TEXT: u8 = 5;
+
+pub const ACTION_GATE_NONE: u8 = 0;
+pub const ACTION_GATE_PROPOSED: u8 = 1;
 
 pub const STATE_OFF: u8 = 0;
 pub const STATE_AWAKE: u8 = 1;
@@ -94,6 +98,7 @@ pub fn init() {
         LAST_REASONING_RESPONSE_LEN = 0;
         LAST_REASONING_RESPONSE = [0; 128];
         LAST_REASONING_CLASSIFICATION = REASONING_CLASS_NONE;
+        LAST_ACTION_GATE = ACTION_GATE_NONE;
     }
     serial::write_str("[VIRT RUNTIME] ACTIVE STATE=AWAKE heartbeat=RTC-second\n");
 }
@@ -285,6 +290,11 @@ pub fn receive_reasoning_response(request_id: u64, bytes: &[u8]) {
         while i < n { LAST_REASONING_RESPONSE[i] = bytes[i]; i += 1; }
         LAST_REASONING_RESPONSE_LEN = n;
         LAST_REASONING_CLASSIFICATION = classify_reasoning_response(n);
+        LAST_ACTION_GATE = if LAST_REASONING_CLASSIFICATION == REASONING_CLASS_ACTION {
+            ACTION_GATE_PROPOSED
+        } else {
+            ACTION_GATE_NONE
+        };
         REASONING_WAITING = false;
         serial::write_str("[VIRT RUNTIME] REASONING_RESPONSE_LEN=");
         serial::write_usize(n);
@@ -336,6 +346,7 @@ fn classify_reasoning_response(len: usize) -> u8 {
 pub fn last_reasoning_response_len() -> usize { unsafe { LAST_REASONING_RESPONSE_LEN } }
 
 pub fn last_reasoning_classification() -> u8 { unsafe { LAST_REASONING_CLASSIFICATION } }
+pub fn last_action_gate() -> u8 { unsafe { LAST_ACTION_GATE } }
 
 pub fn last_reasoning_gate() -> u8 { unsafe { LAST_REASONING_GATE } }
 
