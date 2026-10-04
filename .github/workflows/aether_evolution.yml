@@ -92,7 +92,11 @@ jobs:
         if: always()
         run: |
           set -euo pipefail
-          if [ -f /tmp/aether-evolution-qemu.exit ]; then\n            rc="$(cut -d= -f2 /tmp/aether-evolution-qemu.exit)"\n          else\n            rc=255\n          fi
+          if [ -f /tmp/aether-evolution-qemu.exit ]; then
+            rc="$(cut -d= -f2 /tmp/aether-evolution-qemu.exit)"
+          else
+            rc=255
+          fi
           python3 .aether/tools/analyze_run.py \
             --log /tmp/aether-evolution-qemu.log \
             --state .state/current_state.json \
