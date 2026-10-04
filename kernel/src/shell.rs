@@ -1512,6 +1512,11 @@ fn cmd_ethdma() {
                         core::ptr::write_volatile(tx_desc.add(0), 317 | 0xB000_0000);
                         core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
                         core::ptr::write_volatile((mmio as usize+0x38) as *mut u8, 0x40);
+                        // RTL8168 can lose a TxPoll request when a new packet follows
+                        // very shortly after the previous transmission. Linux r8169
+                        // explicitly kicks the NPQ doorbell again for this condition.
+                        core::hint::spin_loop();
+                        core::ptr::write_volatile((mmio as usize+0x38) as *mut u8, 0x40);
                     }
 
                     let mut req_tx_done=false; let mut q=0usize;
