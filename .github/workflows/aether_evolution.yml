@@ -1,4 +1,4 @@
-name: Aether evolution validation # AI model bridge validation
+name: Aether evolution validation
 
 on:
   push:
@@ -96,12 +96,10 @@ jobs:
           rc=$?
           kill "$BRIDGE_PID" 2>/dev/null || true
           wait "$BRIDGE_PID" 2>/dev/null || true
-          set -e
           echo "QEMU_EXIT=$rc" | tee /tmp/aether-evolution-qemu.exit
           cat /tmp/aether-model-bridge.log
           test "$rc" = 0 || test "$rc" = 124
           ! grep -qi "PANIC" /tmp/aether-model-bridge.log
-          grep -q '^AI_STATUS:READY
 
       - name: Analyze QEMU experience
         if: always()
@@ -119,140 +117,18 @@ jobs:
             --report .state/latest_qemu_report.json \
             --qemu-exit "$rc"
 
-      - name: Persist analyzed experience
-        if: always() && hashFiles('.state/latest_qemu_report.json') != '' && github.event_name != 'pull_request'
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .state/current_state.json .state/history.json .state/latest_qemu_report.json
-          if git diff --cached --quiet; then
-            echo "No new experience to persist."
-            exit 0
-          fi
-          git commit -m "agent: record analyzed QEMU experience [aether-state]"
-          git push
-
-      - name: Publish QEMU, ISO, and analysis evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: aether-evolution-build
-          path: |
-            kernel/build/aether.iso
-            /tmp/aether-model-bridge.log
-            /tmp/aether-evolution-qemu.exit
-            .state/latest_qemu_report.json
-          if-no-files-found: error
- /tmp/aether-model-bridge.log
-          grep -q '^AI_STATUS:ACTIVE
-
-      - name: Analyze QEMU experience
+      - name: Verify bidirectional AI bridge
         if: always()
         run: |
           set -euo pipefail
-          if [ -f /tmp/aether-evolution-qemu.exit ]; then
-            rc="$(cut -d= -f2 /tmp/aether-evolution-qemu.exit)"
-          else
-            rc=255
-          fi
-          python3 .aether/tools/analyze_run.py \
-            --log /tmp/aether-model-bridge.log \
-            --state .state/current_state.json \
-            --history .state/history.json \
-            --report .state/latest_qemu_report.json \
-            --qemu-exit "$rc"
-
-      - name: Persist analyzed experience
-        if: always() && hashFiles('.state/latest_qemu_report.json') != '' && github.event_name != 'pull_request'
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .state/current_state.json .state/history.json .state/latest_qemu_report.json
-          if git diff --cached --quiet; then
-            echo "No new experience to persist."
-            exit 0
-          fi
-          git commit -m "agent: record analyzed QEMU experience [aether-state]"
-          git push
-
-      - name: Publish QEMU, ISO, and analysis evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: aether-evolution-build
-          path: |
-            kernel/build/aether.iso
-            /tmp/aether-model-bridge.log
-            /tmp/aether-evolution-qemu.exit
-            .state/latest_qemu_report.json
-          if-no-files-found: error
- /tmp/aether-model-bridge.log
+          test -s /tmp/aether-model-bridge.log
+          grep -q '^AI_STATUS:READY$' /tmp/aether-model-bridge.log
+          grep -q '^AI_STATUS:ACTIVE$' /tmp/aether-model-bridge.log
           grep -q '^AI_IN:' /tmp/aether-model-bridge.log
           grep -q '^AI_REQ:' /tmp/aether-model-bridge.log
           grep -q '^AI_RES:' /tmp/aether-model-bridge.log
-          ! grep -q '^AI_RES:External model request failed
-
-      - name: Analyze QEMU experience
-        if: always()
-        run: |
-          set -euo pipefail
-          if [ -f /tmp/aether-evolution-qemu.exit ]; then
-            rc="$(cut -d= -f2 /tmp/aether-evolution-qemu.exit)"
-          else
-            rc=255
-          fi
-          python3 .aether/tools/analyze_run.py \
-            --log /tmp/aether-model-bridge.log \
-            --state .state/current_state.json \
-            --history .state/history.json \
-            --report .state/latest_qemu_report.json \
-            --qemu-exit "$rc"
-
-      - name: Persist analyzed experience
-        if: always() && hashFiles('.state/latest_qemu_report.json') != '' && github.event_name != 'pull_request'
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .state/current_state.json .state/history.json .state/latest_qemu_report.json
-          if git diff --cached --quiet; then
-            echo "No new experience to persist."
-            exit 0
-          fi
-          git commit -m "agent: record analyzed QEMU experience [aether-state]"
-          git push
-
-      - name: Publish QEMU, ISO, and analysis evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: aether-evolution-build
-          path: |
-            kernel/build/aether.iso
-            /tmp/aether-model-bridge.log
-            /tmp/aether-evolution-qemu.exit
-            .state/latest_qemu_report.json
-          if-no-files-found: error
- /tmp/aether-model-bridge.log
-          grep -qi "Aether OS Build" /tmp/aether-model-bridge.log
-
-      - name: Analyze QEMU experience
-        if: always()
-        run: |
-          set -euo pipefail
-          if [ -f /tmp/aether-evolution-qemu.exit ]; then
-            rc="$(cut -d= -f2 /tmp/aether-evolution-qemu.exit)"
-          else
-            rc=255
-          fi
-          python3 .aether/tools/analyze_run.py \
-            --log /tmp/aether-model-bridge.log \
-            --state .state/current_state.json \
-            --history .state/history.json \
-            --report .state/latest_qemu_report.json \
-            --qemu-exit "$rc"
+          ! grep -q '^AI_RES:External model request failed' /tmp/aether-model-bridge.log
+          echo "BIDIRECTIONAL_AI_BRIDGE=PASS"
 
       - name: Persist analyzed experience
         if: always() && hashFiles('.state/latest_qemu_report.json') != '' && github.event_name != 'pull_request'
