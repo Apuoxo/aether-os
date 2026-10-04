@@ -607,6 +607,18 @@ fn emit_reasoning_request() {
         });
         serial::write_str(" HEALTH=");
         serial::write_usize(SYSTEM_STATE_HEALTH as usize);
+        serial::write_str(" STATE=");
+        let mut state_i = 0usize;
+        while state_i < SYSTEM_SUBSYSTEM_COUNT {
+            serial::write_usize(SYSTEM_STATE[state_i] as usize);
+            state_i += 1;
+        }
+        serial::write_str(" PROC=");
+        serial::write_usize(LAST_PROCESS_COUNT);
+        serial::write_str(" MEM=");
+        serial::write_usize(LAST_RAM_FREE);
+        serial::write_str("/");
+        serial::write_usize(LAST_RAM_TOTAL);
         serial::write_str(" UNDERSTANDING=");
         serial::write_usize(LAST_UNDERSTANDING as usize);
         serial::write_str(" DEC=");
