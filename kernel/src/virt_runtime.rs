@@ -24,10 +24,15 @@ static mut PREVIOUS_PROCESS_COUNT: usize = 0;
 static mut PROCESS_BASELINE_READY: bool = false;
 static mut LAST_PROCESS_EVENT_PID: usize = 0;
 static mut LAST_PROCESS_EVENT_KIND: u8 = 0;
+static mut LAST_PROCESS_EVENT_OLD_STATE: u8 = 0;
+static mut LAST_PROCESS_EVENT_NEW_STATE: u8 = 0;
+static mut LAST_PROCESS_STATES: [u8; crate::process::MAX_PROCESSES] = [0; crate::process::MAX_PROCESSES];
+static mut PREVIOUS_PROCESS_STATES: [u8; crate::process::MAX_PROCESSES] = [0; crate::process::MAX_PROCESSES];
 
 pub const PROCESS_EVENT_NONE: u8 = 0;
 pub const PROCESS_EVENT_APPEARED: u8 = 1;
 pub const PROCESS_EVENT_DISAPPEARED: u8 = 2;
+pub const PROCESS_EVENT_STATE_CHANGED: u8 = 3;
 
 pub const STATE_OFF: u8 = 0;
 pub const STATE_AWAKE: u8 = 1;
@@ -54,6 +59,10 @@ pub fn init() {
         PROCESS_BASELINE_READY = false;
         LAST_PROCESS_EVENT_PID = 0;
         LAST_PROCESS_EVENT_KIND = PROCESS_EVENT_NONE;
+        LAST_PROCESS_EVENT_OLD_STATE = 0;
+        LAST_PROCESS_EVENT_NEW_STATE = 0;
+        LAST_PROCESS_STATES = [0; crate::process::MAX_PROCESSES];
+        PREVIOUS_PROCESS_STATES = [0; crate::process::MAX_PROCESSES];
     }
     serial::write_str("[VIRT RUNTIME] ACTIVE STATE=AWAKE heartbeat=RTC-second\n");
 }
@@ -108,77 +117,56 @@ pub fn observe_system() {
 /// The snapshot is metadata-only: it copies PIDs and does not change process
 /// state, scheduling, address spaces or capabilities.
 pub fn observe_processes() {
-    if !ready() {
-        return;
-    }
+    if !ready() { return; }
     let mut ids = [0usize; crate::process::MAX_PROCESSES];
-    let count = crate::process::snapshot_pids(&mut ids);
+    let mut states = [0u8; crate::process::MAX_PROCESSES];
+    let count = crate::process::snapshot_states(&mut ids, &mut states);
     unsafe {
         LAST_PROCESS_EVENT_PID = 0;
         LAST_PROCESS_EVENT_KIND = PROCESS_EVENT_NONE;
-
+        LAST_PROCESS_EVENT_OLD_STATE = 0;
+        LAST_PROCESS_EVENT_NEW_STATE = 0;
         if !PROCESS_BASELINE_READY {
             PREVIOUS_PROCESS_IDS = ids;
+            PREVIOUS_PROCESS_STATES = states;
             PREVIOUS_PROCESS_COUNT = count;
             LAST_PROCESS_IDS = ids;
+            LAST_PROCESS_STATES = states;
             LAST_PROCESS_COUNT = count;
             PROCESS_BASELINE_READY = true;
             return;
         }
-
         let mut i = 0usize;
         while i < count {
             let pid = ids[i];
-            let mut found = false;
             let mut j = 0usize;
             while j < PREVIOUS_PROCESS_COUNT {
                 if PREVIOUS_PROCESS_IDS[j] == pid {
-                    found = true;
+                    if PREVIOUS_PROCESS_STATES[j] != states[i] {
+                        EVENTS = EVENTS.wrapping_add(1);
+                        LAST_PROCESS_EVENT_PID = pid;
+                        LAST_PROCESS_EVENT_KIND = PROCESS_EVENT_STATE_CHANGED;
+                        LAST_PROCESS_EVENT_OLD_STATE = PREVIOUS_PROCESS_STATES[j];
+                        LAST_PROCESS_EVENT_NEW_STATE = states[i];
+                        serial::write_str("[VIRT RUNTIME] PROCESS STATE PID=");
+                        serial::write_usize(pid);
+                        serial::write_str(" OLD=");
+                        serial::write_usize(PREVIOUS_PROCESS_STATES[j] as usize);
+                        serial::write_str(" NEW=");
+                        serial::write_usize(states[i] as usize);
+                        serial::write_str("\n");
+                    }
                     break;
                 }
                 j += 1;
             }
-            if !found {
-                EVENTS = EVENTS.wrapping_add(1);
-                LAST_PROCESS_EVENT_PID = pid;
-                LAST_PROCESS_EVENT_KIND = PROCESS_EVENT_APPEARED;
-                serial::write_str("[VIRT RUNTIME] PROCESS APPEARED PID=");
-                serial::write_usize(pid);
-                serial::write_str("\n");
-                break;
-            }
             i += 1;
         }
-
-        if LAST_PROCESS_EVENT_KIND == PROCESS_EVENT_NONE {
-            let mut p = 0usize;
-            while p < PREVIOUS_PROCESS_COUNT {
-                let pid = PREVIOUS_PROCESS_IDS[p];
-                let mut found = false;
-                let mut j = 0usize;
-                while j < count {
-                    if ids[j] == pid {
-                        found = true;
-                        break;
-                    }
-                    j += 1;
-                }
-                if !found {
-                    EVENTS = EVENTS.wrapping_add(1);
-                    LAST_PROCESS_EVENT_PID = pid;
-                    LAST_PROCESS_EVENT_KIND = PROCESS_EVENT_DISAPPEARED;
-                    serial::write_str("[VIRT RUNTIME] PROCESS DISAPPEARED PID=");
-                    serial::write_usize(pid);
-                    serial::write_str("\n");
-                    break;
-                }
-                p += 1;
-            }
-        }
-
         PREVIOUS_PROCESS_IDS = ids;
+        PREVIOUS_PROCESS_STATES = states;
         PREVIOUS_PROCESS_COUNT = count;
         LAST_PROCESS_IDS = ids;
+        LAST_PROCESS_STATES = states;
         LAST_PROCESS_COUNT = count;
     }
 }
@@ -200,6 +188,13 @@ pub fn last_process_event_kind() -> u8 {
 
 pub fn last_process_event_pid() -> usize {
     unsafe { LAST_PROCESS_EVENT_PID }
+}
+
+pub fn last_process_event_old_state() -> u8 { unsafe { LAST_PROCESS_EVENT_OLD_STATE } }
+pub fn last_process_event_new_state() -> u8 { unsafe { LAST_PROCESS_EVENT_NEW_STATE } }
+pub fn last_process_state(index: usize) -> u8 {
+    if index >= crate::process::MAX_PROCESSES { return 0; }
+    unsafe { LAST_PROCESS_STATES[index] }
 }
 
 pub fn last_ram_total_pages() -> usize {
