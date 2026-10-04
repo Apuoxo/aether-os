@@ -953,11 +953,16 @@ fn cmd_cpu20() {
         None => { write_str("CPU20 -> PROC_CREATE_FAIL\n"); return; }
     };
     let before = crate::process::get_run_ticks(pid);
+    // balance_enqueue() already performs the single enqueue. Do not enqueue
+    // the same PID a second time: that would turn one test quantum into two.
     let cpu = crate::smp::balance_enqueue(pid);
-    if cpu == 0 || !crate::smp::rq_enqueue(cpu, pid) {
+    if cpu == 0 {
         write_str("CPU20 -> RQ_ENQUEUE_FAIL\n");
         return;
     }
+    write_str("CPU20 -> ENQ CPU=");
+    write_usize(cpu);
+    write_str("\n");
     let ok = wait_run_ticks(pid,before);
     write_str(if ok { "CPU20 -> PASS PURE RQ DRAIN QUANTUM\n" } else { "CPU20 -> FAIL PURE RQ DRAIN\n" });
 }

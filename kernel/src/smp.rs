@@ -262,9 +262,12 @@ pub fn migrate_token(apic: usize, pid: usize) -> bool {
 }
 
 pub fn balance_enqueue(pid: usize) -> usize {
+    if pid == 0 { return 0; }
+    let detected = unsafe { DETECTED };
+    let limit = if detected > MAX_AP { MAX_AP } else { detected };
     let mut best=0usize; let mut best_len=usize::MAX;
     let mut cpu=1usize;
-    while cpu<MAX_AP {
+    while cpu<limit {
         let n=rq_len(cpu);
         if n<best_len { best_len=n; best=cpu; }
         cpu+=1;
