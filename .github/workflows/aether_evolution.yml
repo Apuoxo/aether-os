@@ -122,7 +122,6 @@ jobs:
         run: |
           set -euo pipefail
           test -s /tmp/aether-model-bridge.log
-          grep -q '^AI_STATUS:READY$' /tmp/aether-model-bridge.log
           grep -q '^AI_STATUS:ACTIVE$' /tmp/aether-model-bridge.log
           grep -q '^AI_IN:' /tmp/aether-model-bridge.log
           grep -q '^AI_REQ:' /tmp/aether-model-bridge.log

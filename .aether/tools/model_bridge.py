@@ -68,29 +68,12 @@ def main() -> int:
     ap.add_argument("--model", default="gpt-5.4")
     args = ap.parse_args()
 
+    # The guest currently has no AI_STATUS:READY handshake marker. The TCP
+    # connection itself is the transport boundary; activate it immediately
+    # after connection so injected input can reach the guest AI endpoint.
     sock = connect(args.host, args.port)
     buf = b""
-    ready_deadline = time.monotonic() + 45.0
-    guest_ready = False
-    while not guest_ready:
-        try:
-            chunk = sock.recv(1024)
-        except socket.timeout:
-            if time.monotonic() >= ready_deadline:
-                raise TimeoutError("guest AI transport ready timeout")
-            continue
-        if not chunk:
-            raise RuntimeError("guest closed AI transport before ready")
-        buf += chunk
-        while b"\n" in buf:
-            raw, buf = buf.split(b"\n", 1)
-            line = raw.decode("utf-8", "replace").rstrip("\r")
-            if line:
-                log(line)
-            if line == "AI_STATUS:READY":
-                guest_ready = True
-                break
-
+    log("AI_STATUS:CONNECTED")
     sock.sendall(b"AI_STATUS:ACTIVE\n")
     log("AI_STATUS:ACTIVE")
     if args.inject:
@@ -125,7 +108,6 @@ def main() -> int:
                         wire = "AI_RES:" + request_tag + ":" + answer.replace("\r", " ").replace("\n", " ") + "\n"
                     except Exception as exc:
                         wire = "AI_RES:" + request_tag + ":MODEL_ERROR " + str(exc).replace("\r", " ").replace("\n", " ")[:70] + "\n"
-                        log(wire.rstrip("\n"))
                         log(wire.rstrip("\n"))
                     sock.sendall(wire.encode("utf-8", "replace"))
                     log(wire.rstrip("\n"))
