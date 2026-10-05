@@ -1464,6 +1464,71 @@ fn cmd_ethdma() {
                     }
                     write_str("\n");
                 }
+                // Protocol-level RX classifier: observation only. This distinguishes
+                // ARP from IPv4/UDP and records DHCP transaction IDs before the
+                // existing DHCP parser makes any decision. It does not alter RX
+                // ownership, filtering, polling, or packet contents.
+                if rx_done && rx_len >= 14 {
+                    let rb = rx_bufs[rx_idx] as *const u8;
+                    unsafe {
+                        let et = ((*rb.add(12) as u16) << 8) | *rb.add(13) as u16;
+                        write_str("RX_CLASS_ETHERTYPE="); write_hex(et as usize);
+                        if et == 0x0806 && rx_len >= 42 {
+                            write_str(" ARP=YES");
+                            let op = ((*rb.add(20) as u16) << 8) | *rb.add(21) as u16;
+                            write_str(" ARP_OP="); write_hex(op as usize);
+                            write_str(" ARP_SPA=");
+                            for j in 0..4 { write_hex(*rb.add(28+j) as usize); if j != 3 { write_str("."); } }
+                            write_str(" ARP_TPA=");
+                            for j in 0..4 { write_hex(*rb.add(38+j) as usize); if j != 3 { write_str("."); } }
+                        } else if et == 0x0800 && rx_len >= 34 {
+                            let ihl = ((*rb.add(14) & 0x0F) as usize) * 4;
+                            let proto = *rb.add(23);
+                            write_str(" IPV4=YES IHL="); write_usize(ihl);
+                            write_str(" PROTO="); write_hex(proto as usize);
+                            write_str(" SRC=");
+                            for j in 0..4 { write_hex(*rb.add(26+j) as usize); if j != 3 { write_str("."); } }
+                            write_str(" DST=");
+                            for j in 0..4 { write_hex(*rb.add(30+j) as usize); if j != 3 { write_str("."); } }
+                            if proto == 17 && ihl >= 20 && rx_len >= 14 + ihl + 8 {
+                                let u = 14 + ihl;
+                                let sport = ((*rb.add(u) as u16) << 8) | *rb.add(u+1) as u16;
+                                let dport = ((*rb.add(u+2) as u16) << 8) | *rb.add(u+3) as u16;
+                                write_str(" UDP_SRC="); write_hex(sport as usize);
+                                write_str(" UDP_DST="); write_hex(dport as usize);
+                                if sport == 67 || sport == 68 || dport == 67 || dport == 68 {
+                                    let dhcp = u + 8;
+                                    if rx_len >= dhcp + 8 {
+                                        let xid = ((*rb.add(dhcp+4) as u32) << 24) | ((*rb.add(dhcp+5) as u32) << 16) |
+                                            ((*rb.add(dhcp+6) as u32) << 8) | *rb.add(dhcp+7) as u32;
+                                        write_str(" DHCP_XID="); write_hex(xid as usize);
+                                        write_str(" DHCP_XID_EXPECTED="); write_hex(dhcp_xid as usize);
+                                        write_str(" XID_MATCH="); write_str(if xid == dhcp_xid { "YES" } else { "NO" });
+                                        if rx_len >= dhcp + 241 && *rb.add(dhcp+236) == 99 && *rb.add(dhcp+237) == 130 && *rb.add(dhcp+238) == 83 && *rb.add(dhcp+239) == 99 {
+                                            let mut p = dhcp + 240;
+                                            let end = rx_len;
+                                            let mut msg = 0u8;
+                                            while p + 1 < end {
+                                                let code = *rb.add(p);
+                                                if code == 255 { break; }
+                                                if code == 0 { p += 1; continue; }
+                                                let ln = *rb.add(p+1) as usize;
+                                                if p + 2 + ln > end { break; }
+                                                if code == 53 && ln == 1 { msg = *rb.add(p+2); break; }
+                                                p += 2 + ln;
+                                            }
+                                            write_str(" DHCP_MSGTYPE="); write_hex(msg as usize);
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            write_str(" OTHER=YES");
+                        }
+                        write_str("\n");
+                    }
+                }
+
                 let mut dhcp_offer=false; let mut offered_ip=[0u8;4]; let mut server_ip=[0u8;4];
                 if rx_done && rx_len>=282 {
                     let rb=rx_bufs[rx_idx] as *const u8;
