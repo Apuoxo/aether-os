@@ -97,6 +97,7 @@ pub fn init_from_multiboot(mbi: usize, kernel_end: usize) -> usize {
         let total_size = core::ptr::read_unaligned(mbi as *const u32) as usize;
         if total_size < 16 || total_size > 0x100000 { return 0; }
 
+        // Pass 1: build the complete usable-page set from the memory map.
         let mut off = 8usize;
         while off + 8 <= total_size {
             let tag_type = core::ptr::read_unaligned((mbi + off) as *const u32);
@@ -121,10 +122,18 @@ pub fn init_from_multiboot(mbi: usize, kernel_end: usize) -> usize {
                     p += entry_size;
                 }
             }
+            off = (off + tag_size + 7) & !7;
+        }
 
-            // Multiboot module tag: type=3, mod_start at +8, mod_end at +12.
-            // These modules are inside type-1 RAM according to the spec and
-            // therefore must be explicitly removed from the allocator.
+        // Pass 2: reserve objects that Multiboot places inside otherwise-usable RAM.
+        // The specification explicitly requires the kernel to preserve modules and MBI.
+        off = 8usize;
+        while off + 8 <= total_size {
+            let tag_type = core::ptr::read_unaligned((mbi + off) as *const u32);
+            let tag_size = core::ptr::read_unaligned((mbi + off + 4) as *const u32) as usize;
+            if tag_size < 8 || off + tag_size > total_size { break; }
+            if tag_type == 0 { break; }
+
             if tag_type == 3 && tag_size >= 16 {
                 let mod_start = core::ptr::read_unaligned((mbi + off + 8) as *const u32) as usize;
                 let mod_end = core::ptr::read_unaligned((mbi + off + 12) as *const u32) as usize;
@@ -132,7 +141,6 @@ pub fn init_from_multiboot(mbi: usize, kernel_end: usize) -> usize {
                     reserve_range(mod_start, mod_end);
                 }
             }
-
             off = (off + tag_size + 7) & !7;
         }
 
