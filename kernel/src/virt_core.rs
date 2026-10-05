@@ -8,6 +8,8 @@ use crate::serial;
 
 static mut READY: bool = false;
 static mut SESSION_ID: u32 = 0;
+static mut BOOT_MBI: usize = 0;
+static mut BOOT_KERNEL_END: usize = 0;
 
 fn mix(mut x: u32, v: u32) -> u32 {
     x ^= v.wrapping_add(0x9E37_79B9).rotate_left(13);
@@ -52,6 +54,8 @@ pub fn init(mbi: usize, kernel_end: usize) {
     sid = mix(sid, second as u32);
     unsafe {
         SESSION_ID = sid;
+        BOOT_MBI = mbi;
+        BOOT_KERNEL_END = kernel_end;
         READY = true;
     }
     serial::write_str("[VIRT CORE] ID=VIRT MODE=ROOT LOC=KERNEL BACKEND=EXTERNAL RIGHTS=RWMXGA SESSION=");
@@ -65,6 +69,16 @@ pub fn ready() -> bool {
 
 pub fn session_id() -> u32 {
     unsafe { SESSION_ID }
+}
+
+/// Boot information pointer captured before memory management starts.
+pub fn boot_mbi() -> usize {
+    unsafe { BOOT_MBI }
+}
+
+/// Linked end of the kernel image captured during early boot.
+pub fn boot_kernel_end() -> usize {
+    unsafe { BOOT_KERNEL_END }
 }
 
 /// Append the authoritative Virt identity to a request sent to a reasoning backend.
