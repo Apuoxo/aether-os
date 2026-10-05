@@ -69,12 +69,33 @@ def main() -> int:
     ap.add_argument("--model", default="auto")
     args = ap.parse_args()
 
-    # The guest currently has no AI_STATUS:READY handshake marker. The TCP
-    # connection itself is the transport boundary; activate it immediately
-    # after connection so injected input can reach the guest AI endpoint.
     sock = connect(args.host, args.port)
     buf = b""
     log("AI_STATUS:CONNECTED")
+
+    ready_deadline = time.monotonic() + 60.0
+    while True:
+        try:
+            chunk = sock.recv(1024)
+        except socket.timeout:
+            if time.monotonic() >= ready_deadline:
+                raise TimeoutError("guest AI endpoint readiness timeout")
+            continue
+        if not chunk:
+            raise ConnectionError("guest disconnected before AI endpoint was ready")
+        buf += chunk
+        ready = False
+        while b"\n" in buf:
+            raw, buf = buf.split(b"\n", 1)
+            line = raw.decode("utf-8", "replace").rstrip("\r")
+            if line:
+                log(line)
+            if line == "AI_STATUS:READY":
+                ready = True
+                break
+        if ready:
+            break
+
     sock.sendall(b"AI_STATUS:ACTIVE\n")
     log("AI_STATUS:ACTIVE")
     if args.inject:

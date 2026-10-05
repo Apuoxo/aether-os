@@ -41,7 +41,19 @@
     "stop when required evidence or human authorization is missing",
     "do not create unbounded self-propagating execution"
   ],
-  "next_step": "Inspect the failed marker or exit condition before making another code change.",
+  "next_step": "Validate the model-bridge readiness handshake in the PR QEMU workflow and inspect AI_REQ/AI_RES/AI_ACK output before any further change.",
+  "last_experiment": {
+    "run_id": "37389616540",
+    "hypothesis": "The model bridge injects AI_IN as soon as its TCP socket connects, but the guest does not poll serial input until after it emits AI_STATUS:READY; this ordering can lose the injected request.",
+    "action": "Updated .aether/tools/model_bridge.py to wait for the exact guest AI_STATUS:READY line before sending AI_STATUS:ACTIVE or injected input.",
+    "evidence": [
+      "Evolution run 37319443981 artifact: model bridge logged AI_STATUS:CONNECTED, AI_STATUS:ACTIVE, and AI_IN, then timed out without any AI_REQ, AI_RES, or AI_ACK.",
+      "The same artifact's guest serial log reached [DESKTOP] starting (no Ring3).",
+      "kernel/src/desktop.rs emits AI_STATUS:READY immediately before entering the loop that calls ai_transport_poll; the bridge previously sent input before waiting for this marker."
+    ],
+    "result": "The readiness gate is implemented. Local Python execution was unavailable in this environment, so syntax and end-to-end behavior remain unverified pending PR Actions.",
+    "next_bounded_step": "Run the existing Aether evolution QEMU workflow on the PR and verify the bidirectional bridge assertions; do not make another code change before inspecting that evidence."
+  },
   "last_experience": {
     "outcome": "failure",
     "conclusion": "QEMU validation did not satisfy all required startup markers; retain the failure as bounded experience.",
