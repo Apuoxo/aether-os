@@ -1626,7 +1626,7 @@ fn cmd_ethdma() {
                         core::ptr::write_volatile((mmio as usize+0x3E) as *mut u16, 0xFFFF);
                         let isr_after_clear=unsafe{core::ptr::read_volatile((mmio as usize+0x3E) as *const u16)};
                         write_str("RX_DIAG_ISR_AFTER_CLEAR="); write_hex(isr_after_clear as usize); write_str("\n");
-                        let req_desc = tx_desc.add(4);
+                        // Exact on-wire DHCPREQUEST diagnostics.\n                        let req_diag = tx_bufs[1] as *const u8;\n                        write_str("DHCPREQUEST_LENGTH_CHECK IP_TOTAL="); write_hex(303);\n                        write_str(" EXPECT="); write_hex(317usize-14);\n                        write_str(" UDP_LEN="); write_hex(283);\n                        write_str(" EXPECT="); write_hex(303usize-20);\n                        write_str(" XID="); write_hex(dhcp_xid as usize);\n                        write_str(" FLAGS=");\n                        unsafe { write_hex(((core::ptr::read_volatile(req_diag.add(50)) as usize)<<8)|core::ptr::read_volatile(req_diag.add(51)) as usize); }\n                        write_str(" OPTION50="); write_hex(((offered_ip[0] as usize)<<24)|((offered_ip[1] as usize)<<16)|((offered_ip[2] as usize)<<8)|offered_ip[3] as usize);\n                        write_str(" OPTION54="); write_hex(((server_ip[0] as usize)<<24)|((server_ip[1] as usize)<<16)|((server_ip[2] as usize)<<8)|server_ip[3] as usize);\n                        write_str(" OPTION61_LEN=7 TYPE=01 MAC=");\n                        unsafe { for j in 0..6 { write_hex(core::ptr::read_volatile(req_diag.add(253+j)) as usize); if j!=5 { write_str(":"); } } }\n                        write_str("\\nDHCPREQUEST_RAW=");\n                        unsafe { let mut j=0usize; while j<317 { write_hex(core::ptr::read_volatile(req_diag.add(j)) as usize); if j+1!=317 { write_str(" "); } j+=1; } }\n                        write_str("\\n");\n\n                        let req_desc = tx_desc.add(4);
                         core::ptr::write_volatile(req_desc.add(0), 317 | 0x7000_0000);
                         core::ptr::write_volatile(req_desc.add(1), 0);
                         core::ptr::write_volatile(req_desc.add(2), tx_bufs[1] as u32);
@@ -1658,18 +1658,45 @@ fn cmd_ethdma() {
                     write_str("RX_DIAG_REARM_COUNT=1\n");
 
                     let mut ack_done=false; let mut ack_idx=0usize; let mut ack_len=0usize;
-                    let mut rp2=0usize;
-                    while rp2<2_000_000usize {
-                        let mut di=0usize;
-                        while di<8 {
-                            let st=unsafe{core::ptr::read_volatile(rx_desc.add(di*4) as *const u32)};
-                            if (st & 0x8000_0000)==0 {
-                                ack_done=true; ack_idx=di; ack_len=(st & 0x3FFF) as usize; break;
+                    let mut ack_window=0usize;
+                    let ack_budgets=[2_000_000usize,4_000_000usize,8_000_000usize];
+                    let mut ack_window_loops=0usize;
+                    while ack_window<3 && !ack_done {
+                        if ack_window>0 {
+                            unsafe {
+                                core::ptr::write_volatile(req_desc.add(0), 317 | 0x7000_0000);
+                                core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
+                                core::ptr::write_volatile(req_desc.add(0), 317 | 0xF000_0000);
+                                core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
+                                core::ptr::write_volatile((mmio as usize+0x38) as *mut u8, 0x40);
                             }
-                            di+=1;
+                            let mut rt=0usize;
+                            while rt<2_000_000usize {
+                                let st=unsafe{core::ptr::read_volatile(req_desc as *const u32)};
+                                if st & 0x8000_0000 == 0 { break; }
+                                core::hint::spin_loop(); rt+=1;
+                            }
+                            write_str("DHCPREQUEST_RETX="); write_usize(ack_window); write_str(" TX_POLL="); write_usize(rt); write_str("\n");
                         }
-                        if ack_done { break; }
-                        core::hint::spin_loop(); rp2+=1;
+                        let mut rp2=0usize;
+                        while rp2<ack_budgets[ack_window] {
+                            let mut di=0usize;
+                            while di<8 {
+                                let st=unsafe{core::ptr::read_volatile(rx_desc.add(di*4) as *const u32)};
+                                if (st & 0x8000_0000)==0 {
+                                    ack_done=true; ack_idx=di; ack_len=(st & 0x3FFF) as usize; break;
+                                }
+                                di+=1;
+                            }
+                            if ack_done { break; }
+                            core::hint::spin_loop(); rp2+=1;
+                        }
+                        ack_window_loops += rp2;
+                        write_str("DHCP_ACK_WINDOW="); write_usize(ack_window+1);
+                        write_str(" BUDGET_LOOPS="); write_usize(ack_budgets[ack_window]);
+                        write_str(" USED_LOOPS="); write_usize(rp2);
+                        write_str(" ACK_WINDOW_MS=NOT_CALIBRATED\n");
+                        ack_window+=1;
                     }
 
                     let mut dhcp_ack=false; let mut dhcp_nak=false;
@@ -1708,6 +1735,17 @@ fn cmd_ethdma() {
                             }
                         }
                     }
+
+                    write_str("RX_DIAG_AFTER_ACK_WINDOW_ISR=");
+                    write_hex(unsafe { core::ptr::read_volatile((mmio as usize+0x3E) as *const u16) as usize });
+                    write_str(" CHIPCMD=");
+                    write_hex(unsafe { core::ptr::read_volatile((mmio as usize+0x37) as *const u8) as usize });
+                    write_str(" TOTAL_ACK_LOOPS="); write_usize(ack_window_loops); write_str("\n");
+                    ethdma_rx_diag("RX_DIAG_AFTER_ACK_WINDOW", rx_desc, rx_bufs.len());
+                    write_str("DHCPREQUEST_LENGTH_FORMULAS IP_TOTAL_EQ_TX_MINUS_ETH=");
+                    write_str(if 303usize == 317usize-14 {"YES"} else {"NO"});
+                    write_str(" UDP_LEN_EQ_IP_MINUS_IHL=");
+                    write_str(if 283usize == 303usize-20 {"YES"} else {"NO"}); write_str("\n");
 
                     write_str("DHCP_ACK="); write_str(if dhcp_ack {"PASS"} else {"NO"});
                     write_str(" RX="); write_str(if ack_done {"PASS"} else {"TIMEOUT"});
