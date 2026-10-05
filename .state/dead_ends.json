@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "entries": [
+    {
+      "fingerprint": "rustc-E0425-kernel-src-shell-rcr-out-of-scope",
+      "summary": "Aether OS kernel compilation fails because `rcr` is not in scope in kernel/src/shell.rs.",
+      "attempt_count": 5,
+      "attempts": [
+        {
+          "run_id": "37241023859",
+          "branch": "main",
+          "evidence": "Aether OS build failed with Rust E0425 for `rcr` in kernel/src/shell.rs."
+        },
+        {
+          "run_id": "37241161537",
+          "branch": "main",
+          "evidence": "Aether OS build failed with Rust E0425 for `rcr` in kernel/src/shell.rs."
+        },
+        {
+          "run_id": "37241725597",
+          "branch": "main",
+          "evidence": "Aether OS build failed with Rust E0425 for `rcr` in kernel/src/shell.rs."
+        },
+        {
+          "run_id": "37241820770",
+          "branch": "main",
+          "evidence": "Aether OS build failed with Rust E0425 for `rcr` in kernel/src/shell.rs."
+        },
+        {
+          "run_id": "37242259340",
+          "branch": "main",
+          "evidence": "Build kernel failed with E0425 at kernel/src/shell.rs:1394 and E0133 at line 1143; QEMU did not launch."
+        }
+      ],
+      "reason_not_to_retry": "The same concrete E0425 fingerprint has failed in at least five distinct main-branch builds, exceeding the three-attempt limit. A PR or rerun would repeat known failing validation without a source correction.",
+      "next_step": "Remain in bounded sleep until a source correction or materially new diagnostic evidence is available."
+    }
+  ]
+}
