@@ -92,21 +92,20 @@
         "correlation_id"
       ]
     },
-    "sequence": 122,
+    "sequence": 123,
     "last_event": {
-      "event_id": "comm-000122",
-      "type": "observation",
+      "event_id": "comm-000123",
+      "type": "wake",
       "actor": "agent-aether",
-      "channel": "qemu_serial",
-      "observed_at": "2026-10-05T08:12:44.120531Z",
+      "channel": "github_actions",
+      "observed_at": "2026-10-05T09:19:44.772558Z",
       "payload": {
-        "observed_at": "2026-10-05T08:12:44.120531Z",
-        "run_id": "37281929235",
-        "commit": "4b2313f3e652eeb306037391e4c9baea7cd070af",
-        "outcome": "success",
-        "qemu_exit": 124
+        "observed_at": "2026-10-05T09:19:44.772558Z",
+        "tick_counter": 3,
+        "delta_seconds": 46268.418,
+        "run_id": "37289294328"
       },
-      "correlation_id": "qemu-37281929235"
+      "correlation_id": "clock-37289294328"
     },
     "integrations": {
       "clock_tick": "records wake events and advances communication.last_event",
@@ -114,12 +113,12 @@
     }
   },
   "clock": {
-    "tick_counter": 2,
-    "last_wakeup": "2026-10-04T20:28:36.354725Z",
-    "delta_seconds": 9821.577,
-    "total_elapsed_seconds": 9821.577,
+    "tick_counter": 3,
+    "last_wakeup": "2026-10-05T09:19:44.772558Z",
+    "delta_seconds": 46268.418,
+    "total_elapsed_seconds": 56089.995,
     "clock_source": "github-actions-runner-system-time",
-    "last_run_id": "37232230632"
+    "last_run_id": "37289294328"
   },
   "last_wake_reason": "schedule"
 }
