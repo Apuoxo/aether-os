@@ -5,7 +5,7 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 pub mod paging;
 
 const PAGE_SIZE: usize = 4096;
-// Track physical page numbers up to 4 GiB.  The bitmap is sparse-aware: only
+// Track physical page numbers up to 4 GiB. The bitmap is sparse-aware: only
 // pages explicitly reported as Multiboot type-1 usable are made allocatable.
 const MAX_PAGES: usize = 1_048_576;
 
@@ -56,8 +56,15 @@ unsafe fn reserve_range(start: usize, end: usize) {
 }
 
 pub fn init(start: usize, size: usize) {
-    // Compatibility entry point for callers that have a known safe contiguous
-    // region. It no longer invents extra RAM when the caller supplies less.
+    // Keep the legacy API, but automatically prefer the real Multiboot memory
+    // map when kernel_main has already captured it through Virt Core.
+    let mbi = crate::virt_core::boot_mbi();
+    let kernel_end = crate::virt_core::boot_kernel_end();
+    if mbi != 0 && kernel_end != 0 {
+        let _ = init_from_multiboot(mbi, kernel_end);
+        return;
+    }
+
     unsafe {
         let mut i = 0usize;
         while i < BITMAP.len() {
@@ -72,8 +79,7 @@ pub fn init(start: usize, size: usize) {
 }
 
 /// Initialize from the Multiboot2 memory map. Only type-1 usable regions are
-/// managed, and the Multiboot information block itself is reserved afterwards.
-/// This removes the old artificial contiguous-RAM assumption.
+/// managed. The kernel, MBI and every Multiboot module remain reserved.
 pub fn init_from_multiboot(mbi: usize, kernel_end: usize) -> usize {
     unsafe {
         let mut i = 0usize;
@@ -114,13 +120,24 @@ pub fn init_from_multiboot(mbi: usize, kernel_end: usize) -> usize {
                     }
                     p += entry_size;
                 }
-                break;
             }
+
+            // Multiboot module tag: type=3, mod_start at +8, mod_end at +12.
+            // These modules are inside type-1 RAM according to the spec and
+            // therefore must be explicitly removed from the allocator.
+            if tag_type == 3 && tag_size >= 16 {
+                let mod_start = core::ptr::read_unaligned((mbi + off + 8) as *const u32) as usize;
+                let mod_end = core::ptr::read_unaligned((mbi + off + 12) as *const u32) as usize;
+                if mod_start < mod_end {
+                    reserve_range(mod_start, mod_end);
+                }
+            }
+
             off = (off + tag_size + 7) & !7;
         }
 
         // The Multiboot information block is itself stored in RAM. Reserve it
-        // even when the firmware's memory map labels that physical range usable.
+        // even when the firmware memory map labels that physical range usable.
         reserve_range(mbi, mbi.saturating_add(total_size));
     }
 
