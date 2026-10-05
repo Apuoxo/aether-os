@@ -5,7 +5,15 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 pub mod paging;
 
 const PAGE_SIZE: usize = 4096;
-const MAX_PAGES: usize = 32768;
+// Track physical page numbers up to 4 GiB.  The current boot path uses one
+// contiguous usable region beginning after the linked kernel image; keeping a
+// larger bitmap removes the old 128 MiB address-space ceiling without changing
+// the allocator's page semantics.
+const MAX_PAGES: usize = 1_048_576;
+// The boot path historically requested 64 MiB.  Keep that call site stable
+// while raising the minimum managed pool to 256 MiB on the current hardware
+// target.  A later memory-map-aware PMM can replace this with multiple regions.
+const MIN_MANAGED_BYTES: usize = 256 * 1024 * 1024;
 
 static mut BITMAP: [u64; MAX_PAGES / 64] = [0; MAX_PAGES / 64];
 static TOTAL: AtomicUsize = AtomicUsize::new(0);
@@ -14,8 +22,13 @@ static START_PAGE: AtomicUsize = AtomicUsize::new(0);
 
 pub fn init(start: usize, size: usize) {
     let start_page = start / PAGE_SIZE;
-    let count = size / PAGE_SIZE;
-    let usable = if count > MAX_PAGES.saturating_sub(start_page) { MAX_PAGES - start_page } else { count };
+    let requested = size.max(MIN_MANAGED_BYTES);
+    let count = requested / PAGE_SIZE;
+    let usable = if count > MAX_PAGES.saturating_sub(start_page) {
+        MAX_PAGES - start_page
+    } else {
+        count
+    };
     unsafe {
         let mut i = 0;
         while i < usable {
@@ -118,4 +131,3 @@ pub fn zero_pages(phys: usize, count: usize) {
         }
     }
 }
-
