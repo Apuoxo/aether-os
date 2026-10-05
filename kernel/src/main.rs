@@ -181,71 +181,65 @@ fn vga_mark(col: usize, ch: u8) {
     }
 }
 
-fn draw_boot_ram_screen(detected_mib: u64, managed_mib: u64) {
+fn draw_boot_ram_screen(detected_mib: u64, managed_mib: u64, total_mib: u64, free_mib: u64, limit: bool) {
     if !graphics::ready() {
         return;
     }
     graphics::fill(0x00000000);
     graphics::draw_str(48, 80, "AETHER OS", 0x00FFFFFF);
     graphics::draw_str(48, 120, "MEMORY INITIALIZATION", 0x0080C0FF);
-    graphics::draw_str(48, 176, "RAM DETECTED:", 0x00FFFFFF);
-    let mut buf = [0u8; 20];
-    let mut n = 0usize;
-    let mut v = detected_mib;
-    if v == 0 {
-        buf[0] = b'0';
-        n = 1;
-    } else {
-        while v != 0 && n < buf.len() {
-            buf[n] = b'0' + (v % 10) as u8;
-            v /= 10;
-            n += 1;
-        }
-        let mut i = 0usize;
-        while i < n / 2 {
-            let j = n - 1 - i;
-            let t = buf[i];
-            buf[i] = buf[j];
-            buf[j] = t;
-            i += 1;
-        }
-    }
-    graphics::draw_bytes(48, 208, &buf[..n], 0x00FFFFFF);
-    graphics::draw_str(48 + n * 8, 208, " MiB", 0x00FFFFFF);
 
-    graphics::draw_str(48, 256, "PMM MANAGED:", 0x00FFFFFF);
-    let mut pbuf = [0u8; 20];
-    let mut pn = 0usize;
-    let mut pv = managed_mib;
-    if pv == 0 {
-        pbuf[0] = b'0';
-        pn = 1;
-    } else {
-        while pv != 0 && pn < pbuf.len() {
-            pbuf[pn] = b'0' + (pv % 10) as u8;
-            pv /= 10;
-            pn += 1;
-        }
-        let mut i = 0usize;
-        while i < pn / 2 {
-            let j = pn - 1 - i;
-            let t = pbuf[i];
-            pbuf[i] = pbuf[j];
-            pbuf[j] = t;
-            i += 1;
-        }
-    }
-    graphics::draw_bytes(48, 288, &pbuf[..pn], 0x00FFFFFF);
-    graphics::draw_str(48 + pn * 8, 288, " MiB", 0x00FFFFFF);
+    let labels = [
+        "RAM DETECTED:",
+        "PMM MANAGED:",
+        "PMM TOTAL:",
+        "PMM FREE:",
+        "PMM LIMIT:",
+    ];
+    let values = [detected_mib, managed_mib, total_mib, free_mib, if limit { 1 } else { 0 }];
 
-    // Hold the graphical boot screen long enough to be seen on real hardware.
+    let mut row = 0usize;
+    while row < labels.len() {
+        let y = 176 + row * 72;
+        graphics::draw_str(48, y, labels[row], 0x00FFFFFF);
+
+        if row == 4 {
+            graphics::draw_str(48, y + 32, if limit { "YES" } else { "NO" },
+                if limit { 0x00FF8080 } else { 0x0080FF80 });
+        } else {
+            let mut buf = [0u8; 20];
+            let mut n = 0usize;
+            let mut v = values[row];
+            if v == 0 {
+                buf[0] = b'0';
+                n = 1;
+            } else {
+                while v != 0 && n < buf.len() {
+                    buf[n] = b'0' + (v % 10) as u8;
+                    v /= 10;
+                    n += 1;
+                }
+                let mut i = 0usize;
+                while i < n / 2 {
+                    let j = n - 1 - i;
+                    let t = buf[i];
+                    buf[i] = buf[j];
+                    buf[j] = t;
+                    i += 1;
+                }
+            }
+            graphics::draw_bytes(48, y + 32, &buf[..n], 0x00FFFFFF);
+            graphics::draw_str(48 + n * 8, y + 32, " MiB", 0x00FFFFFF);
+        }
+        row += 1;
+    }
+
     let mut delay = 0usize;
     while delay < 120_000_000 {
         core::hint::spin_loop();
         delay += 1;
     }
 }
-
 #[no_mangle]
 pub extern "C" fn kernel_main(mbi: usize) -> ! {
     // Stage markers on VGA (after boot.s wrote OK at cols 0-1)
@@ -449,7 +443,7 @@ pub extern "C" fn kernel_main(mbi: usize) -> ! {
     if graphics::ready() && fb::is_ready() {
         serial::write_str("[DESKTOP] starting (no Ring3)\n");
         drivers::video::init();
-        draw_boot_ram_screen(detected_ram_mib, managed_ram_mib);
+        draw_boot_ram_screen(detected_ram_mib, managed_ram_mib, mm::total_count() as u64 / 256, mm::free_count() as u64 / 256, detected_ram_mib > managed_ram_mib);
         desktop::terminal_write("RAM DETECTED: ");
         desktop::terminal_write_usize(detected_ram_mib as usize);
         desktop::terminal_write(" MiB\\nPMM MANAGED: ");
