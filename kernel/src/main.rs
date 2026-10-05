@@ -234,8 +234,10 @@ fn draw_boot_ram_screen(detected_mib: u64, managed_mib: u64, total_mib: u64, fre
         row += 1;
     }
 
+    // Keep the boot RAM diagnostic visible long enough to read all values.
+    // This changes only the display delay; initialization order is unchanged.
     let mut delay = 0usize;
-    while delay < 120_000_000 {
+    while delay < 600_000_000 {
         core::hint::spin_loop();
         delay += 1;
     }
