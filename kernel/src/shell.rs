@@ -1135,6 +1135,40 @@ fn cmd_ethchip() {
     write_str("======== ETHCHIP END ========\n");
 }
 
+fn ethdma_rx_diag(tag: &str, d: *mut u32, count: usize) {
+    write_str(tag);
+    write_str(" RXRING");
+    let mut i=0usize;
+    while i<count {
+        let p=unsafe{d.add(i*4)};
+        let o1=unsafe{core::ptr::read_volatile(p)};
+        let o2=unsafe{core::ptr::read_volatile(p.add(1))};
+        write_str("["); write_usize(i); write_str("] O1="); write_hex(o1 as usize);
+        write_str(" O2="); write_hex(o2 as usize);
+        write_str(" OWN="); write_usize(((o1>>31)&1) as usize);
+        write_str(" EOR="); write_usize(((o1>>30)&1) as usize);
+        write_str(" FS="); write_usize(((o1>>29)&1) as usize);
+        write_str(" LS="); write_usize(((o1>>28)&1) as usize);
+        write_str(" MAR="); write_usize(((o1>>27)&1) as usize);
+        write_str(" PAM="); write_usize(((o1>>26)&1) as usize);
+        write_str(" BAR="); write_usize(((o1>>25)&1) as usize);
+        write_str(" RSV24="); write_usize(((o1>>24)&1) as usize);
+        write_str(" RSV23="); write_usize(((o1>>23)&1) as usize);
+        write_str(" RWT="); write_usize(((o1>>22)&1) as usize);
+        write_str(" RES="); write_usize(((o1>>21)&1) as usize);
+        write_str(" RUNT="); write_usize(((o1>>20)&1) as usize);
+        write_str(" CRC="); write_usize(((o1>>19)&1) as usize);
+        write_str(" FAE="); write_usize(((o1>>18)&1) as usize);
+        write_str(" RXLEN="); write_usize((o2&0x3FFF) as usize);
+        write_str(" VLAN="); write_usize(((o2>>16)&1) as usize);
+        write_str(" UDPCS="); write_usize(((o2>>18)&1) as usize);
+        write_str(" IPCS="); write_usize(((o2>>19)&1) as usize);
+        write_str(" TCPCS="); write_usize(((o2>>20)&1) as usize);
+        write_str("\n");
+        i+=1;
+    }
+}
+
 fn cmd_ethdma() {
     write_str("======== RTL8168 DMA BRING-UP ========\n");
     write_str("MODE=REAL_HW DMA POLLING\n");
@@ -1504,6 +1538,12 @@ fn cmd_ethdma() {
                         while (sum>>16)!=0 { sum=(sum&0xFFFF)+(sum>>16); }
                         let cs=!(sum as u16); *tx.add(24)=(cs>>8) as u8; *tx.add(25)=cs as u8;
 
+                        write_str("RX_DIAG_BEFORE_REARM");
+                        ethdma_rx_diag("", rx_desc, rx_bufs.len());
+                        write_str("RX_DIAG_ISR_RAW=");
+                        write_hex(unsafe { core::ptr::read_volatile((mmio as usize+0x3E) as *const u16) as usize });
+                        write_str("\n");
+
                         // Re-arm the consumed RX descriptor; the NIC may use
                         // another still-owned descriptor first, so scan all 8.
                         let rd=rx_desc.add(rx_idx*4);
@@ -1512,7 +1552,15 @@ fn cmd_ethdma() {
                         core::ptr::write_volatile(rd.add(1), 0);
                         core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
 
+                        let own_after_rearm=unsafe{core::ptr::read_volatile(rd)};
+                        write_str("RX_DIAG_REARM_IDX="); write_usize(rx_idx);
+                        write_str(" OWN_AFTER_REARM="); write_usize(((own_after_rearm>>31)&1) as usize);
+                        write_str(" O1="); write_hex(own_after_rearm as usize); write_str("\n");
+                        ethdma_rx_diag("RX_DIAG_AFTER_REARM", rx_desc, rx_bufs.len());
+
                         core::ptr::write_volatile((mmio as usize+0x3E) as *mut u16, 0xFFFF);
+                        let isr_after_clear=unsafe{core::ptr::read_volatile((mmio as usize+0x3E) as *const u16)};
+                        write_str("RX_DIAG_ISR_AFTER_CLEAR="); write_hex(isr_after_clear as usize); write_str("\n");
                         let req_desc = tx_desc.add(4);
                         core::ptr::write_volatile(req_desc.add(0), 317 | 0x7000_0000);
                         core::ptr::write_volatile(req_desc.add(1), 0);
@@ -1537,6 +1585,12 @@ fn cmd_ethdma() {
                     }
                     write_str("DHCPREQUEST_TX="); write_str(if req_tx_done {"PASS"} else {"TIMEOUT"});
                     write_str(" POLL="); write_usize(q); write_str("\n");
+
+                    write_str("RX_DIAG_BEFORE_ACK_POLL_ISR=");
+                    write_hex(unsafe { core::ptr::read_volatile((mmio as usize+0x3E) as *const u16) as usize });
+                    write_str(" RX_IDX_SW="); write_usize(rx_idx); write_str("\n");
+                    ethdma_rx_diag("RX_DIAG_BEFORE_ACK_POLL", rx_desc, rx_bufs.len());
+                    write_str("RX_DIAG_REARM_COUNT=1\n");
 
                     let mut ack_done=false; let mut ack_idx=0usize; let mut ack_len=0usize;
                     let mut rp2=0usize;
