@@ -1564,7 +1564,7 @@ fn cmd_ethdma() {
                     // Packet sizes are calculated from the fixed BOOTP header:
                     // DHCP payload 275, UDP 283, IPv4 303, Ethernet 317 bytes.
                     let tx = tx_bufs[1] as *mut u8;
-                    let req_desc = tx_desc.add(4);
+                    let req_desc = unsafe { tx_desc.add(4) };
                     unsafe {
                         let mut j=0usize;
                         while j<317 { *tx.add(j)=0; j+=1; }
