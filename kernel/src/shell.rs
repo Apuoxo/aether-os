@@ -1576,8 +1576,8 @@ fn cmd_ethdma() {
                         *tx.add(22)=64; *tx.add(23)=17; *tx.add(24)=0; *tx.add(25)=0;
                         for j in 26..30 { *tx.add(j)=0; }
                         for j in 30..34 { *tx.add(j)=0xFF; }
-                        *tx.add(34)=0; *tx.add(35)=68; *tx.add(36)=1; *tx.add(37)=27; // UDP 283
-                        *tx.add(38)=0; *tx.add(39)=0; *tx.add(40)=0; *tx.add(41)=0;
+                        *tx.add(34)=0; *tx.add(35)=68; *tx.add(36)=0; *tx.add(37)=67; // UDP destination port 67
+                        *tx.add(38)=0x01; *tx.add(39)=0x1B; *tx.add(40)=0; *tx.add(41)=0; // UDP length 283, checksum 0
                         let b=42usize;
                         *tx.add(b)=1; *tx.add(b+1)=1; *tx.add(b+2)=6; *tx.add(b+3)=0;
                         *tx.add(b+4)=(dhcp_xid>>24) as u8; *tx.add(b+5)=(dhcp_xid>>16) as u8;
