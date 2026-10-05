@@ -275,9 +275,14 @@ pub extern "C" fn kernel_main(mbi: usize) -> ! {
     serial::write_usize(detected_ram_mib as usize);
     serial::write_str(" MiB, PMM managed=");
     serial::write_usize(managed_ram_mib as usize);
-    serial::write_str(" MiB, PMM request=64 MiB\\n");
+    serial::write_str(" MiB\\n");
+    serial::write_str("[RAM] PMM TOTAL=");
+    serial::write_usize(mm::total_count() / 256);
+    serial::write_str(" MiB FREE=");
+    serial::write_usize(mm::free_count() / 256);
+    serial::write_str(" MiB\\n");
     if detected_ram_mib > managed_ram_mib {
-        serial::write_str("[RAM] PMM_LIMIT=YES (detected RAM exceeds managed range)\\n");
+        serial::write_str("[RAM] PMM_LIMIT=YES (detected RAM exceeds managed range or >4GiB bitmap ceiling)\\n");
     } else {
         serial::write_str("[RAM] PMM_LIMIT=NO\\n");
     }
