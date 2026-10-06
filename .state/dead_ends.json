@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "entries": [
+    {
+      "fingerprint": "qemu-desktop-marker-missing-v1",
+      "summary": "Evolution validation repeatedly reports desktop_marker=false despite desktop_start=true, build_banner=true, no panic, and accepted QEMU timeout exit.",
+      "attempt_count": 3,
+      "attempts": [
+        {
+          "run_id": "37319443981",
+          "commit": "21469a113856cef411d5896d3e2f6e81c500f714"
+        },
+        {
+          "run_id": "37451253522",
+          "commit": "ec8d3a91e4d895bc7adc5d84a87e538a2933f237"
+        },
+        {
+          "run_id": "37453196621",
+          "commit": "0fd95b025ed7a4eae467b9bc1eb0eeb698e0db8a"
+        }
+      ],
+      "latest_evidence": {
+        "report": ".state/latest_qemu_report.json",
+        "latest_run": "37453196621",
+        "checks": {
+          "qemu_exit_accepted": true,
+          "panic_absent": true,
+          "build_banner": true,
+          "desktop_marker": false,
+          "desktop_start": true,
+          "ring3_evidence": false
+        },
+        "additional_bridge_evidence": "Latest two workflow runs show AI_STATUS:CONNECTED, AI_STATUS:ACTIVE, and AI_IN, followed by model bridge response timeout without AI_REQ, AI_RES, or AI_ACK."
+      },
+      "reason_not_to_retry": "The same concrete startup-marker fingerprint has failed three times. Retrying the unchanged validation would add no evidence; first inspect the desktop-marker acceptance criteria and diagnose the model bridge response timeout.",
+      "recorded_by_run": "37464751771",
+      "recorded_at": "2026-10-06T12:41:21Z",
+      "sleep_until": "2026-10-06T18:00:00Z"
+    }
+  ]
+}

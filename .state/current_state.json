@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "status": "active",
+  "status": "bounded_sleep",
   "updated": "2026-10-06",
   "baseline_commit": "6803178c4603445bc126fdf99d01688bc65ca90e",
   "purpose": "Bounded, evidence-first engineering state for Aether agent work.",
@@ -26,7 +26,7 @@
   "verification": {
     "last_known_qemu_gdb_fix_commit": "6803178c4603445bc126fdf99d01688bc65ca90e",
     "qemu_gdb_banner_check": "case_insensitive",
-    "latest_ci_verification": "pending_tool_visibility",
+    "latest_ci_verification": "run 37453196621 failed at bidirectional AI bridge verification; logs inspected",
     "hardware_evidence": "must remain distinct from QEMU/CI evidence",
     "latest_evolution_run": "37453196621",
     "latest_evolution_commit": "0fd95b025ed7a4eae467b9bc1eb0eeb698e0db8a",
@@ -41,7 +41,7 @@
     "stop when required evidence or human authorization is missing",
     "do not create unbounded self-propagating execution"
   ],
-  "next_step": "Inspect the failed marker or exit condition before making another code change.",
+  "next_step": "Sleep until the next scheduled heartbeat. Before retrying, inspect the recurring desktop-marker mismatch and the model-bridge response timeout; do not repeat the same validation without new evidence.",
   "last_experience": {
     "outcome": "failure",
     "conclusion": "QEMU validation did not satisfy all required startup markers; retain the failure as bounded experience.",
@@ -87,21 +87,21 @@
         "correlation_id"
       ]
     },
-    "sequence": 134,
+    "sequence": 135,
     "last_event": {
-      "event_id": "comm-000134",
+      "event_id": "comm-000135",
       "type": "observation",
       "actor": "agent-aether",
-      "channel": "qemu_serial",
-      "observed_at": "2026-10-06T11:00:22.354487Z",
+      "channel": "github_actions",
+      "observed_at": "2026-10-06T12:41:21Z",
       "payload": {
-        "observed_at": "2026-10-06T11:00:22.354487Z",
-        "run_id": "37453196621",
-        "commit": "0fd95b025ed7a4eae467b9bc1eb0eeb698e0db8a",
-        "outcome": "failure",
-        "qemu_exit": 124
+        "run_id": "37464751771",
+        "trigger": "schedule",
+        "outcome": "bounded_sleep",
+        "failure_fingerprint": "qemu-desktop-marker-missing-v1",
+        "attempt_count": 3
       },
-      "correlation_id": "qemu-37453196621"
+      "correlation_id": "heartbeat-37464751771"
     },
     "integrations": {
       "clock_tick": "records wake events and advances communication.last_event",
@@ -116,5 +116,20 @@
     "clock_source": "github-actions-runner-system-time",
     "last_run_id": "37424785803"
   },
-  "last_wake_reason": "schedule"
+  "last_wake_reason": "schedule",
+  "heartbeat": {
+    "run_id": "37464751771",
+    "trigger": "schedule",
+    "status": "bounded_sleep",
+    "hypothesis": "The recurring QEMU desktop-marker failure remains unresolved; the latest model bridge also receives AI_IN but times out before producing request/response/acknowledgement markers.",
+    "action": "Stopped after confirming the third occurrence of the same QEMU marker fingerprint; made no code or hardware-specific changes.",
+    "evidence": [
+      "Runs 37319443981, 37451253522, and 37453196621 share build_banner=true, desktop_start=true, desktop_marker=false, qemu_exit_accepted=true, and panic_absent=true in .state/history.json.",
+      "Run 37453196621 log shows AI_STATUS:CONNECTED, AI_STATUS:ACTIVE, and AI_IN, but no AI_REQ, AI_RES, or AI_ACK; the model bridge ends with a response timeout. Run 37451253522 artifact shows the same timeout.",
+      "Latest QEMU serial log reaches '[DESKTOP] starting (no Ring3)' and '[FB] test pattern rendered'; this is QEMU-only evidence and does not establish AH532 hardware behavior."
+    ],
+    "result": "No experiment was retried after the third matching failure; bounded dead end recorded.",
+    "sleep_until": "2026-10-06T18:00:00Z",
+    "next_step": "At the next scheduled heartbeat, inspect why the analyzer rejects the observed desktop-start marker and why the model bridge response times out before considering another validation."
+  }
 }
