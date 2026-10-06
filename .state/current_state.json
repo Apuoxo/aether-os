@@ -41,7 +41,22 @@
     "stop when required evidence or human authorization is missing",
     "do not create unbounded self-propagating execution"
   ],
-  "next_step": "Inspect the failed marker or exit condition before making another code change.",
+  "next_step": "Await an authorized PR-creation path or maintainer-created PR for evolution/heartbeat-37389616540; then validate the AI bridge readiness fix with the existing QEMU workflow before any further code change.",
+  "last_experiment": {
+    "run_id": "37414115269",
+    "status": "blocked_awaiting_pr_authorization",
+    "hypothesis": "The bidirectional AI bridge failure is caused by the host bridge sending AI_IN before the guest desktop announces AI_STATUS:READY and starts polling serial input.",
+    "action": "Inspected the failed evolution run artifact and workflow logs, compared the bridge send order with the guest readiness marker, and inspected the existing proposed fix branch. No code was changed because the fix remains unvalidated and the prior Actions identity could not create its PR.",
+    "evidence": [
+      "Run 37319443981 artifact logged AI_STATUS:CONNECTED, AI_STATUS:ACTIVE, and AI_IN, then timed out without AI_REQ, AI_RES, or AI_ACK.",
+      "The qemu-validation job completed its build, QEMU boot, analysis, and artifact steps; Verify bidirectional AI bridge failed.",
+      "kernel/src/desktop.rs emits AI_STATUS:READY immediately before the loop that calls ai_transport_poll.",
+      "Commit bc01d2a0195899c5904022186cb5c1419e366722 on evolution/heartbeat-37389616540 waits for AI_STATUS:READY, but that branch has no Actions run or PR.",
+      "The prior heartbeat log records that PR creation was denied because no interactive user response was available."
+    ],
+    "result": "The readiness-order hypothesis is supported by source and QEMU serial evidence, but the proposed fix has no QEMU validation. No code/build/QEMU test was run in this cycle.",
+    "next_bounded_step": "Do not duplicate or extend the unverified fix. After an authorized PR path exists, run the existing evolution QEMU workflow and inspect AI_REQ/AI_RES/AI_ACK assertions."
+  },
   "last_experience": {
     "outcome": "failure",
     "conclusion": "QEMU validation did not satisfy all required startup markers; retain the failure as bounded experience.",
