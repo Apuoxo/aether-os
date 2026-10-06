@@ -514,7 +514,8 @@ static mut TERM_CLIPBOARD_LEN: usize = 0;
 static mut TERM_MENU: bool = false;
 static mut TERM_MENU_X: i32 = 0;
 static mut TERM_MENU_Y: i32 = 0;
-static mut INPUT: [u8; 64] = [0; 64];
+const INPUT_CAP: usize = 256;
+static mut INPUT: [u8; INPUT_CAP] = [0; INPUT_CAP];
 static mut INPUT_LEN: usize = 0;
 static mut INPUT_CURSOR: usize = 0;
 static mut TERM_HISTORY: [[u8; 64]; 16] = [[0; 64]; 16];
@@ -659,7 +660,7 @@ fn term_paste_clipboard() {
             return;
         }
         let mut i = 0usize;
-        while i < TERM_CLIPBOARD_LEN && INPUT_LEN < 63 {
+        while i < TERM_CLIPBOARD_LEN && INPUT_LEN + 1 < INPUT_CAP {
             let mut ch = TERM_CLIPBOARD[i];
             if ch == b'\n' || ch == b'\r' || ch == b'\t' { ch = b' '; }
             if ch < 32 || ch >= 127 {
@@ -930,7 +931,7 @@ fn term_history_save() {
             15
         };
         let mut i = 0usize;
-        while i < 64 {
+        while i < INPUT_CAP {
             TERM_HISTORY[slot][i] = 0;
             i += 1;
         }
