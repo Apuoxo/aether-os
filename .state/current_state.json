@@ -28,10 +28,10 @@
     "qemu_gdb_banner_check": "case_insensitive",
     "latest_ci_verification": "pending_tool_visibility",
     "hardware_evidence": "must remain distinct from QEMU/CI evidence",
-    "latest_evolution_run": "37528677446",
-    "latest_evolution_commit": "e328e4b700e620e5d791ef5d41c776e79e510c65",
+    "latest_evolution_run": "37529380427",
+    "latest_evolution_commit": "1ae919b2a42ccd7ab8b56cf0d7728387f51e9501",
     "latest_evolution_outcome": "failure",
-    "latest_evolution_qemu_exit": 124,
+    "latest_evolution_qemu_exit": 255,
     "latest_evolution_evidence": "serial-log-analyzed"
   },
   "operating_rules": [
@@ -46,10 +46,7 @@
     "outcome": "failure",
     "conclusion": "QEMU validation did not satisfy all required startup markers; retain the failure as bounded experience.",
     "observations": [
-      "Native desktop start marker observed.",
-      "No Ring3 execution evidence observed; QEMU validation remains pre-Ring3.",
-      "QEMU has no Intel Gen6 display controller; this is virtual-hardware evidence, not AH532 evidence.",
-      "Framebuffer test pattern reached the render stage."
+      "No Ring3 execution evidence observed; QEMU validation remains pre-Ring3."
     ]
   },
   "communication": {
@@ -87,21 +84,21 @@
         "correlation_id"
       ]
     },
-    "sequence": 137,
+    "sequence": 138,
     "last_event": {
-      "event_id": "comm-000137",
+      "event_id": "comm-000138",
       "type": "observation",
       "actor": "agent-aether",
       "channel": "qemu_serial",
-      "observed_at": "2026-10-06T20:48:32.374546Z",
+      "observed_at": "2026-10-06T20:50:39.103440Z",
       "payload": {
-        "observed_at": "2026-10-06T20:48:32.374546Z",
-        "run_id": "37528677446",
-        "commit": "e328e4b700e620e5d791ef5d41c776e79e510c65",
+        "observed_at": "2026-10-06T20:50:39.103440Z",
+        "run_id": "37529380427",
+        "commit": "1ae919b2a42ccd7ab8b56cf0d7728387f51e9501",
         "outcome": "failure",
-        "qemu_exit": 124
+        "qemu_exit": 255
       },
-      "correlation_id": "qemu-37528677446"
+      "correlation_id": "qemu-37529380427"
     },
     "integrations": {
       "clock_tick": "records wake events and advances communication.last_event",
