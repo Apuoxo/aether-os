@@ -1000,6 +1000,45 @@ fn term_history_next() {
     }
 }
 
+fn term_history_reverse_search() {
+    unsafe {
+        if TERM_HISTORY_COUNT == 0 { return; }
+        let query_len = INPUT_LEN;
+        let mut pos = if TERM_HISTORY_POS > TERM_HISTORY_COUNT {
+            TERM_HISTORY_COUNT
+        } else if TERM_HISTORY_POS == 0 {
+            TERM_HISTORY_COUNT
+        } else {
+            TERM_HISTORY_POS
+        };
+        while pos > 0 {
+            pos -= 1;
+            let len = TERM_HISTORY_LEN[pos];
+            if query_len > len { continue; }
+            let mut i = 0usize;
+            let mut found = true;
+            while i < query_len {
+                let a = INPUT[i].to_ascii_lowercase();
+                let b = TERM_HISTORY[pos][i].to_ascii_lowercase();
+                if a != b { found = false; break; }
+                i += 1;
+            }
+            if found {
+                INPUT_LEN = len;
+                INPUT_CURSOR = len;
+                let mut j = 0usize;
+                while j < len { INPUT[j] = TERM_HISTORY[pos][j]; j += 1; }
+                while j < 64 { INPUT[j] = 0; j += 1; }
+                TERM_HISTORY_POS = pos;
+                TERM_PAGE_MODE = false;
+                TERM_VIEW = 0;
+                DIRTY_WINDOW = FOCUS as i16;
+                return;
+            }
+        }
+    }
+}
+
 pub fn term_search_set(query:&[u8],len:usize){
     unsafe{
         TERM_SEARCH_LEN=len.min(TERM_SEARCH.len());let mut i=0;while i<TERM_SEARCH_LEN{TERM_SEARCH[i]=query[i];i+=1;}
@@ -4127,7 +4166,60 @@ fn handle_key(ch: u8) {
         if WINS[FOCUS].kind != WinKind::Terminal {
             return;
         }
-        if ch == b'\n' {
+        if ch == 0x01 { // Ctrl-A
+            INPUT_CURSOR = 0;
+            DIRTY_WINDOW = FOCUS as i16;
+        } else if ch == 0x05 { // Ctrl-E
+            INPUT_CURSOR = INPUT_LEN;
+            DIRTY_WINDOW = FOCUS as i16;
+        } else if ch == 0x0B { // Ctrl-K
+            while INPUT_LEN > INPUT_CURSOR {
+                INPUT_LEN -= 1;
+                INPUT[INPUT_LEN] = 0;
+            }
+            DIRTY_WINDOW = FOCUS as i16;
+        } else if ch == 0x15 { // Ctrl-U
+            let remove = INPUT_CURSOR;
+            if remove > 0 {
+                let mut i = remove;
+                while i < INPUT_LEN { INPUT[i - remove] = INPUT[i]; i += 1; }
+                INPUT_LEN -= remove;
+                INPUT_CURSOR = 0;
+                while i < 64 { INPUT[i] = 0; i += 1; }
+            }
+            DIRTY_WINDOW = FOCUS as i16;
+        } else if ch == 0x17 { // Ctrl-W
+            let mut end = INPUT_CURSOR;
+            while end > 0 && INPUT[end - 1] == b' ' { end -= 1; }
+            while end > 0 && INPUT[end - 1] != b' ' { end -= 1; }
+            let remove = INPUT_CURSOR - end;
+            if remove > 0 {
+                let mut i = INPUT_CURSOR;
+                while i < INPUT_LEN { INPUT[i - remove] = INPUT[i]; i += 1; }
+                INPUT_LEN -= remove;
+                INPUT_CURSOR = end;
+                while i < 64 { INPUT[i] = 0; i += 1; }
+            }
+            DIRTY_WINDOW = FOCUS as i16;
+        } else if ch == 0x12 { // Ctrl-R
+            term_history_reverse_search();
+        } else if ch == 0x03 { // Ctrl-C
+            if INPUT_LEN > 0 {
+                terminal_write("^C\n");
+                INPUT_LEN = 0;
+                INPUT_CURSOR = 0;
+                TERM_PAGE_MODE = false;
+                TERM_VIEW = 0;
+                DIRTY_FULL = true;
+            }
+        } else if ch == 0x0C { // Ctrl-L
+            term_clear();
+            INPUT_LEN = 0;
+            INPUT_CURSOR = 0;
+            TERM_PAGE_MODE = false;
+            TERM_VIEW = 0;
+            DIRTY_FULL = true;
+        } else if ch == b'\n' {
             // Echo the exact byte buffer before dispatch so GUI command routing
             // is directly observable during hardware diagnostics.
             TERM_PAGE_MODE = false;
