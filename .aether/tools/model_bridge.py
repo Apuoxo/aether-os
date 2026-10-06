@@ -102,7 +102,10 @@ def main() -> int:
                     deadline = time.monotonic() + 60.0
                 if line.startswith("AI_ACK:"):
                     log("AI_BRIDGE: response acknowledged")
-                    if args.inject:
+                    # The guest may emit an internal RUNTIME acknowledgement
+                    # before answering the externally injected U request.
+                    # Only the U-channel acknowledgement completes this run.
+                    if args.inject and line.startswith("AI_ACK:REQ=U"):
                         return 0
                 if line.startswith("AI_REQ:"):
                     request = line[7:].strip()
