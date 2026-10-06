@@ -142,11 +142,13 @@ pub fn init_ai() -> bool {
         outb(AI_PORT + 1, 0x00);
         outb(AI_PORT + 3, 0x03);
         outb(AI_PORT + 2, 0xC7);
-        outb(AI_PORT + 4, 0x1B);
-        outb(AI_PORT + 0, 0xAE);
-        let probe = inb(AI_PORT + 0);
-        AI_ENABLED = probe == 0xAE;
         outb(AI_PORT + 4, 0x0B);
+        // Use the UART scratch register for presence detection. Reading RBR
+        // after a THR write is not a portable loopback probe unless loopback
+        // mode is implemented by the emulated/physical UART.
+        outb(AI_PORT + 7, 0xAE);
+        let probe = inb(AI_PORT + 7);
+        AI_ENABLED = probe == 0xAE;
         AI_ENABLED
     }
 }
