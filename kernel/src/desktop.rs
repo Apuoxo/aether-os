@@ -305,12 +305,12 @@ fn ai_terminal_request(bytes: &[u8]) {
         AI_REQUEST_SEQ = AI_REQUEST_SEQ.wrapping_add(1);
         id
     };
-    serial::write_str("AI_REQ:REQ=U");
-    serial::write_usize(request_id as usize);
-    serial::write_str(" ");
+    serial::ai_write_str("AI_REQ:REQ=U");
+    serial::ai_write_usize(request_id as usize);
+    serial::ai_write_str(" ");
     i = 0;
-    while i < n { serial::write_byte(req[i]); i += 1; }
-    serial::write_str("\n");
+    while i < n { serial::ai_write_byte(req[i]); i += 1; }
+    serial::ai_write_str("\n");
     terminal_write("VIRT: observing kernel state (read-only)...\n");
     unsafe {
         AI_WAITING = true;
@@ -345,24 +345,25 @@ fn ai_transport_request(bytes: &[u8]) {
         AI_REQUEST_SEQ = AI_REQUEST_SEQ.wrapping_add(1);
         id
     };
-    serial::write_str("AI_REQ:REQ=U");
-    serial::write_usize(request_id as usize);
-    serial::write_str(" ");
+    serial::ai_write_str("AI_REQ:REQ=U");
+    serial::ai_write_usize(request_id as usize);
+    serial::ai_write_str(" ");
     let mut j = 0usize;
     while j < n {
         let b = bytes[j];
         if b >= 32 && b < 127 && b != b'\r' && b != b'\n' {
-            serial::write_byte(b);
+            serial::ai_write_byte(b);
         } else {
-            serial::write_byte(b' ');
+            serial::ai_write_byte(b' ');
         }
         j += 1;
     }
-    serial::write_str("\n");
+    serial::ai_write_str("\n");
     unsafe { AI_WAITING = true; }
 }
 
 fn ai_init() {
+    serial::init_ai();
     unsafe { if AI_READY { return; } AI_READY = true; }
     ai_push("AETHER AI: text interface online.");
     ai_push("BRIDGE: transport endpoint ready; waiting for external model.");
@@ -383,7 +384,7 @@ fn ai_submit() {
 fn ai_transport_poll() {
     let mut count = 0usize;
     while count < 64 {
-        let b = match serial::read_byte() {
+        let b = match serial::ai_read_byte() {
             Some(v) => v,
             None => break,
         };
@@ -415,20 +416,20 @@ fn ai_transport_poll() {
                     if response_kind == 1 {
                         let waiting = crate::virt_runtime::reasoning_waiting();
                         let expected = crate::virt_runtime::reasoning_request_id();
-                        serial::write_str("AI_RX:REQ=R");
-                        serial::write_usize(response_id as usize);
-                        serial::write_str(if waiting && response_id == expected { " ROUTE=ACCEPT\n" } else { " ROUTE=REJECT\n" });
+                        serial::ai_write_str("AI_RX:REQ=R");
+                        serial::ai_write_usize(response_id as usize);
+                        serial::ai_write_str(if waiting && response_id == expected { " ROUTE=ACCEPT\n" } else { " ROUTE=REJECT\n" });
                     }
                     if response_kind == 1
                         && crate::virt_runtime::reasoning_waiting()
                         && response_id == crate::virt_runtime::reasoning_request_id()
                     {
                         crate::virt_runtime::receive_reasoning_response(response_id, body);
-                        serial::write_str("AI_ACK:REQ=R");
-                        serial::write_usize(response_id as usize);
-                        serial::write_str(" CLASS=");
-                        serial::write_usize(crate::virt_runtime::last_reasoning_classification() as usize);
-                        serial::write_str("\n");
+                        serial::ai_write_str("AI_ACK:REQ=R");
+                        serial::ai_write_usize(response_id as usize);
+                        serial::ai_write_str(" CLASS=");
+                        serial::ai_write_usize(crate::virt_runtime::last_reasoning_classification() as usize);
+                        serial::ai_write_str("\n");
                         ai_push_bytes(body);
                     } else if response_kind == 2 && AI_TERMINAL_TARGET {
                         terminal_write("VIRT: ");
@@ -438,9 +439,9 @@ fn ai_transport_poll() {
                             terminal_write("invalid UTF-8 response");
                         }
                         terminal_write("\n");
-                        serial::write_str("AI_ACK:REQ=U");
-                        serial::write_usize(response_id as usize);
-                        serial::write_str("\n");
+                        serial::ai_write_str("AI_ACK:REQ=U");
+                        serial::ai_write_usize(response_id as usize);
+                        serial::ai_write_str("\n");
                         AI_TERMINAL_TARGET = false;
                     } else {
                         ai_push_bytes(body);
@@ -453,7 +454,7 @@ fn ai_transport_poll() {
                     // ACTIVE is the transport handshake. Repeat READY here so
                     // a bridge that connects after desktop startup cannot miss
                     // the one-time boot READY marker.
-                    serial::write_str("AI_STATUS:READY\n");
+                    serial::ai_write_str("AI_STATUS:READY\n");
                 } else if len >= 6 && &line[..6] == b"AI_IN:" {
                     let body = &line[6..len];
                     if !body.is_empty() { ai_transport_request(body); }
