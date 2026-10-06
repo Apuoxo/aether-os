@@ -438,6 +438,9 @@ fn ai_transport_poll() {
                             terminal_write("invalid UTF-8 response");
                         }
                         terminal_write("\n");
+                        serial::write_str("AI_ACK:REQ=U");
+                        serial::write_usize(response_id as usize);
+                        serial::write_str("\n");
                         AI_TERMINAL_TARGET = false;
                     } else {
                         ai_push_bytes(body);
