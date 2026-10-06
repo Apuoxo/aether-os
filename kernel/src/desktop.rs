@@ -726,6 +726,10 @@ fn term_clear() {
         TERM_SEARCH_HIT_COUNT = 0;
         TERM_SEARCH_ACTIVE = false;
         TERM_VIEW = 0;
+        TERM_PAGE_MODE = false;
+        TERM_SELECTING = false;
+        TERM_MENU = false;
+        TERM_CLIPBOARD_LEN = 0;
         TERM_ANSI_STATE = 0;
         TERM_ANSI_PARAM_COUNT = 0;
         TERM_ANSI_PARAMS = [0; 8];
