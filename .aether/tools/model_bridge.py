@@ -108,7 +108,7 @@ def main() -> int:
             while b"\n" in buf:
                 raw, buf = buf.split(b"\n", 1)
                 line = raw.decode("utf-8", "replace").rstrip("\r")
-                if line:
+                if line and (line.startswith("AI_") or line.startswith("[SERIAL]")):
                     log(line)
                 if line == "AI_STATUS:READY" and payload is not None and not request_seen:
                     sock.sendall(("AI_IN:" + payload + "\n").encode("utf-8", "replace"))
