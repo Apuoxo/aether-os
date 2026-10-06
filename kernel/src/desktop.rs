@@ -1141,12 +1141,118 @@ fn term_ansi_apply(final_byte: u8) {
                 }
             }
             b'K' => {
-                // K/0K are intentionally no-op at the terminal's line-end
-                // cursor position; explicit 1K/2K are the erase-line forms.
-                if p0 == 1 || p0 == 2 {
-                    TERM_LEN[TERM_ROW] = 0;
-                    TERM_COL = 0;
+                match p0 {
+                    0 => {
+                        let mut c = TERM_COL;
+                        while c < TERM_LEN[TERM_ROW] {
+                            TERM_LINES[TERM_ROW][c] = 0;
+                            TERM_COLOR[TERM_ROW][c] = 7;
+                            c += 1;
+                        }
+                        TERM_LEN[TERM_ROW] = TERM_COL.min(TERM_COLS);
+                    }
+                    1 => {
+                        let end = TERM_COL.min(TERM_COLS);
+                        let mut c = 0;
+                        while c < end {
+                            TERM_LINES[TERM_ROW][c] = 0;
+                            TERM_COLOR[TERM_ROW][c] = 7;
+                            c += 1;
+                        }
+                        if TERM_LEN[TERM_ROW] < end { TERM_LEN[TERM_ROW] = end; }
+                    }
+                    2 => {
+                        let mut c = 0;
+                        while c < TERM_COLS {
+                            TERM_LINES[TERM_ROW][c] = 0;
+                            TERM_COLOR[TERM_ROW][c] = 7;
+                            c += 1;
+                        }
+                        TERM_LEN[TERM_ROW] = 0;
+                        TERM_COL = 0;
+                    }
+                    _ => {}
                 }
+            }
+            b'L' => {
+                let count = p0.max(1) as usize;
+                let max = TERM_ROWS - TERM_ROW;
+                let count = count.min(max);
+                let mut r = TERM_ROWS;
+                while r > TERM_ROW + count {
+                    r -= 1;
+                    let src = r - count;
+                    TERM_LEN[r] = TERM_LEN[src];
+                    let mut c = 0; while c < TERM_COLS {
+                        TERM_LINES[r][c] = TERM_LINES[src][c];
+                        TERM_COLOR[r][c] = TERM_COLOR[src][c];
+                        c += 1;
+                    }
+                }
+                let mut r = TERM_ROW;
+                while r < TERM_ROW + count {
+                    TERM_LEN[r] = 0;
+                    let mut c = 0; while c < TERM_COLS {
+                        TERM_LINES[r][c] = 0; TERM_COLOR[r][c] = 7; c += 1;
+                    }
+                    r += 1;
+                }
+            }
+            b'M' => {
+                let count = p0.max(1) as usize;
+                let max = TERM_ROWS - TERM_ROW;
+                let count = count.min(max);
+                let mut r = TERM_ROW;
+                while r + count < TERM_ROWS {
+                    TERM_LEN[r] = TERM_LEN[r + count];
+                    let mut c = 0; while c < TERM_COLS {
+                        TERM_LINES[r][c] = TERM_LINES[r + count][c];
+                        TERM_COLOR[r][c] = TERM_COLOR[r + count][c];
+                        c += 1;
+                    }
+                    r += 1;
+                }
+                while r < TERM_ROWS {
+                    TERM_LEN[r] = 0;
+                    let mut c = 0; while c < TERM_COLS {
+                        TERM_LINES[r][c] = 0; TERM_COLOR[r][c] = 7; c += 1;
+                    }
+                    r += 1;
+                }
+            }
+            b'P' => {
+                let count = p0.max(1) as usize;
+                let count = count.min(TERM_COLS.saturating_sub(TERM_COL));
+                let row = TERM_ROW;
+                let mut c = TERM_COLS;
+                while c > TERM_COL + count {
+                    c -= 1;
+                    let src = c - count;
+                    TERM_LINES[row][c] = TERM_LINES[row][src];
+                    TERM_COLOR[row][c] = TERM_COLOR[row][src];
+                }
+                let mut c = TERM_COL;
+                while c < TERM_COL + count && c < TERM_COLS {
+                    TERM_LINES[row][c] = 0; TERM_COLOR[row][c] = 7; c += 1;
+                }
+                TERM_LEN[row] = TERM_LEN[row].saturating_sub(count);
+            }
+            b'@' => {
+                let count = p0.max(1) as usize;
+                let count = count.min(TERM_COLS.saturating_sub(TERM_COL));
+                let row = TERM_ROW;
+                let mut c = TERM_COLS;
+                while c > TERM_COL + count {
+                    c -= 1;
+                    let src = c - count;
+                    TERM_LINES[row][c] = TERM_LINES[row][src];
+                    TERM_COLOR[row][c] = TERM_COLOR[row][src];
+                }
+                let mut c = TERM_COL;
+                while c < TERM_COL + count && c < TERM_COLS {
+                    TERM_LINES[row][c] = 0; TERM_COLOR[row][c] = 7; c += 1;
+                }
+                TERM_LEN[row] = TERM_LEN[row].max((TERM_COL + count).min(TERM_COLS));
             }
             _ => {}
         }
