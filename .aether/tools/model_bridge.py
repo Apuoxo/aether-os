@@ -80,13 +80,24 @@ def main() -> int:
     log("AI_STATUS:ACTIVE")
     payload = args.inject.replace("\r", " ").replace("\n", " ")[:90] if args.inject else None
     deadline = None
+    handshake_deadline = time.monotonic() + 30.0
+    last_active = time.monotonic()
     try:
         while True:
             try:
                 chunk = sock.recv(1024)
             except socket.timeout:
-                if deadline is not None and time.monotonic() >= deadline:
+                now = time.monotonic()
+                if deadline is not None and now >= deadline:
                     raise TimeoutError("model bridge response timeout")
+                # ACTIVE is idempotent; repeat it while waiting for READY so
+                # a guest that has not reached its desktop loop yet cannot
+                # lose the one-shot handshake.
+                if now < handshake_deadline and now - last_active >= 1.0:
+                    sock.sendall(b"AI_STATUS:ACTIVE\\n")
+                    last_active = now
+                if now >= handshake_deadline and payload is not None and deadline is None:
+                    raise TimeoutError("guest AI bridge READY timeout")
                 continue
             if not chunk:
                 return 0
