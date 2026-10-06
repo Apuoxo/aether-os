@@ -444,19 +444,28 @@ pub extern "C" fn kernel_main(mbi: usize) -> ! {
     fb::try_init(mbi);
     if graphics::ready() && fb::is_ready() {
         serial::write_str("[DESKTOP] starting (no Ring3)\n");
+        serial::write_str("[BOOT/STAGE] video\n");
         drivers::video::init();
+        serial::write_str("[BOOT/STAGE] ram-screen\n");
         draw_boot_ram_screen(detected_ram_mib, managed_ram_mib, mm::total_count() as u64 / 256, mm::free_count() as u64 / 256, detected_ram_mib > managed_ram_mib);
+        serial::write_str("[BOOT/STAGE] terminal\n");
         desktop::terminal_write("RAM DETECTED: ");
         desktop::terminal_write_usize(detected_ram_mib as usize);
         desktop::terminal_write(" MiB\\nPMM MANAGED: ");
         desktop::terminal_write_usize(managed_ram_mib as usize);
         desktop::terminal_write(" MiB\\nPMM LIMIT: ");
         desktop::terminal_write(if detected_ram_mib > managed_ram_mib { "YES\\n" } else { "NO\\n" });
+        serial::write_str("[BOOT/STAGE] audio\n");
         drivers::audio::init();
+        serial::write_str("[BOOT/STAGE] media\n");
         media_player::init();
+        serial::write_str("[BOOT/STAGE] wifi\n");
         drivers::wifi::init();
+        serial::write_str("[BOOT/STAGE] usb-diag\n");
         drivers::pci_usb_diag::dump_usb_controllers();
+        serial::write_str("[BOOT/STAGE] xhci\n");
         drivers::xhci::probe();
+        serial::write_str("[BOOT/STAGE] desktop\n");
         desktop::run();
     }
 
