@@ -1958,11 +1958,20 @@ fn cmd_net() {
     write_str("=========================================\n");
 }
 
+fn cmd_status() {
+    write_str("Aether terminal status\n");
+    write_str("BACKEND=GUI+VGA+SERIAL\n");
+    write_str("EDITOR=INSERTION HOME END DELETE CTRL-A/E/K/U/W/R/C/L\n");
+    write_str("HISTORY=16 COMMANDS + PREFIX REVERSE SEARCH\n");
+    write_str("SCROLLBACK=RING 512 ROWS\n");
+    write_str("ANSI=CSI SGR/CURSOR/ERASE/INSERT/DELETE\n");
+    write_str("IO=BOUNDED NON-BLOCKING GUI DISPATCH\n");
+}
 fn cmd_help() {
     write_str("Aether Terminal - native command interface\n");
-    write_str("Core: HELP  CLS  VER  LOG  TANSI  SEARCH <text>\n");
+    write_str("Core: HELP  CLS  VER  STATUS  LOG  TANSI  SEARCH <text>\n");
     write_str("Hardware: KMS5  VINFO  V800  V1366  AUD  AUD2  AUD3  MOUS  USB  WF  ETHDIAG  ETHCHIP  ETHLINK  ETHDMA  NET\n");
-    write_str("Tip: Up/Down recalls command history; arrow keys scroll long output.\n");
+    write_str("Tip: Up/Down recalls history; Ctrl-R searches history; Ctrl-L clears; PgUp/PgDn scroll output.\n");
 }
 
 fn cmd_ver() {
@@ -2000,6 +2009,8 @@ fn run_line(line: &[u8], len: usize) {
         crate::desktop::terminal_clear();
     } else if eq(line, s, clen, b"VER") || eq(line, s, clen, b"ver") {
         cmd_ver();
+    } else if eq(line, s, clen, b"STATUS") || eq(line, s, clen, b"status") {
+        cmd_status();
     } else if eq(line, s, clen, b"LOG") || eq(line, s, clen, b"log") {
         cmd_log();
     } else if eq(line, s, clen, b"TANSI") || eq(line, s, clen, b"tansi") {
