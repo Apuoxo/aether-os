@@ -14,8 +14,11 @@ mod ports {
 }
 
 static mut ENABLED: bool = false;
-const AI_PORT: u16 = 0x2F8;
+const AI_PORT_COM2: u16 = 0x2F8;
+const AI_PORT_COM1: u16 = 0x3F8;
+static mut AI_PORT: u16 = AI_PORT_COM2;
 static mut AI_ENABLED: bool = false;
+fn ai_port() -> u16 { unsafe { AI_PORT } }
 const TRACE_CAP: usize = 8192;
 static mut TRACE: [u8; TRACE_CAP] = [0; TRACE_CAP];
 static mut TRACE_HEAD: usize = 0;
@@ -93,7 +96,7 @@ pub fn ai_write_byte(b: u8) {
     unsafe {
         if !AI_ENABLED { return; }
         let mut t = 0u32;
-        while (ports::inb(AI_PORT + 5) & 0x20) == 0 {
+        while (ports::inb(ai_port() + 5) & 0x20) == 0 {
             t += 1;
             if t > 100_000 { AI_ENABLED = false; return; }
         }
@@ -128,7 +131,7 @@ pub fn ai_write_usize(n: usize) {
 pub fn ai_read_byte() -> Option<u8> {
     unsafe {
         if !AI_ENABLED { return None; }
-        if (ports::inb(AI_PORT + 5) & 0x01) == 0 { return None; }
+        if (ports::inb(ai_port() + 5) & 0x01) == 0 { return None; }
         Some(ports::inb(AI_PORT))
     }
 }
@@ -136,18 +139,26 @@ pub fn ai_read_byte() -> Option<u8> {
 pub fn init_ai() -> bool {
     unsafe {
         use ports::*;
-        outb(AI_PORT + 1, 0x00);
-        outb(AI_PORT + 3, 0x80);
-        outb(AI_PORT + 0, 0x03);
-        outb(AI_PORT + 1, 0x00);
-        outb(AI_PORT + 3, 0x03);
-        outb(AI_PORT + 2, 0xC7);
-        outb(AI_PORT + 4, 0x0B);
-        // Use the UART scratch register for presence detection. Reading RBR
-        // after a THR write is not a portable loopback probe unless loopback
-        // mode is implemented by the emulated/physical UART.
-        outb(AI_PORT + 7, 0xAE);
-        let probe = inb(AI_PORT + 7);
+
+        // Prefer the dedicated COM2 endpoint. Some firmware/emulators do not
+        // expose a writable scratch register there, so retain a COM1 fallback
+        // for environments with only the legacy UART. The fallback is used
+        // only when COM2 fails the non-destructive UART probe.
+        AI_PORT = AI_PORT_COM2;
+        outb(ai_port() + 1, 0x00);
+        outb(ai_port() + 3, 0x80);
+        outb(ai_port() + 0, 0x03);
+        outb(ai_port() + 1, 0x00);
+        outb(ai_port() + 3, 0x03);
+        outb(ai_port() + 2, 0xC7);
+        outb(ai_port() + 4, 0x0B);
+        outb(ai_port() + 7, 0xAE);
+        let mut probe = inb(ai_port() + 7);
+        if probe != 0xAE {
+            AI_PORT = AI_PORT_COM1;
+            outb(ai_port() + 7, 0xAE);
+            probe = inb(ai_port() + 7);
+        }
         AI_ENABLED = probe == 0xAE;
         AI_ENABLED
     }
