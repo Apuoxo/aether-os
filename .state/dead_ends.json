@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "dead_ends": [
+    {
+      "fingerprint": "qemu-startup-markers-missing-timeout-124",
+      "status": "sleeping",
+      "attempt_count": 4,
+      "runs": [
+        "37535017660",
+        "37535519493",
+        "37538232965",
+        "37538779615"
+      ],
+      "evidence_summary": "All four consecutive QEMU analysis reports show qemu_exit=124, panic_absent=true, build_banner=false, desktop_marker=false, desktop_start=false, and ring3_evidence=false. In the latest run (37538779615), Actions logs show the model bridge connected and activated but contain no AI_IN, AI_REQ, AI_RES, or AI_ACK records; bidirectional AI bridge verification failed.",
+      "latest_commit": "d4684e7272ec5c2f6c9537207cb2296bddc99e29",
+      "latest_run": "37538779615",
+      "reason_not_to_retry": "The fingerprint has failed at least three times, and current evidence does not isolate a root cause. Another unchanged QEMU retry would be speculative and would not add diagnostic value.",
+      "next_step": "Sleep until the next scheduled heartbeat; retry only after new diagnostics make the failure cause testable."
+    }
+  ]
+}

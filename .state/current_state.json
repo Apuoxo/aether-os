@@ -1,6 +1,8 @@
 {
   "schema": 1,
-  "status": "active",
+  "status": "sleeping",
+  "sleep_until": "next_scheduled_heartbeat",
+  "sleep_reason": "The same QEMU startup-marker failure fingerprint has failed four consecutive validations; further retries without new diagnostics are prohibited.",
   "updated": "2026-10-06",
   "baseline_commit": "6803178c4603445bc126fdf99d01688bc65ca90e",
   "purpose": "Bounded, evidence-first engineering state for Aether agent work.",
@@ -26,7 +28,7 @@
   "verification": {
     "last_known_qemu_gdb_fix_commit": "6803178c4603445bc126fdf99d01688bc65ca90e",
     "qemu_gdb_banner_check": "case_insensitive",
-    "latest_ci_verification": "pending_tool_visibility",
+    "latest_ci_verification": "Aether evolution run 37538779615 failed at bidirectional AI bridge verification; the QEMU analysis reported missing startup markers.",
     "hardware_evidence": "must remain distinct from QEMU/CI evidence",
     "latest_evolution_run": "37538779615",
     "latest_evolution_commit": "d4684e7272ec5c2f6c9537207cb2296bddc99e29",
@@ -41,13 +43,25 @@
     "stop when required evidence or human authorization is missing",
     "do not create unbounded self-propagating execution"
   ],
-  "next_step": "Inspect the failed marker or exit condition before making another code change.",
+  "next_step": "Resume at the next scheduled heartbeat. Do not retry this QEMU startup-marker fingerprint until new diagnostic evidence identifies its cause.",
   "last_experience": {
     "outcome": "failure",
-    "conclusion": "QEMU validation did not satisfy all required startup markers; retain the failure as bounded experience.",
+    "conclusion": "QEMU validation repeated the same startup-marker failure on four consecutive runs; no root cause is established, so the heartbeat is sleeping rather than making a speculative code change.",
     "observations": [
-      "No Ring3 execution evidence observed; QEMU validation remains pre-Ring3."
+      "Run 37538779615 on d4684e7272ec5c2f6c9537207cb2296bddc99e29 exited QEMU with accepted timeout 124 and no PANIC.",
+      "The analyzer reported build_banner, desktop_marker, and desktop_start as false; no Ring3 execution evidence was observed.",
+      "Actions logs showed the AI bridge connected and activated but no guest AI_IN, AI_REQ, AI_RES, or AI_ACK records; the bidirectional bridge verification then failed.",
+      "The same startup-marker checks failed on runs 37535017660, 37535519493, 37538232965, and 37538779615. Available evidence does not establish the underlying cause."
     ]
+  },
+  "heartbeat_decision": {
+    "run_id": "37539111850",
+    "decision": "bounded_dead_end",
+    "hypothesis": "The repeated QEMU timeout with missing startup markers represents one stable failure fingerprint, but the available CI logs do not identify its root cause.",
+    "action": "Record the four matching failures in .state/dead_ends.json and make no kernel or workflow change.",
+    "evidence": "Four consecutive evolution reports have qemu_exit=124, panic_absent=true, build_banner=false, desktop_marker=false, desktop_start=false, and ring3_evidence=false. Latest run 37538779615 also failed bidirectional AI bridge verification.",
+    "result": "No speculative retry or code change; bounded sleep entered.",
+    "next_bounded_step": "Wake at the next scheduled heartbeat and continue only if new diagnostic evidence distinguishes a cause."
   },
   "communication": {
     "schema": 1,
