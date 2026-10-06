@@ -450,6 +450,10 @@ fn ai_transport_poll() {
                 } else if len >= 16 && &line[..16] == b"AI_STATUS:ACTIVE" {
                     AI_BRIDGE_ACTIVE = true;
                     ai_push("BRIDGE: external model active.");
+                    // ACTIVE is the transport handshake. Repeat READY here so
+                    // a bridge that connects after desktop startup cannot miss
+                    // the one-time boot READY marker.
+                    serial::write_str("AI_STATUS:READY\n");
                 } else if len >= 6 && &line[..6] == b"AI_IN:" {
                     let body = &line[6..len];
                     if !body.is_empty() { ai_transport_request(body); }
