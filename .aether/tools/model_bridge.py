@@ -69,20 +69,17 @@ def main() -> int:
     ap.add_argument("--model", default="auto")
     args = ap.parse_args()
 
-    # The guest currently has no AI_STATUS:READY handshake marker. The TCP
-    # connection itself is the transport boundary; activate it immediately
-    # after connection so injected input can reach the guest AI endpoint.
+    # Wait for the guest's explicit READY marker before injecting input.
+    # The TCP socket can be connected long before the kernel reaches its
+    # desktop/AI loop; sending AI_IN immediately can otherwise be lost before
+    # the guest UART is initialized.
     sock = connect(args.host, args.port)
     buf = b""
     log("AI_STATUS:CONNECTED")
     sock.sendall(b"AI_STATUS:ACTIVE\n")
     log("AI_STATUS:ACTIVE")
-    if args.inject:
-        payload = args.inject.replace("\r", " ").replace("\n", " ")[:90]
-        sock.sendall(("AI_IN:" + payload + "\n").encode("utf-8", "replace"))
-        log("AI_IN:" + payload)
-
-    deadline = time.monotonic() + 60.0 if args.inject else None
+    payload = args.inject.replace("\r", " ").replace("\n", " ")[:90] if args.inject else None
+    deadline = None
     try:
         while True:
             try:
@@ -99,6 +96,10 @@ def main() -> int:
                 line = raw.decode("utf-8", "replace").rstrip("\r")
                 if line:
                     log(line)
+                if line == "AI_STATUS:READY" and payload is not None:
+                    sock.sendall(("AI_IN:" + payload + "\n").encode("utf-8", "replace"))
+                    log("AI_IN:" + payload)
+                    deadline = time.monotonic() + 60.0
                 if line.startswith("AI_ACK:"):
                     log("AI_BRIDGE: response acknowledged")
                     if args.inject:
