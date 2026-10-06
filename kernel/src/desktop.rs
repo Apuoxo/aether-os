@@ -4292,6 +4292,7 @@ pub fn run() -> ! {
     terminal_write("AI: MODEL BRIDGE=PENDING (NO LOCAL MODEL CLAIM)\n");
     terminal_write("\x1b[32maether>\x1b[0m ");
     ai_init();
+    serial::write_str(if serial::ai_enabled() { "[AI] COM2=READY\\n" } else { "[AI] COM2=DISABLED\\n" });
     serial::write_str("AI_STATUS:READY\n");
     unsafe {
         DIRTY_FULL = true;
