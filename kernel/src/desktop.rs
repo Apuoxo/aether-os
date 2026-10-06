@@ -457,7 +457,10 @@ fn ai_transport_poll() {
                     serial::ai_write_str("AI_STATUS:READY\n");
                 } else if len >= 6 && &line[..6] == b"AI_IN:" {
                     let body = &line[6..len];
-                    if !body.is_empty() { ai_transport_request(body); }
+                    if !body.is_empty() {
+                        AI_TERMINAL_TARGET = true;
+                        ai_transport_request(body);
+                    }
                 }
             } else if AI_RX_LEN < AI_RX.len() {
                 AI_RX[AI_RX_LEN] = b;
@@ -4302,15 +4305,7 @@ pub fn run() -> ! {
     }
     render();
 
-    let mut ai_handshake_ticks = 0u32;
     loop {
-        ai_handshake_ticks = ai_handshake_ticks.wrapping_add(1);
-        if ai_handshake_ticks >= 1000 {
-            ai_handshake_ticks = 0;
-            // Repeat READY periodically so a late TCP/serial bridge connection
-            // cannot miss the one-shot startup marker.
-            serial::write_str("AI_STATUS:READY\n");
-        }
         ai_transport_poll();
         crate::virt_runtime::tick();
         if crate::virt_runtime::system_state_health() == crate::virt_runtime::SYSTEM_HEALTH_FAILED {
