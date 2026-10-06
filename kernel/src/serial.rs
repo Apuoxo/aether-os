@@ -14,6 +14,8 @@ mod ports {
 }
 
 static mut ENABLED: bool = false;
+const AI_PORT: u16 = 0x2F8;
+static mut AI_ENABLED: bool = false;
 const TRACE_CAP: usize = 8192;
 static mut TRACE: [u8; TRACE_CAP] = [0; TRACE_CAP];
 static mut TRACE_HEAD: usize = 0;
@@ -85,6 +87,72 @@ pub fn init() {
 pub fn write_byte(b: u8) {
     unsafe { if !ENABLED { return; } trace_push(b); }
     tx_byte_raw(b);
+}
+
+pub fn ai_write_byte(b: u8) {
+    unsafe {
+        if !AI_ENABLED { return; }
+        let mut t = 0u32;
+        while (ports::inb(AI_PORT + 5) & 0x20) == 0 {
+            t += 1;
+            if t > 100_000 { AI_ENABLED = false; return; }
+        }
+        ports::outb(AI_PORT, b);
+    }
+}
+
+pub fn ai_write_str(s: &str) {
+    for &b in s.as_bytes() {
+        if b == b'\n' { ai_write_byte(b'\r'); }
+        ai_write_byte(b);
+    }
+}
+
+pub fn ai_write_usize(n: usize) {
+    if n == 0 { ai_write_byte(b'0'); return; }
+    let mut tmp = n;
+    let mut digits = 0usize;
+    while tmp > 0 { digits += 1; tmp /= 10; }
+    let mut div = 1usize;
+    let mut i = 1usize;
+    while i < digits { div *= 10; i += 1; }
+    let mut x = n;
+    while div > 0 {
+        let d = x / div;
+        ai_write_byte(b'0' + d as u8);
+        x %= div;
+        div /= 10;
+    }
+}
+
+pub fn ai_read_byte() -> Option<u8> {
+    unsafe {
+        if !AI_ENABLED { return None; }
+        if (ports::inb(AI_PORT + 5) & 0x01) == 0 { return None; }
+        Some(ports::inb(AI_PORT))
+    }
+}
+
+pub fn init_ai() -> bool {
+    unsafe {
+        use ports::*;
+        outb(AI_PORT + 1, 0x00);
+        outb(AI_PORT + 3, 0x80);
+        outb(AI_PORT + 0, 0x03);
+        outb(AI_PORT + 1, 0x00);
+        outb(AI_PORT + 3, 0x03);
+        outb(AI_PORT + 2, 0xC7);
+        outb(AI_PORT + 4, 0x1B);
+        outb(AI_PORT + 0, 0xAE);
+        let probe = inb(AI_PORT + 0);
+        AI_ENABLED = probe == 0xAE;
+        outb(AI_PORT + 4, 0x0B);
+        AI_ENABLED
+    }
+}
+
+pub fn ai_enabled() -> bool {
+    unsafe { AI_ENABLED }
 }
 
 pub fn read_byte() -> Option<u8> {
