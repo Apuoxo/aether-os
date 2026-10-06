@@ -71,7 +71,7 @@ jobs:
           truncate -s 32M /tmp/aether-state.img
           python3 .aether/tools/model_bridge.py --host 127.0.0.1 --port 45454 --inject "What is Aether OS and what is this text channel?" --model "auto" > /tmp/aether-model-bridge.log 2>&1 &
           BRIDGE_PID=$!
-          timeout 70s qemu-system-x86_64 -cdrom kernel/build/aether.iso -drive file=/tmp/aether-state.img,format=raw,if=ide -chardev socket,id=virtserial,host=127.0.0.1,port=45454,server=on,wait=off,nodelay=on -device isa-serial,chardev=virtserial,iobase=0x3f8,irq=4,index=0 -display none -m 128M -no-reboot
+          timeout 70s qemu-system-x86_64 -cdrom kernel/build/aether.iso -drive file=/tmp/aether-state.img,format=raw,if=ide -chardev socket,id=virtserial,host=127.0.0.1,port=45454,server=on,wait=off,nodelay=on -device isa-serial,chardev=virtserial,iobase=0x2f8,irq=3,index=1 -display none -m 128M -no-reboot
           rc=$?
           kill "$BRIDGE_PID" 2>/dev/null || true
           wait "$BRIDGE_PID" 2>/dev/null || true
@@ -86,7 +86,7 @@ jobs:
           grep -q '\[VIRT EXPERIENCE\] RESTORED /virt.exp' /tmp/aether-persistence-reboot.log
           AETHER_MODEL_COMMAND='python3 -c "print('\''ACTION: RUNTIME_MARK'\'')"' python3 .aether/tools/model_bridge.py --host 127.0.0.1 --port 45454 --model "auto" > /tmp/aether-action-bridge.log 2>&1 &
           ACTION_BRIDGE_PID=$!
-          timeout 20s qemu-system-x86_64 -cdrom kernel/build/aether.iso -drive file=/tmp/aether-state.img,format=raw,if=ide -chardev socket,id=virtserial2,host=127.0.0.1,port=45454,server=on,wait=off,nodelay=on -device isa-serial,chardev=virtserial2,iobase=0x3f8,irq=4,index=0 -display none -m 128M -no-reboot
+          timeout 20s qemu-system-x86_64 -cdrom kernel/build/aether.iso -drive file=/tmp/aether-state.img,format=raw,if=ide -chardev socket,id=virtserial2,host=127.0.0.1,port=45454,server=on,wait=off,nodelay=on -device isa-serial,chardev=virtserial2,iobase=0x2f8,irq=3,index=1 -display none -m 128M -no-reboot
           action_rc=$?
           kill "$ACTION_BRIDGE_PID" 2>/dev/null || true
           wait "$ACTION_BRIDGE_PID" 2>/dev/null || true
