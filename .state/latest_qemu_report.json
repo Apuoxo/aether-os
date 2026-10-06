@@ -1,20 +1,23 @@
 {
   "schema": 1,
-  "run_id": "37529380427",
-  "commit": "1ae919b2a42ccd7ab8b56cf0d7728387f51e9501",
-  "observed_at": "2026-10-06T20:50:39.103440Z",
+  "run_id": "37530499924",
+  "commit": "ea88a70a98f1fc004484eb5bc4b3512284c84afa",
+  "observed_at": "2026-10-06T21:01:49.652349Z",
   "outcome": "failure",
-  "qemu_exit": 255,
+  "qemu_exit": 124,
   "checks": {
-    "qemu_exit_accepted": false,
+    "qemu_exit_accepted": true,
     "panic_absent": true,
-    "build_banner": false,
+    "build_banner": true,
     "desktop_marker": false,
-    "desktop_start": false,
+    "desktop_start": true,
     "ring3_evidence": false
   },
   "observations": [
-    "No Ring3 execution evidence observed; QEMU validation remains pre-Ring3."
+    "Native desktop start marker observed.",
+    "No Ring3 execution evidence observed; QEMU validation remains pre-Ring3.",
+    "QEMU has no Intel Gen6 display controller; this is virtual-hardware evidence, not AH532 evidence.",
+    "Framebuffer test pattern reached the render stage."
   ],
   "conclusion": "QEMU validation did not satisfy all required startup markers; retain the failure as bounded experience.",
   "next_step": "Inspect the failed marker or exit condition before making another code change."
