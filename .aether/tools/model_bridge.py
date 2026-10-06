@@ -82,6 +82,7 @@ def main() -> int:
     deadline = None
     handshake_deadline = time.monotonic() + 30.0
     last_active = time.monotonic()
+    request_seen = False
     try:
         while True:
             try:
@@ -95,9 +96,11 @@ def main() -> int:
                 # lose the one-shot handshake.
                 if now < handshake_deadline and now - last_active >= 1.0:
                     sock.sendall(b"AI_STATUS:ACTIVE\\n")
+                    if payload is not None and not request_seen:
+                        sock.sendall(("AI_IN:" + payload + "\\n").encode("utf-8", "replace"))
                     last_active = now
-                if now >= handshake_deadline and payload is not None and deadline is None:
-                    raise TimeoutError("guest AI bridge READY timeout")
+                if now >= handshake_deadline and payload is not None and not request_seen:
+                    raise TimeoutError("guest AI bridge request timeout")
                 continue
             if not chunk:
                 return 0
@@ -107,7 +110,7 @@ def main() -> int:
                 line = raw.decode("utf-8", "replace").rstrip("\r")
                 if line:
                     log(line)
-                if line == "AI_STATUS:READY" and payload is not None:
+                if line == "AI_STATUS:READY" and payload is not None and not request_seen:
                     sock.sendall(("AI_IN:" + payload + "\n").encode("utf-8", "replace"))
                     log("AI_IN:" + payload)
                     deadline = time.monotonic() + 60.0
@@ -119,6 +122,9 @@ def main() -> int:
                     if args.inject and line.startswith("AI_ACK:REQ=U"):
                         return 0
                 if line.startswith("AI_REQ:"):
+                    if line.startswith("AI_REQ:REQ=U"):
+                        request_seen = True
+                        deadline = time.monotonic() + 60.0
                     request = line[7:].strip()
                     parts = request.split(" ", 1)
                     request_tag = parts[0] if parts and parts[0].startswith("REQ=") else ""
