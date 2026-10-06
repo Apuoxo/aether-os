@@ -34,10 +34,6 @@ fn bcd_to_bin(v: u8) -> u8 {
 
 /// (year_full, month, day, hour, min, sec)
 pub fn rtc_read() -> (u16, u8, u8, u8, u8, u8) {
-    // COM1 is polled here because this function is already called frequently
-    // by the desktop/runtime heartbeat. This keeps the AI bridge responsive
-    // without adding a UART IRQ dependency to the boot path.
-    crate::serial::poll_ai_bridge();
     unsafe {
         let mut t = 0u32;
         while t < 10000 {
