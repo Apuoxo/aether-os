@@ -95,9 +95,9 @@ def main() -> int:
                 # a guest that has not reached its desktop loop yet cannot
                 # lose the one-shot handshake.
                 if now < handshake_deadline and now - last_active >= 1.0:
-                    sock.sendall(b"AI_STATUS:ACTIVE\\n")
+                    sock.sendall(b"AI_STATUS:ACTIVE\n")
                     if payload is not None and not request_seen:
-                        sock.sendall(("AI_IN:" + payload + "\\n").encode("utf-8", "replace"))
+                        sock.sendall(("AI_IN:" + payload + "\n").encode("utf-8", "replace"))
                     last_active = now
                 if now >= handshake_deadline and payload is not None and not request_seen:
                     raise TimeoutError("guest AI bridge request timeout")
