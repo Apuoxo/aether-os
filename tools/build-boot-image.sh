@@ -149,14 +149,14 @@ cat > "$INITRAMFS_ROOT/init" <<'INIT'
 #!/bin/busybox sh
 set -eu
 
-mount -t proc proc /proc
-mount -t sysfs sysfs /sys
-mount -t devtmpfs devtmpfs /dev
-mkdir -p /run /iso /lower /rw /newroot
+/bin/busybox mount -t proc proc /proc
+/bin/busybox mount -t sysfs sysfs /sys
+/bin/busybox mount -t devtmpfs devtmpfs /dev
+/bin/busybox mkdir -p /run /iso /lower /rw /newroot
 
 for dev in /dev/sr0 /dev/vda /dev/vdb; do
     [ -b "$dev" ] || continue
-    mount -o ro "$dev" /iso 2>/dev/null && break || true
+    /bin/busybox mount -o ro "$dev" /iso 2>/dev/null && break || true
 done
 
 if [ ! -f /iso/rootfs.squashfs ]; then
@@ -164,15 +164,15 @@ if [ ! -f /iso/rootfs.squashfs ]; then
     exec /bin/busybox sh
 fi
 
-mount -t squashfs -o loop /iso/rootfs.squashfs /lower
-mount -t tmpfs tmpfs /rw
-mkdir -p /rw/upper /rw/work
-mount -t overlay overlay -o lowerdir=/lower,upperdir=/rw/upper,workdir=/rw/work /newroot
+/bin/busybox mount -t squashfs -o loop /iso/rootfs.squashfs /lower
+/bin/busybox mount -t tmpfs tmpfs /rw
+/bin/busybox mkdir -p /rw/upper /rw/work
+/bin/busybox mount -t overlay overlay -o lowerdir=/lower,upperdir=/rw/upper,workdir=/rw/work /newroot
 
-mount --move /dev /newroot/dev
-mount --move /proc /newroot/proc
-mount --move /sys /newroot/sys
-mount --move /run /newroot/run
+/bin/busybox mount --move /dev /newroot/dev
+/bin/busybox mount --move /proc /newroot/proc
+/bin/busybox mount --move /sys /newroot/sys
+/bin/busybox mount --move /run /newroot/run
 exec /bin/busybox switch_root /newroot /sbin/init
 INIT
 chmod 0755 "$INITRAMFS_ROOT/init"
