@@ -11,6 +11,7 @@ ln -s busybox "$ROOT/bin/uname"
 ln -s busybox "$ROOT/bin/ls"
 ln -s busybox "$ROOT/bin/cat"
 ln -s busybox "$ROOT/bin/ps"
+cc -O2 -static -s tools/aether-core.c -o "$ROOT/bin/aether-core"
 
 cat > "$ROOT/init" <<'INIT'
 #!/bin/sh
@@ -25,20 +26,21 @@ echo "                         AETHER"
 echo "                       AI OPERATING SYSTEM"
 echo "============================================================"
 echo
-echo "  Linux kernel        : ONLINE"
-echo "  Aether Core         : ONLINE"
-echo "  AI system interface : INITIALIZING"
+echo "  Linux foundation    : ONLINE"
+echo "  Aether Core         : STARTING"
+echo "  AI system interface : PENDING"
 echo
 echo "  This is not a Linux distribution."
-echo "  Linux provides the kernel. Aether provides the system."
-echo
+echo "  Linux provides the foundation. Aether provides the system."
 echo "============================================================"
-echo
+/bin/aether-core &
+sleep 1
+if [ -S /run/aether-core.sock ]; then
+    echo "AETHER> Aether Core IPC: READY"
+else
+    echo "AETHER> Aether Core IPC: FAILED"
+fi
 export PATH=/bin:/sbin:/usr/bin:/usr/sbin
-echo "AETHER> system bootstrap complete"
-echo "AETHER> privileged AI IPC: pending"
-echo "AETHER> type 'uname -a' to inspect the kernel"
-echo
 exec /bin/sh
 INIT
 chmod +x "$ROOT/init"

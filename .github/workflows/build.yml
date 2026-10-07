@@ -37,7 +37,7 @@ jobs:
           sudo apt-get install -y qemu-system-x86
           timeout 20s qemu-system-x86_64 -cdrom build/aether-os.iso -m 512 -nographic -serial mon:stdio -no-reboot -no-shutdown > build/qemu.log 2>&1 || test $? -eq 124
           grep -q "AETHER AI OS" build/qemu.log
-          grep -q "AETHER CORE ONLINE" build/qemu.log
+          grep -q "Aether Core IPC: READY" build/qemu.log
 
       - name: Upload bootable ISO
         uses: actions/upload-artifact@v4
