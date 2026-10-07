@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "status": "active",
-  "updated": "2026-10-06",
+  "updated": "2026-10-07",
   "baseline_commit": "6803178c4603445bc126fdf99d01688bc65ca90e",
   "purpose": "Bounded, evidence-first engineering state for Aether agent work.",
   "current_hypotheses": [
@@ -84,21 +84,20 @@
         "correlation_id"
       ]
     },
-    "sequence": 161,
+    "sequence": 162,
     "last_event": {
-      "event_id": "comm-000161",
-      "type": "observation",
+      "event_id": "comm-000162",
+      "type": "wake",
       "actor": "agent-aether",
-      "channel": "qemu_serial",
-      "observed_at": "2026-10-06T23:19:12.968648Z",
+      "channel": "github_actions",
+      "observed_at": "2026-10-07T02:20:55.129661Z",
       "payload": {
-        "observed_at": "2026-10-06T23:19:12.968648Z",
-        "run_id": "37545643210",
-        "commit": "479c0ca918e3af0cf178cbfaf96184c928d2fc2f",
-        "outcome": "failure",
-        "qemu_exit": 124
+        "observed_at": "2026-10-07T02:20:55.129661Z",
+        "tick_counter": 10,
+        "delta_seconds": 11930.808,
+        "run_id": "37561542161"
       },
-      "correlation_id": "qemu-37545643210"
+      "correlation_id": "clock-37561542161"
     },
     "integrations": {
       "clock_tick": "records wake events and advances communication.last_event",
@@ -106,12 +105,12 @@
     }
   },
   "clock": {
-    "tick_counter": 9,
-    "last_wakeup": "2026-10-06T23:02:04.321780Z",
-    "delta_seconds": 14205.88,
-    "total_elapsed_seconds": 191829.544,
+    "tick_counter": 10,
+    "last_wakeup": "2026-10-07T02:20:55.129661Z",
+    "delta_seconds": 11930.808,
+    "total_elapsed_seconds": 203760.352,
     "clock_source": "github-actions-runner-system-time",
-    "last_run_id": "37544220161"
+    "last_run_id": "37561542161"
   },
   "last_wake_reason": "schedule"
 }
