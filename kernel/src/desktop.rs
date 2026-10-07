@@ -1710,7 +1710,29 @@ fn draw_taskbar_buttons(w: usize, h: usize) {
                 graphics::border_rect(x, y, bw, 30, if pressed { 0x0088C5E8 } else { 0x005E89A5 });
                 graphics::fill_rect(x + 2, y + 2, bw.saturating_sub(4), 3,
                     if pressed { 0x006EA9D0 } else { 0x004B7B99 });
-                graphics::draw_str(x + 16, y + 11, label, COL_TITLE_TEXT);
+                // Small native icon keeps the taskbar primarily visual, as in Win7.
+                let iid = match WINS[i].kind {
+                    WinKind::Terminal => crate::gui::icon::IconId::Terminal,
+                    WinKind::MyComputer | WinKind::SysProps => crate::gui::icon::IconId::MyComputer,
+                    WinKind::Files => crate::gui::icon::IconId::Folder,
+                    WinKind::Network => crate::gui::icon::IconId::Network,
+                    WinKind::Settings => crate::gui::icon::IconId::Settings,
+                    _ => crate::gui::icon::IconId::File,
+                };
+                let img = crate::gui::icon::generate(iid);
+                let mut py = 0usize;
+                while py < 12 {
+                    let mut px = 0usize;
+                    while px < 12 {
+                        let cc = img[(py * 2) * 32 + px * 2];
+                        if (cc >> 24) > 0 {
+                            graphics::put_pixel(x + 7 + px, y + 9 + py, cc & 0x00FFFFFF);
+                        }
+                        px += 1;
+                    }
+                    py += 1;
+                }
+                graphics::draw_str(x + 25, y + 11, label, COL_TITLE_TEXT);
                 x += bw + 4;
             }
             i += 1;
@@ -2756,17 +2778,20 @@ fn draw_window(idx: usize) {
         let ww = w.w as usize;
         let wh = w.h as usize;
 
-        // outer frame + drop shadow
-        graphics::fill_rect(wx + 3, wy + 3, ww, wh, 0x00404040);
+        // Windows 7-inspired window chrome: soft shadow, light frame,
+        // glass-like title gradient, then a clean client surface.
+        graphics::fill_rect(wx + 4, wy + 4, ww, wh, 0x00505A62);
+        graphics::fill_rect(wx + 2, wy + 2, ww, wh, 0x0099AAB5);
         graphics::fill_rect(wx, wy, ww, wh, COL_CLIENT);
         graphics::border_rect(wx, wy, ww, wh, border);
-        graphics::border_rect(wx + 1, wy + 1, ww - 2, wh - 2, 0x00FFFFFF);
-        // Windows 7-inspired glass title bar
-        graphics::fill_rect(wx + 2, wy + 2, ww - 4, TITLE_H as usize - 2, title_bg);
-        if focused {
-            graphics::fill_rect(wx + 2, wy + 2, ww - 4, 3, 0x00166ACB);
-            graphics::fill_rect(wx + 2, wy + TITLE_H as usize - 5, ww - 4, 2, 0x00082A5A);
-        }
+        graphics::border_rect(wx + 1, wy + 1, ww.saturating_sub(2), wh.saturating_sub(2), 0x00DCE6EC);
+        graphics::fill_rect(wx + 2, wy + 2, ww.saturating_sub(4), TITLE_H as usize - 2,
+            if focused { 0x00346F97 } else { title_bg });
+        graphics::fill_rect(wx + 3, wy + 3, ww.saturating_sub(6), 4,
+            if focused { 0x006EA9D0 } else { 0x0090A4B2 });
+        graphics::fill_rect(wx + 3, wy + TITLE_H as usize - 4, ww.saturating_sub(6), 2,
+            if focused { 0x00244F70 } else { 0x00596F7D });
+        graphics::fill_rect(wx + 3, wy + TITLE_H as usize, ww.saturating_sub(6), 1, 0x00B9C7D0);
         // 16x16 window icon in title bar
         {
             use crate::gui::icon::{self, IconId};
@@ -2797,23 +2822,25 @@ fn draw_window(idx: usize) {
         }
         // title text after icon
         graphics::draw_str(wx + 26, wy + 9, win_title(w.kind), COL_TITLE_TEXT);
-        // caption buttons
+        // Caption buttons: compact three-button Windows 7-style control group.
         let cy = wy + 5;
         let close_x = wx + ww - 22;
         let max_x = wx + ww - 42;
         let min_x = wx + ww - 62;
-        graphics::fill_rect(min_x, cy, 16, 14, COL_BTN_FACE);
-        graphics::border_rect(min_x, cy, 16, 14, 0x00404040);
-        graphics::fill_rect(min_x + 3, cy + 10, 10, 2, 0x00000000);
-        graphics::fill_rect(max_x, cy, 16, 14, COL_BTN_FACE);
-        graphics::border_rect(max_x, cy, 16, 14, 0x00404040);
-        graphics::border_rect(max_x + 3, cy + 3, 10, 8, 0x00000000);
-        graphics::fill_rect(close_x, cy, 16, 14, COL_CLOSE);
-        graphics::border_rect(close_x, cy, 16, 14, 0x00800000);
-        graphics::draw_str(close_x + 4, cy + 3, "X", COL_TITLE_TEXT);
+        let button_col = if focused { 0x00D7E4EB } else { 0x00C8D3D9 };
+        graphics::fill_rect(min_x, cy, 16, 18, button_col);
+        graphics::border_rect(min_x, cy, 16, 18, 0x005E7787);
+        graphics::fill_rect(min_x + 3, cy + 12, 10, 2, 0x00334B59);
+        graphics::fill_rect(max_x, cy, 16, 18, button_col);
+        graphics::border_rect(max_x, cy, 16, 18, 0x005E7787);
+        graphics::border_rect(max_x + 3, cy + 4, 10, 8, 0x00334B59);
+        graphics::fill_rect(close_x, cy, 16, 18, if focused { 0x00C94A4A } else { 0x00B7BFC4 });
+        graphics::border_rect(close_x, cy, 16, 18, 0x007C2E32);
+        graphics::draw_str(close_x + 4, cy + 5, "X", COL_TITLE_TEXT);
         if !w.maximized {
-            graphics::fill_rect(wx + ww - 12, wy + wh - 12, 8, 2, 0x00808080);
-            graphics::fill_rect(wx + ww - 12, wy + wh - 8, 8, 2, 0x00808080);
+            graphics::fill_rect(wx + ww - 12, wy + wh - 12, 8, 2, 0x005D707B);
+            graphics::fill_rect(wx + ww - 12, wy + wh - 8, 8, 2, 0x005D707B);
+            graphics::fill_rect(wx + ww - 8, wy + wh - 12, 2, 8, 0x005D707B);
         }
 
         match w.kind {
