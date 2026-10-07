@@ -8,45 +8,45 @@ use crate::input;
 use crate::wallpaper;
 use crate::mm;
 
-// XP Luna-inspired colors (original Aether theme, not Microsoft assets)
+// Windows 7-inspired visual tokens (original Aether theme, not Microsoft assets)
 const COL_SKY_TOP: u32 = 0x003A6EA5;
 const COL_SKY_MID: u32 = 0x005B9BD5;
 const COL_SKY_LOW: u32 = 0x0087CEEB;
 const COL_HILL: u32 = 0x003D8B37;
 const COL_HILL2: u32 = 0x002E6B28;
 const COL_BG: u32 = 0x005B9BD5; // fallback
-const COL_TASKBAR: u32 = 0x00245EDC; // classic blue bar
-const COL_TASKBAR_TOP: u32 = 0x003C7FB1;
-const COL_START: u32 = 0x003C8A2E; // green start
-const COL_START_HI: u32 = 0x0055B83A;
-const COL_PANEL: u32 = 0x000A246A; // deep blue title
-const COL_TITLE_ACT: u32 = 0x000A246A;
-const COL_TITLE_INACT: u32 = 0x007A96DF;
+const COL_TASKBAR: u32 = 0x001E4B70; // Windows 7-inspired glass-blue taskbar
+const COL_TASKBAR_TOP: u32 = 0x006C9CC2;
+const COL_START: u32 = 0x002B6E3B; // Aether Start orb base
+const COL_START_HI: u32 = 0x0078C878;
+const COL_PANEL: u32 = 0x001B4568; // desktop chrome
+const COL_TITLE_ACT: u32 = 0x001D5F8A;
+const COL_TITLE_INACT: u32 = 0x006B8294;
 const COL_TITLE_TEXT: u32 = 0x00FFFFFF;
-const COL_CLIENT: u32 = 0x00ECE9D8; // classic beige
-const COL_ACCENT: u32 = 0x00316AC5;
+const COL_CLIENT: u32 = 0x00F3F6F9; // light Windows 7-style client surface
+const COL_ACCENT: u32 = 0x003B82B8;
 const COL_TITLE: u32 = 0x00FFFFFF;
 const COL_TEXT: u32 = 0x00000000;
 const COL_TEXT_DIM: u32 = 0x00404040;
 const COL_TERM_BG: u32 = 0x00000000;
 const COL_TERM_FG: u32 = 0x00C0C0C0;
 const COL_TERM_PROMPT: u32 = 0x0000E676;
-const COL_WIN_BORDER: u32 = 0x000A246A;
-const COL_FOCUS: u32 = 0x000A246A;
-const COL_INACTIVE: u32 = 0x007A96DF;
+const COL_WIN_BORDER: u32 = 0x00516F86;
+const COL_FOCUS: u32 = 0x002B6E9B;
+const COL_INACTIVE: u32 = 0x00879BAA;
 const COL_CURSOR: u32 = 0x00FFFFFF;
 const COL_CLOSE: u32 = 0x00E81123;
 const COL_MAX: u32 = 0x002D7D46;
 const COL_MIN: u32 = 0x002D5A27;
 const COL_ABOUT_BG: u32 = 0x00ECE9D8;
 const COL_DOCK: u32 = 0x00245EDC;
-const COL_BTN_FACE: u32 = 0x00D4D0C8;
+const COL_BTN_FACE: u32 = 0x00E8EEF3;
 const COL_MENU_BG: u32 = 0x00FFFFFF;
 const COL_MENU_HDR: u32 = 0x001665CA;
 
 const MAX_WIN: usize = 16;
-const TITLE_H: i32 = 26;
-const TASKBAR_H: usize = 30;
+const TITLE_H: i32 = 30;
+const TASKBAR_H: usize = 40;
 
 #[derive(Clone, Copy, PartialEq)]
 enum WinKind {
@@ -1475,9 +1475,9 @@ fn toggle_maximize(idx: usize) {
             WINS[idx].rw = WINS[idx].w;
             WINS[idx].rh = WINS[idx].h;
             WINS[idx].x = 0;
-            WINS[idx].y = 30;
+            WINS[idx].y = 40;
             WINS[idx].w = sw;
-            WINS[idx].h = sh - 70;
+            WINS[idx].h = sh - 80;
             WINS[idx].maximized = true;
             WINS[idx].minimized = false;
         }
@@ -1673,48 +1673,45 @@ fn hit_desktop_icon(mx: i32, my: i32) -> Option<usize> {
     None
 }
 
+fn taskbar_label(kind: WinKind) -> &'static str {
+    match kind {
+        WinKind::Terminal => "Terminal",
+        WinKind::MyComputer => "Computer",
+        WinKind::Files => "Files",
+        WinKind::Network => "Network",
+        WinKind::Sound => "Sound",
+        WinKind::Video => "Display",
+        WinKind::SysProps => "System",
+        WinKind::DateTime => "Clock",
+        WinKind::About => "About",
+        WinKind::Settings => "Settings",
+        WinKind::MediaPlayer => "Media",
+        WinKind::Keyboard => "Keyboard",
+        WinKind::Alarm => "Alarm",
+        WinKind::HelloExe => "Hello",
+        WinKind::WinampExe => "Winamp",
+        WinKind::AIChat => "Aether AI",
+    }
+}
+
 fn draw_taskbar_buttons(w: usize, h: usize) {
-    let mut x = 78usize; // after Start
-    let y = h.saturating_sub(26);
+    let mut x = 76usize;
+    let y = h.saturating_sub(TASKBAR_H) + 5;
     unsafe {
         let mut i = 0usize;
         while i < MAX_WIN {
             if WINS[i].visible || WINS[i].minimized {
-                let title = win_title(WINS[i].kind);
-                // short label for taskbar
-                let short = match WINS[i].kind {
-                    WinKind::Terminal => "Term",
-                    WinKind::MyComputer => "Comp",
-                    WinKind::Files => "Files",
-                    WinKind::Network => "Net",
-                    WinKind::Sound => "Snd",
-                    WinKind::Video => "Vid",
-                    WinKind::SysProps => "Sys",
-                    WinKind::DateTime => "Time",
-                    WinKind::About => "About",
-                    WinKind::Settings => "Settings",
-                    WinKind::MediaPlayer => "Media",
-                    WinKind::Keyboard => "Keyboard",
-                    WinKind::Alarm => "Alarm",
-                    WinKind::HelloExe => "Hello",
-                    WinKind::WinampExe => "Winamp",
-                    WinKind::AIChat => "AI",
-                };
-                let bw = short.len() * 8 + 20;
-                if x + bw > w.saturating_sub(100) {
-                    break;
-                }
+                let label = taskbar_label(WINS[i].kind);
+                let bw = label.len() * 8 + 34;
+                if x + bw > w.saturating_sub(170) { break; }
                 let pressed = i == FOCUS && WINS[i].visible && !WINS[i].minimized;
-                let col = if pressed { 0x001C4F9C } else { 0x003C7FB1 };
-                graphics::fill_rect(x, y, bw, 22, col);
-                graphics::border_rect(x, y, bw, 22, if pressed { 0x000A246A } else { 0x006B9ACD });
-                if pressed {
-                    graphics::fill_rect(x + 1, y + 1, bw - 2, 1, 0x000A246A);
-                } else {
-                    graphics::fill_rect(x + 1, y + 1, bw - 2, 1, 0x006BB0E0);
-                }
-                graphics::draw_str(x + 10, y + 7, short, COL_TITLE_TEXT);
-                x += bw + 3;
+                let col = if pressed { 0x00386F96 } else { 0x002A5B7C };
+                graphics::fill_rect(x, y, bw, 30, col);
+                graphics::border_rect(x, y, bw, 30, if pressed { 0x0088C5E8 } else { 0x005E89A5 });
+                graphics::fill_rect(x + 2, y + 2, bw.saturating_sub(4), 3,
+                    if pressed { 0x006EA9D0 } else { 0x004B7B99 });
+                graphics::draw_str(x + 16, y + 11, label, COL_TITLE_TEXT);
+                x += bw + 4;
             }
             i += 1;
         }
@@ -1724,26 +1721,23 @@ fn draw_taskbar_buttons(w: usize, h: usize) {
 
 fn hit_taskbar(mx: i32, my: i32) -> Option<usize> {
     let h = graphics::height() as i32;
-    if my < h - (TASKBAR_H as i32) {
-        return None;
-    }
-    let mut x = 78i32;
+    if my < h - (TASKBAR_H as i32) { return None; }
+    let mut x = 76i32;
     unsafe {
         let mut i = 0usize;
         while i < MAX_WIN {
             if WINS[i].visible || WINS[i].minimized {
-                let title = win_title(WINS[i].kind);
-                let bw = (title.len() as i32) * 8 + 16;
-                if mx >= x && mx < x + bw {
-                    return Some(i);
-                }
-                x += bw + 6;
+                let label = taskbar_label(WINS[i].kind);
+                let bw = label.len() as i32 * 8 + 34;
+                if mx >= x && mx < x + bw { return Some(i); }
+                x += bw + 4;
             }
             i += 1;
         }
     }
     None
 }
+
 
 fn in_close(idx: usize, mx: i32, my: i32) -> bool {
     unsafe {
@@ -1761,7 +1755,7 @@ fn clamp_win(idx: usize) {
         if WINS[idx].x < 0 {
             WINS[idx].x = 0;
         }
-        if WINS[idx].y < 28 {
+        if WINS[idx].y < 40 {
             WINS[idx].y = 28;
         }
         if WINS[idx].x + 40 > sw {
@@ -2310,7 +2304,7 @@ fn handle_mouse_buttons(buttons: u8) {
                 MB = buttons;
                 return;
             }
-            // XP Start button (bottom-left)
+            // Windows 7-inspired Start button (bottom-left)
             let sh = graphics::height() as i32;
             if my >= sh - (TASKBAR_H as i32) && mx < 74 {
                 START_MENU = !START_MENU;
@@ -2767,7 +2761,7 @@ fn draw_window(idx: usize) {
         graphics::fill_rect(wx, wy, ww, wh, COL_CLIENT);
         graphics::border_rect(wx, wy, ww, wh, border);
         graphics::border_rect(wx + 1, wy + 1, ww - 2, wh - 2, 0x00FFFFFF);
-        // XP blue/gray title bar
+        // Windows 7-inspired glass title bar
         graphics::fill_rect(wx + 2, wy + 2, ww - 4, TITLE_H as usize - 2, title_bg);
         if focused {
             graphics::fill_rect(wx + 2, wy + 2, ww - 4, 3, 0x00166ACB);
@@ -3679,16 +3673,19 @@ fn redraw_status_strip() {
 fn draw_start_button(_w: usize, h: usize) {
     let tb = TASKBAR_H;
     let ty = h.saturating_sub(tb);
-    let sb_w = 72usize;
-    graphics::fill_rect(0, ty, sb_w, tb, COL_START);
-    graphics::fill_rect(0, ty, sb_w, 3, COL_START_HI);
-    graphics::fill_rect(0, ty, 3, tb, COL_START_HI);
-    graphics::border_rect(0, ty, sb_w, tb, 0x00FFFFFF);
-    graphics::fill_rect(6, ty + 6, 7, 7, 0x00F0F0F0);
-    graphics::fill_rect(15, ty + 6, 7, 7, 0x00F0F0F0);
-    graphics::fill_rect(6, ty + 15, 7, 7, 0x00F0F0F0);
-    graphics::fill_rect(15, ty + 15, 7, 7, 0x00F0F0F0);
-    graphics::draw_str(26, ty + 11, "start", 0x00FFFFFF);
+    // Compact Windows 7-inspired Start orb. Geometry is deliberately custom
+    // rather than copying Microsoft artwork.
+    let orb_x = 8usize;
+    let orb_y = ty + 3;
+    graphics::fill_rect(orb_x + 4, orb_y, 42, 34, 0x00305E45);
+    graphics::fill_rect(orb_x + 1, orb_y + 4, 48, 26, 0x003A7C4B);
+    graphics::fill_rect(orb_x + 5, orb_y + 2, 40, 30, COL_START);
+    graphics::fill_rect(orb_x + 9, orb_y + 5, 32, 24, COL_START_HI);
+    graphics::fill_rect(orb_x + 13, orb_y + 8, 8, 8, 0x00F4FFF4);
+    graphics::fill_rect(orb_x + 23, orb_y + 8, 8, 8, 0x00F4FFF4);
+    graphics::fill_rect(orb_x + 13, orb_y + 18, 8, 8, 0x00F4FFF4);
+    graphics::fill_rect(orb_x + 23, orb_y + 18, 8, 8, 0x00F4FFF4);
+    graphics::border_rect(orb_x + 5, orb_y + 2, 40, 30, 0x0077A887);
 }
 
 
@@ -3813,7 +3810,7 @@ fn render_drag_step() {
         if oy < 30 {
             graphics::fill_rect(0, 0, w, 28, COL_PANEL);
             graphics::fill_rect(0, 28, w, 2, COL_ACCENT);
-            graphics::draw_str(12, 10, "Aether Desktop v1.1 XP", COL_TITLE);
+            graphics::draw_str(12, 13, "Aether Desktop", COL_TITLE);
         }
         let dock_y = h.saturating_sub(40);
         if oy + oh > dock_y {
@@ -3973,67 +3970,73 @@ fn draw_start_menu() {
     use crate::gui::icon::{self, IconId};
     let h = graphics::height();
     let tb = TASKBAR_H;
-    let menu_h = 364usize;
-    let menu_w = 220usize;
-    let mx = 2usize;
+    let menu_h = 404usize;
+    let menu_w = 430usize;
+    let mx = 6usize;
     let my = h.saturating_sub(tb + menu_h);
-    // XP two-column start menu shell
-    graphics::fill_rect(mx + 2, my + 2, menu_w, menu_h, 0x00404040); // shadow
-    graphics::fill_rect(mx, my, menu_w, menu_h, 0x00FFFFFF);
-    // left green user strip
-    graphics::fill_rect(mx, my, 4, menu_h, COL_START);
-    graphics::fill_rect(mx, my, menu_w, 28, 0x00245EDC);
-    graphics::draw_str(mx + 12, my + 10, "Aether User", 0x00FFFFFF);
-    // items with icons
-    let items: [(IconId, &str, usize); 9] = [
-        (IconId::Terminal, "Terminal", 0),
-        (IconId::Folder, "Files", 5),
-        (IconId::MyComputer, "My Computer", 7),
-        (IconId::Network, "Network", 2),
-        (IconId::Settings, "Settings", 8),
-        (IconId::File, "Media Player", 10),
-        (IconId::MyDocuments, "Documents", 5),
-        (IconId::Settings, "Alarm Clock", 12),
-        (IconId::RecycleBin, "Recycle Bin", 99),
+
+    // Windows 7-inspired two-column launcher: recent programs on the left,
+    // system destinations on the right, search and power controls below.
+    graphics::fill_rect(mx + 5, my + 5, menu_w, menu_h, 0x00506068);
+    graphics::fill_rect(mx, my, menu_w, menu_h, 0x00F5F7F9);
+    graphics::fill_rect(mx, my, menu_w, 46, 0x002A628C);
+    graphics::draw_str(mx + 18, my + 17, "Aether User", 0x00FFFFFF);
+
+    graphics::fill_rect(mx + 8, my + 54, 238, menu_h - 112, 0x00FFFFFF);
+    graphics::draw_str(mx + 20, my + 66, "Recent programs", 0x00405A6A);
+
+    let left: [(IconId, &str); 6] = [
+        (IconId::Terminal, "Terminal"),
+        (IconId::Folder, "Files"),
+        (IconId::MyComputer, "Computer"),
+        (IconId::Network, "Network"),
+        (IconId::Settings, "Settings"),
+        (IconId::File, "Media Player"),
     ];
     let mut i = 0usize;
-    while i < 9 {
-        let (id, name, _) = items[i];
-        let iy = my + 36 + i * 28;
-        icon::blit(id, mx + 10, iy, false);
-        // scale: blit is 32px — draw smaller label only, clip by only showing label
-        graphics::draw_str(mx + 48, iy + 10, name, 0x00000000);
+    while i < left.len() {
+        let iy = my + 88 + i * 42;
+        icon::blit(left[i].0, mx + 18, iy, false);
+        graphics::draw_str(mx + 58, iy + 12, left[i].1, 0x001A2A35);
         i += 1;
     }
-    // bottom shutdown strip
-    graphics::fill_rect(mx, my + menu_h - 28, menu_w, 28, 0x00D4D0C8);
-    graphics::draw_str(mx + 16, my + menu_h - 18, "Turn Off Computer", 0x00000000);
-}
 
+    graphics::fill_rect(mx + 254, my + 54, 168, menu_h - 112, 0x00E9EEF2);
+    let right = ["Documents", "Computer", "Control Panel", "Network", "System", "Help"];
+    i = 0;
+    while i < right.len() {
+        let iy = my + 72 + i * 42;
+        graphics::draw_str(mx + 272, iy, right[i], 0x00243D4E);
+        i += 1;
+    }
+
+    graphics::fill_rect(mx + 8, my + menu_h - 50, menu_w - 16, 30, 0x00DCE4EA);
+    graphics::border_rect(mx + 8, my + menu_h - 50, menu_w - 16, 30, 0x0097A8B5);
+    graphics::draw_str(mx + 20, my + menu_h - 40, "Search programs and files", 0x00687882);
+    graphics::fill_rect(mx + menu_w - 94, my + menu_h - 48, 78, 26, 0x00D5DEE5);
+    graphics::border_rect(mx + menu_w - 94, my + menu_h - 48, 78, 26, 0x007C909D);
+    graphics::draw_str(mx + menu_w - 76, my + menu_h - 39, "Shut down", 0x00243D4E);
+}
 
 
 fn hit_start_menu(mx: i32, my: i32) -> Option<usize> {
     let h = graphics::height() as i32;
     let tb = TASKBAR_H as i32;
-    let menu_h = 364i32;
-    let menu_w = 220i32;
-    let x0 = 2i32;
+    let menu_h = 404i32;
+    let menu_w = 430i32;
+    let x0 = 6i32;
     let y0 = h - tb - menu_h;
     if mx < x0 || mx >= x0 + menu_w || my < y0 || my >= y0 + menu_h {
         return None;
     }
-    // map to action index 0..6
-    let rel = my - (y0 + 36);
-    if rel < 0 {
-        return None;
+    let rel = my - (y0 + 88);
+    if mx < x0 + 250 && rel >= 0 {
+        let idx = (rel / 42) as usize;
+        if idx < 6 { return Some(idx); }
     }
-    let idx = (rel / 28) as usize;
-    if idx < 9 {
-        Some(idx)
-    } else {
-        None
-    }
+    None
 }
+
 
 static mut BACKGROUND_DRAWN: bool = false;
 static mut DIRTY_WINDOW: i16 = -1;
@@ -4096,7 +4099,7 @@ fn render() {
         }
     }
     draw_desktop_icons();
-    // XP blue taskbar bottom
+    // Windows 7-inspired taskbar bottom
     let tb = TASKBAR_H;
     graphics::fill_rect(0, h.saturating_sub(tb), w, tb, COL_TASKBAR);
     graphics::fill_rect(0, h.saturating_sub(tb), w, 2, COL_TASKBAR_TOP);
