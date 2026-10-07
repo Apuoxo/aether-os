@@ -43,6 +43,7 @@ make x86_64_defconfig
 ./scripts/config --enable CONFIG_INPUT_EVDEV
 ./scripts/config --enable CONFIG_USB_HID
 ./scripts/config --enable CONFIG_SQUASHFS
+./scripts/config --enable CONFIG_SQUASHFS_XZ
 ./scripts/config --enable CONFIG_ISO9660_FS
 ./scripts/config --enable CONFIG_OVERLAY_FS
 ./scripts/config --enable CONFIG_EXT4_FS
