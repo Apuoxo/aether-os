@@ -182,7 +182,7 @@ chmod 0755 "$INITRAMFS_ROOT/init"
   find . -print0 | cpio --null -o -H newc 2>/dev/null | gzip -9
 ) > "$WORK/initramfs.cpio.gz"
 
-mksquashfs "$ROOTFS" "$WORK/rootfs.squashfs" -comp zstd -noappend >/dev/null
+mksquashfs "$ROOTFS" "$WORK/rootfs.squashfs" -comp xz -noappend >/dev/null
 
 mkdir -p "$ISO_ROOT/boot/grub"
 cp arch/x86/boot/bzImage "$ISO_ROOT/boot/vmlinuz"
