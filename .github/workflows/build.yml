@@ -38,7 +38,7 @@ jobs:
             qemu-system-x86
 
       - name: Build bootable Linux desktop image
-        run: make boot-image
+        run: sudo make boot-image
 
       - name: QEMU Linux boot smoke test
         run: |
