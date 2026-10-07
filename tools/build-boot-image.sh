@@ -173,7 +173,7 @@ fi
 /bin/busybox mount --move /dev /newroot/dev
 /bin/busybox mount --move /proc /newroot/proc
 /bin/busybox mount --move /sys /newroot/sys
-/bin/busybox mount --move /run /newroot/run
+/bin/busybox mount -t tmpfs tmpfs /newroot/run
 exec /bin/busybox switch_root /newroot /sbin/init
 INIT
 chmod 0755 "$INITRAMFS_ROOT/init"
