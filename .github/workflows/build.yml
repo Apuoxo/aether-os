@@ -23,6 +23,7 @@ jobs:
             bc \
             bison \
             cpio \
+            debootstrap \
             flex \
             grub-pc-bin \
             grub-common \
@@ -31,27 +32,28 @@ jobs:
             busybox-static \
             curl \
             mtools \
+            squashfs-tools \
             xorriso \
             xz-utils \
             qemu-system-x86
 
-      - name: Build bootable Linux image
+      - name: Build bootable Linux desktop image
         run: make boot-image
 
-      - name: QEMU boot smoke test
+      - name: QEMU Linux boot smoke test
         run: |
           set -o pipefail
-          timeout 20s qemu-system-x86_64 \
+          timeout 45s qemu-system-x86_64 \
             -cdrom out/aether-os-6.18.55-x86_64.iso \
-            -m 1024 \
+            -m 2048 \
             -smp 2 \
-            -nographic 2>&1 | tee qemu.log || test ${PIPESTATUS[0]} -eq 124
-          grep -q "AETHER_BOOT_OK" qemu.log
-          grep -q "Aether Linux foundation is running." qemu.log
+            -display none \
+            -serial stdio 2>&1 | tee qemu.log || test ${PIPESTATUS[0]} -eq 124
+          grep -q "AETHER_AI_BRIDGE=READY" qemu.log
 
       - name: Upload bootable ISO
         uses: actions/upload-artifact@v4
         with:
-          name: aether-os-linux-foundation-x86_64
+          name: aether-os-linux-desktop-x86_64
           path: out/aether-os-6.18.55-x86_64.iso
           if-no-files-found: error
