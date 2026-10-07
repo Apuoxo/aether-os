@@ -30,6 +30,7 @@ jobs:
             libssl-dev \
             busybox-static \
             curl \
+            xorriso \
             xz-utils \
             qemu-system-x86
 
