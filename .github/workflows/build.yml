@@ -1,0 +1,55 @@
+name: Aether OS boot image
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            bc \
+            bison \
+            cpio \
+            flex \
+            grub-pc-bin \
+            grub-common \
+            libelf-dev \
+            libssl-dev \
+            busybox-static \
+            curl \
+            xz-utils \
+            qemu-system-x86
+
+      - name: Build bootable Linux image
+        run: make boot-image
+
+      - name: QEMU boot smoke test
+        run: |
+          set -o pipefail
+          timeout 20s qemu-system-x86_64 \
+            -cdrom out/aether-os-6.18.55-x86_64.iso \
+            -m 1024 \
+            -smp 2 \
+            -nographic 2>&1 | tee qemu.log || test ${PIPESTATUS[0]} -eq 124
+          grep -q "AETHER_BOOT_OK" qemu.log
+          grep -q "Aether Linux foundation is running." qemu.log
+
+      - name: Upload bootable ISO
+        uses: actions/upload-artifact@v4
+        with:
+          name: aether-os-linux-foundation-x86_64
+          path: out/aether-os-6.18.55-x86_64.iso
+          if-no-files-found: error
