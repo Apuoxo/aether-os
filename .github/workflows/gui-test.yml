@@ -18,7 +18,7 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cpio debootstrap grub-pc-bin grub-common mtools xorriso xz-utils squashfs-tools curl qemu-system-x86 busybox-static
+          sudo apt-get install -y build-essential cpio debootstrap grub-pc-bin grub-common mtools xorriso xz-utils squashfs-tools curl qemu-system-x86 busybox-static libelf-dev
 
       - name: Build minimal GUI ISO
         run: sudo make gui-test-image
