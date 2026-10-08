@@ -2,7 +2,7 @@ name: Aether OS boot image
 
 on:
   push:
-    branches: [main]
+    branches: [main, kemu-codespace-lab-2026-10-08]
   workflow_dispatch:
 
 permissions:
@@ -41,19 +41,11 @@ jobs:
       - name: Build bootable Linux desktop image
         run: sudo make boot-image
 
-      - name: QEMU Linux boot and desktop smoke test
+      - name: KEMU guest-state verification
         run: |
-          set -o pipefail
-          timeout 60s qemu-system-x86_64 \
-            -cdrom out/aether-os-6.18.55-x86_64.iso \
-            -m 2048 \
-            -smp 2 \
-            -vga virtio \
-            -display none \
-            -serial stdio 2>&1 | tee qemu.log || test ${PIPESTATUS[0]} -eq 124
-          grep -q "AETHER_AI_BRIDGE=READY" qemu.log
-          grep -q "AETHER_GUI=READY" qemu.log
-
+          sudo apt-get update -o Acquire::Retries=3
+          sudo apt-get install -y python3
+          .kemu/run.sh out/aether-os-6.18.55-x86_64.iso
       - name: Upload bootable ISO
         uses: actions/upload-artifact@v4
         with:
