@@ -15,7 +15,7 @@ ARTIFACT="$OUT/aether-os-$KERNEL_VERSION-x86_64.iso"
 mkdir -p "$WORK" "$OUT"
 
 if [ ! -d "$KERNEL_SRC" ]; then
-  curl -fL --retry 3 -o "$KERNEL_TARBALL"     "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-$KERNEL_VERSION.tar.xz"
+  curl -fL --retry 3 -o "$KERNEL_TARBALL" "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-$KERNEL_VERSION.tar.xz"
   tar -xJf "$KERNEL_TARBALL" -C "$WORK"
 fi
 
@@ -35,6 +35,7 @@ make x86_64_defconfig
 ./scripts/config --enable CONFIG_VIRTIO_NET
 ./scripts/config --enable CONFIG_VIRTIO_CONSOLE
 ./scripts/config --enable CONFIG_DRM
+./scripts/config --enable CONFIG_DRM_I915
 ./scripts/config --enable CONFIG_DRM_VIRTIO_GPU
 ./scripts/config --enable CONFIG_FB
 ./scripts/config --enable CONFIG_FRAMEBUFFER_CONSOLE
@@ -91,7 +92,13 @@ trap 'umount -lf "$ROOTFS/run" "$ROOTFS/sys" "$ROOTFS/proc" "$ROOTFS/dev" 2>/dev
 cp /etc/resolv.conf "$ROOTFS/etc/resolv.conf"
 
 chroot "$ROOTFS" /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get update
-chroot "$ROOTFS" /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get install -y   systemd systemd-sysv dbus dbus-x11   xserver-xorg xinit xfce4 xfce4-terminal lightdm   network-manager sudo bash-completion   pciutils usbutils iproute2 iputils-ping procps psmisc   curl ca-certificates nano less   firmware-linux-free
+chroot "$ROOTFS" /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+  systemd systemd-sysv dbus dbus-x11 \
+  xserver-xorg xinit xfce4 xfce4-terminal lightdm \
+  network-manager sudo bash-completion \
+  pciutils usbutils iproute2 iputils-ping procps psmisc \
+  curl ca-certificates nano less \
+  firmware-linux-free
 
 chroot "$ROOTFS" useradd -m -s /bin/bash aether
 chroot "$ROOTFS" usermod -aG audio,video,netdev,plugdev,sudo aether
@@ -116,11 +123,39 @@ printf '%s
 ' 'AETHER_AI_INTERFACE=/run/aether' >> /run/aether/state
 printf '%s
 ' 'AETHER_AI_CONTROL=CAPABILITY_BOUND' >> /run/aether/state
-printf '%s
+if [ -e /dev/ttyS0 ]; then
+  printf '%s
 ' 'AETHER_AI_BRIDGE=READY' > /dev/ttyS0
+fi
 exec /usr/bin/tail -f /dev/null
 AI
 chmod 0755 "$ROOTFS/usr/local/libexec/aether-ai-bridge"
+
+cat > "$ROOTFS/usr/local/libexec/aether-gui-ready" <<'GUIREADY'
+#!/bin/sh
+set -eu
+mkdir -p /run/aether
+i=0
+while [ "$i" -lt 60 ]; do
+  if [ -S /tmp/.X11-unix/X0 ]; then
+    printf '%s
+' 'AETHER_GUI=READY' >> /run/aether/state
+    printf '%s
+' 'AETHER_GUI_DISPLAY=:0' >> /run/aether/state
+    if [ -e /dev/ttyS0 ]; then
+      printf '%s
+' 'AETHER_GUI=READY' > /dev/ttyS0
+    fi
+    exit 0
+  fi
+  i=$((i + 1))
+  sleep 1
+done
+printf '%s
+' 'AETHER_GUI=TIMEOUT' >> /run/aether/state
+exit 1
+GUIREADY
+chmod 0755 "$ROOTFS/usr/local/libexec/aether-gui-ready"
 
 cat > "$ROOTFS/etc/systemd/system/aether-ai.service" <<'SERVICE'
 [Unit]
@@ -138,8 +173,25 @@ RestartSec=2
 WantedBy=multi-user.target
 SERVICE
 
+cat > "$ROOTFS/etc/systemd/system/aether-gui-ready.service" <<'SERVICE'
+[Unit]
+Description=Aether graphical desktop readiness check
+After=lightdm.service
+Requires=lightdm.service
+Before=graphical.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/aether-gui-ready
+RemainAfterExit=yes
+
+[Install]
+WantedBy=graphical.target
+SERVICE
+
 chroot "$ROOTFS" systemctl enable aether-ai.service
 chroot "$ROOTFS" systemctl enable lightdm
+chroot "$ROOTFS" systemctl enable aether-gui-ready.service
 chroot "$ROOTFS" systemctl set-default graphical.target
 
 umount -lf "$ROOTFS/run" "$ROOTFS/sys" "$ROOTFS/proc" "$ROOTFS/dev" 2>/dev/null || true

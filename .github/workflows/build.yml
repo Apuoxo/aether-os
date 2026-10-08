@@ -40,16 +40,18 @@ jobs:
       - name: Build bootable Linux desktop image
         run: sudo make boot-image
 
-      - name: QEMU Linux boot smoke test
+      - name: QEMU Linux boot and desktop smoke test
         run: |
           set -o pipefail
-          timeout 45s qemu-system-x86_64 \
+          timeout 60s qemu-system-x86_64 \
             -cdrom out/aether-os-6.18.55-x86_64.iso \
             -m 2048 \
             -smp 2 \
+            -vga virtio \
             -display none \
             -serial stdio 2>&1 | tee qemu.log || test ${PIPESTATUS[0]} -eq 124
           grep -q "AETHER_AI_BRIDGE=READY" qemu.log
+          grep -q "AETHER_GUI=READY" qemu.log
 
       - name: Upload bootable ISO
         uses: actions/upload-artifact@v4
