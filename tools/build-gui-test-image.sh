@@ -9,7 +9,7 @@ KERNEL_SRC="$WORK/linux-$KERNEL_VERSION"
 KERNEL_TARBALL="$WORK/linux-$KERNEL_VERSION.tar.xz"
 ROOTFS="$WORK/rootfs"
 ISO_ROOT="$WORK/iso"
-ARTIFACT="$OUT/aether-desktop-test-$KERNEL_VERSION-x86_64.iso"
+ARTIFACT="$OUT/aether-gui-test-$KERNEL_VERSION-x86_64.iso"
 
 mkdir -p "$WORK" "$OUT"
 if [ ! -d "$KERNEL_SRC" ]; then
@@ -99,7 +99,7 @@ printf '%s\n' 'AETHER_DESKTOP_DISPLAY=:0' >> /run/aether/state
 printf '%s\n' 'AETHER_DESKTOP_WM=OPENBOX' >> /run/aether/state
 
 if [ -e /dev/ttyS0 ]; then
-    printf '%s\n' 'AETHER_DESKTOP=READY' > /dev/ttyS0
+    printf '%s\n' 'AETHER_DESKTOP=READY' > /dev/ttyS0\n    printf '%s\n' 'AETHER_GUI=READY' > /dev/ttyS0
 fi
 
 wait "$XTERM_PID"
