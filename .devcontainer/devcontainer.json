@@ -1,0 +1,9 @@
+{
+  "name": "Aether KEMU Lab",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+  "features": {
+    "ghcr.io/devcontainers/features/qemu:1": {}
+  },
+  "remoteUser": "vscode",
+  "postCreateCommand": "bash .devcontainer/kemu-bootstrap.sh"
+}
