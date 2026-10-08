@@ -48,6 +48,9 @@ mkdir -p "$ROOTFS" "$INITRAMFS_ROOT"/{bin,dev,proc,sys,run,iso,lower,newroot,tmp
 
 debootstrap --variant=minbase bookworm "$ROOTFS" http://deb.debian.org/debian
 
+# debootstrap may leave runtime mountpoints absent; create them before packing the rootfs.
+mkdir -p "$ROOTFS/dev" "$ROOTFS/proc" "$ROOTFS/sys" "$ROOTFS/run" "$ROOTFS/tmp"
+
 mount --bind /dev "$ROOTFS/dev"
 mount -t proc proc "$ROOTFS/proc"
 mount -t sysfs sysfs "$ROOTFS/sys"
