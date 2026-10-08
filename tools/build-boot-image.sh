@@ -116,6 +116,8 @@ printf '%s
 ' 'AETHER_AI_INTERFACE=/run/aether' >> /run/aether/state
 printf '%s
 ' 'AETHER_AI_CONTROL=CAPABILITY_BOUND' >> /run/aether/state
+printf '%s
+' 'AETHER_AI_BRIDGE=READY' > /dev/ttyS0
 exec /usr/bin/tail -f /dev/null
 AI
 chmod 0755 "$ROOTFS/usr/local/libexec/aether-ai-bridge"
