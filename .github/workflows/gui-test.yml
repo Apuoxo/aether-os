@@ -1,0 +1,40 @@
+name: Aether GUI test image
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gui-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cpio debootstrap grub-pc-bin grub-common mtools xorriso xz-utils qemu-system-x86 busybox-static
+
+      - name: Build minimal GUI ISO
+        run: sudo make gui-test-image
+
+      - name: QEMU GUI smoke test
+        run: |
+          set -o pipefail
+          timeout 45s qemu-system-x86_64             -cdrom out/aether-gui-test-6.18.55-x86_64.iso             -m 1024             -vga virtio             -display none             -serial stdio 2>&1 | tee gui-test.log || test ${PIPESTATUS[0]} -eq 124
+          grep -q "AETHER_GUI=READY" gui-test.log
+
+      - name: Report image size
+        run: du -h out/aether-gui-test-6.18.55-x86_64.iso
+
+      - name: Upload minimal GUI ISO
+        uses: actions/upload-artifact@v4
+        with:
+          name: aether-gui-test-x86_64
+          path: out/aether-gui-test-6.18.55-x86_64.iso
+          if-no-files-found: error
