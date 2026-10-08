@@ -98,7 +98,7 @@ chroot "$ROOTFS" /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get install -y 
   network-manager sudo bash-completion \
   pciutils usbutils iproute2 iputils-ping procps psmisc \
   curl ca-certificates nano less \
-  firmware-linux-free
+  firmware-linux-free qemu-guest-agent
 
 chroot "$ROOTFS" useradd -m -s /bin/bash aether
 chroot "$ROOTFS" usermod -aG audio,video,netdev,plugdev,sudo aether
@@ -190,6 +190,7 @@ WantedBy=graphical.target
 SERVICE
 
 chroot "$ROOTFS" systemctl enable aether-ai.service
+chroot "$ROOTFS" systemctl enable qemu-guest-agent
 chroot "$ROOTFS" systemctl enable lightdm
 chroot "$ROOTFS" systemctl enable aether-gui-ready.service
 chroot "$ROOTFS" systemctl set-default graphical.target
